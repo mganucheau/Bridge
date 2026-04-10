@@ -34,8 +34,8 @@ void DrumEngine::generatePattern (bool seamlessPerform)
 
             if (active)
             {
-                // Ghost note if probability was low
-                bool ghost = (base < 0.28f);
+                const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
+                bool ghost = (base < ghostThresh);
                 vel = sampleVelocity (step, drum, ghost);
             }
 
@@ -260,7 +260,8 @@ float DrumEngine::effectiveSwingAmount() const
 float DrumEngine::grooveMicroOffset (int step, int drum, uint32_t salt, double samplesPerStep) const
 {
     const float loose = STYLE_GROOVE_LOOSENESS[juce::jlimit (0, NUM_STYLES - 1, style)];
-    const float amt = loose * (0.35f + 0.65f * humanize);
+    const float amt = loose * (0.35f + 0.65f * humanize)
+                        * juce::jmap (pocket, 0.35f, 1.0f);
     if (amt < 0.03f) return 0.0f;
     const int maxNudge = juce::jmax (1, (int)(samplesPerStep * 0.11 * amt));
     return (pseudoRandom01 (salt ^ 0x9e3779b9u) * 2.0f - 1.0f) * (float) maxNudge;
@@ -286,8 +287,9 @@ uint8 DrumEngine::sampleVelocityDeterministic (int step, int drum, bool ghost, u
     int vel = vMin + (int)(pseudoRandom01 (salt ^ 0xA53C9E4Du) * (float)span);
     vel = juce::jlimit (vMin, vMax, vel);
     float hum = 0.87f + 0.13f * pseudoRandom01 (salt ^ 0xbeeff00du);
-    float pocket = 1.0f - 0.09f * STYLE_GROOVE_LOOSENESS[juce::jlimit (0, NUM_STYLES - 1, style)];
-    vel = (int)((float) vel * velocityMul * hum * pocket);
+    float stylePocket = 1.0f - 0.09f * STYLE_GROOVE_LOOSENESS[juce::jlimit (0, NUM_STYLES - 1, style)];
+    float userPocket  = juce::jmap (pocket, 0.88f, 1.0f);
+    vel = (int)((float) vel * velocityMul * hum * stylePocket * userPocket);
     return (uint8) juce::jlimit (1, 127, vel);
 }
 
@@ -320,7 +322,8 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
 
         if (active)
         {
-            bool ghost = (base < 0.28f);
+            const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
+            bool ghost = (base < ghostThresh);
             vel = sampleVelocityDeterministic (wrappedStep, drum, ghost, salt ^ 0x27d4eb2du);
 
             int maxShift = (int)(samplesPerStep * 0.25 * humanize);
@@ -346,7 +349,8 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
             if (! rollHitFromProbability (prob, salt))
                 continue;
 
-            bool ghost = (base < 0.35f);
+            const float ghostThresh = juce::jmap (ghostAmount, 0.40f, 0.12f);
+            bool ghost = (base < ghostThresh);
             uint8 vel = sampleVelocityDeterministic (wrappedStep, drum, ghost, salt ^ 0x27d4eb2du);
             int maxShift = (int)(samplesPerStep * 0.25 * humanize);
             int tshift = 0;

@@ -1,5 +1,6 @@
 #include "BridgeProcessor.h"
 #include "BridgeEditor.h"
+#include "LeaderStylePresets.h"
 #include "bootsy/BootsyStylePresets.h"
 #include "stevie/StevieStylePresets.h"
 #include "paul/PaulStylePresets.h"
@@ -8,15 +9,129 @@ namespace
 {
 static constexpr const char* kAnimalStateId = "AnimalDrummer";
 static constexpr const char* kBootsyStateId = "Bootsy";
+
+static bool mainMixerEngaged (juce::AudioProcessorValueTreeState& m)
+{
+    if (auto* v = m.getRawParameterValue ("leaderTabOn"))
+        return v->load() > 0.5f;
+    return true;
+}
+
+static float readMain01 (juce::AudioProcessorValueTreeState& m, const char* id, float defV)
+{
+    if (auto* v = m.getRawParameterValue (id))
+        return juce::jlimit (0.f, 1.f, v->load());
+    return defV;
+}
+
+struct LeaderEffective
+{
+    float presence = 0.72f;
+    float tight = 0.38f;
+    float unity = 0.45f;
+    float breath = 0.35f;
+    float spark = 0.42f;
+};
+
+static LeaderEffective getLeaderEffective (juce::AudioProcessorValueTreeState& m)
+{
+    int si = 0;
+    if (auto* p = m.getParameter ("leaderStyle"))
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+            si = c->getIndex();
+    si = juce::jlimit (0, NUM_LEADER_STYLES - 1, si);
+    const auto& bias = LEADER_STYLE_BIASES[si];
+
+    auto j = [] (float x) { return juce::jlimit (0.f, 1.f, x); };
+    LeaderEffective L;
+    L.presence = j (readMain01 (m, "leaderPresence", 0.72f) + bias.presence);
+    L.tight    = j (readMain01 (m, "leaderTight",    0.38f) + bias.tight);
+    L.unity    = j (readMain01 (m, "leaderUnity",    0.45f) + bias.unity);
+    L.breath   = j (readMain01 (m, "leaderBreath",   0.35f) + bias.breath);
+    L.spark    = j (readMain01 (m, "leaderSpark",    0.42f) + bias.spark);
+    return L;
+}
+
+static float leaderMidiGain (juce::AudioProcessorValueTreeState& m)
+{
+    if (! mainMixerEngaged (m))
+        return 1.f;
+    const auto L = getLeaderEffective (m);
+    return juce::jlimit (0.18f, 1.f, 0.22f + 0.78f * L.presence);
+}
+
+static void applyLeaderToMelodic (const LeaderEffective& L,
+                                  float& temperature,
+                                  float& density,
+                                  float& swing,
+                                  float& humanize,
+                                  float& pocket,
+                                  float& velocity,
+                                  float& fillRate,
+                                  float& complexity,
+                                  float& ghostAmount,
+                                  float& staccato)
+{
+    humanize *= (1.0f - 0.55f * L.tight);
+    swing    *= (1.0f - 0.30f * L.tight);
+    pocket    = juce::jmin (1.f, pocket + 0.36f * L.tight);
+    density  *= (1.0f - 0.48f * L.breath);
+    fillRate  = juce::jmin (1.f, fillRate + 0.38f * L.spark);
+    ghostAmount = juce::jmin (1.f, ghostAmount + 0.30f * L.spark);
+    complexity  = juce::jmin (1.f, complexity + 0.22f * L.spark);
+    staccato *= (1.0f - 0.18f * L.unity);
+    temperature = temperature * (1.0f - 0.42f * L.unity) + 1.0f * (0.42f * L.unity);
+    velocity  = juce::jmin (1.f, velocity * (0.90f + 0.12f * L.unity));
+    velocity  = juce::jmin (1.f, velocity * (0.88f + 0.20f * L.presence));
+    density   = juce::jmin (1.f, density * (0.86f + 0.20f * L.presence));
+}
+
+static bool mainRowMidiOpen (juce::AudioProcessorValueTreeState& m,
+                             const char* muteId, const char* soloId)
+{
+    if (! mainMixerEngaged (m))
+        return true;
+    auto b = [&] (const char* id) -> bool
+    {
+        return m.getRawParameterValue (id) != nullptr && m.getRawParameterValue (id)->load() > 0.5f;
+    };
+    const bool anySolo = b ("mainSoloAnimal") || b ("mainSoloBootsy")
+                         || b ("mainSoloStevie") || b ("mainSoloPaul");
+    if (anySolo)
+        return b (soloId);
+    return ! b (muteId);
+}
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    layout.add (std::make_unique<juce::AudioParameterBool> ("leaderTabOn", "Leader tab", true));
     layout.add (std::make_unique<juce::AudioParameterBool> ("animalOn",  "Animal on",  true));
     layout.add (std::make_unique<juce::AudioParameterBool> ("bootsyOn",  "Bootsy on",  true));
     layout.add (std::make_unique<juce::AudioParameterBool> ("stevieOn",  "Stevie on",  true));
     layout.add (std::make_unique<juce::AudioParameterBool> ("paulOn",    "Paul on",    true));
+
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteAnimal", "Mute Animal", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloAnimal", "Solo Animal", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteBootsy", "Mute Bootsy", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloBootsy", "Solo Bootsy", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteStevie", "Mute Stevie", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloStevie", "Solo Stevie", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMutePaul",   "Mute Paul",   false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloPaul",   "Solo Paul",   false));
+
+    juce::StringArray leaderStyleNames;
+    for (int i = 0; i < NUM_LEADER_STYLES; ++i)
+        leaderStyleNames.add (LEADER_STYLE_NAMES[i]);
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("leaderStyle", "Arrangement", leaderStyleNames, 0));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderPresence", "Presence", 0.f, 1.f, 0.72f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderTight",    "Tight",    0.f, 1.f, 0.38f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderUnity",    "Unity",    0.f, 1.f, 0.45f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderBreath",   "Breath",   0.f, 1.f, 0.35f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderSpark",    "Spark",    0.f, 1.f, 0.42f));
+
     return layout;
 }
 
@@ -35,12 +150,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildAnimal
     layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.85f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.15f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("pocket",      "Pocket",      0.0f,  1.0f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",  1,     NUM_STEPS, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",      1,     NUM_STEPS, NUM_STEPS));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("loopWidthLock", "Loop Width Lock", false));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("perform",     "Perform",     false));
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Ticker",
-                                                              juce::StringArray { "2", "1", "1/2" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Speed",
+                                                              juce::StringArray { "x2", "1", "1/2" }, 1));
 
     for (int drum = 0; drum < NUM_DRUMS; ++drum)
     {
@@ -83,8 +200,8 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",   1, BootsyPreset::NUM_STEPS, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",     1, BootsyPreset::NUM_STEPS, BootsyPreset::NUM_STEPS));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("loopWidthLock", "Loop Width Lock", false));
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Ticker",
-                                                              juce::StringArray { "2", "1", "1/2" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Speed",
+                                                              juce::StringArray { "x2", "1", "1/2" }, 1));
 
     return layout;
 }
@@ -204,12 +321,35 @@ void BridgeProcessor::syncAnimalEngineFromAPVTS()
         drumEngine.setStyle ((int) apvtsAnimal.getRawParameterValue ("style")->load());
 
     drumEngine.setTemperature (1.0f);
-    drumEngine.setDensity    ((float)*apvtsAnimal.getRawParameterValue ("density"));
-    drumEngine.setSwing      ((float)*apvtsAnimal.getRawParameterValue ("swing"));
-    drumEngine.setHumanize   ((float)*apvtsAnimal.getRawParameterValue ("humanize"));
-    drumEngine.setVelocity   ((float)*apvtsAnimal.getRawParameterValue ("velocity"));
-    drumEngine.setFillRate   ((float)*apvtsAnimal.getRawParameterValue ("fillRate"));
-    drumEngine.setComplexity ((float)*apvtsAnimal.getRawParameterValue ("complexity"));
+    float density    = (float)*apvtsAnimal.getRawParameterValue ("density");
+    float swing      = (float)*apvtsAnimal.getRawParameterValue ("swing");
+    float humanize   = (float)*apvtsAnimal.getRawParameterValue ("humanize");
+    float velocity   = (float)*apvtsAnimal.getRawParameterValue ("velocity");
+    float fillRate   = (float)*apvtsAnimal.getRawParameterValue ("fillRate");
+    float complexity = (float)*apvtsAnimal.getRawParameterValue ("complexity");
+    float pocket     = (float)*apvtsAnimal.getRawParameterValue ("pocket");
+    float ghostAmt   = (float)*apvtsAnimal.getRawParameterValue ("ghostAmount");
+
+    const auto L = getLeaderEffective (apvtsMain);
+    humanize *= (1.0f - 0.55f * L.tight);
+    swing    *= (1.0f - 0.30f * L.tight);
+    pocket    = juce::jmin (1.f, pocket + 0.38f * L.tight);
+    density  *= (1.0f - 0.48f * L.breath);
+    fillRate  = juce::jmin (1.f, fillRate + 0.40f * L.spark);
+    ghostAmt  = juce::jmin (1.f, ghostAmt + 0.32f * L.spark);
+    complexity = juce::jmin (1.f, complexity + 0.22f * L.spark);
+    velocity  = juce::jmin (1.f, velocity * (0.90f + 0.14f * L.unity));
+    velocity  = juce::jmin (1.f, velocity * (0.88f + 0.20f * L.presence));
+    density   = juce::jmin (1.f, density * (0.86f + 0.20f * L.presence));
+
+    drumEngine.setDensity    (density);
+    drumEngine.setSwing      (swing);
+    drumEngine.setHumanize   (humanize);
+    drumEngine.setVelocity   (velocity);
+    drumEngine.setFillRate   (fillRate);
+    drumEngine.setComplexity (complexity);
+    drumEngine.setPocket     (pocket);
+    drumEngine.setGhostAmount (ghostAmt);
     drumEngine.setPatternLen (NUM_STEPS);
 
     animalPerformMode = ((bool) *apvtsAnimal.getRawParameterValue ("perform"));
@@ -285,6 +425,8 @@ void BridgeProcessor::randomizeAnimalSettings()
     randFloat ("velocity",   0.55f, 1.0f);
     randFloat ("fillRate",   0.05f, 0.45f);
     randFloat ("complexity", 0.2f,  0.95f);
+    randFloat ("pocket",     0.15f, 0.95f);
+    randFloat ("ghostAmount",0.15f, 0.95f);
 
     if (auto* p = apvtsAnimal.getParameter ("tickerSpeed"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
@@ -312,16 +454,28 @@ void BridgeProcessor::syncBootsyEngineFromAPVTS()
     bassEngine.setScale       ((int)  *apvtsBootsy.getRawParameterValue ("scale"));
     bassEngine.setRootNote    ((int)  *apvtsBootsy.getRawParameterValue ("rootNote"));
     bassEngine.setOctave      ((int)  *apvtsBootsy.getRawParameterValue ("octave"));
-    bassEngine.setTemperature ((float)*apvtsBootsy.getRawParameterValue ("temperature"));
-    bassEngine.setDensity     ((float)*apvtsBootsy.getRawParameterValue ("density"));
-    bassEngine.setSwing       ((float)*apvtsBootsy.getRawParameterValue ("swing"));
-    bassEngine.setHumanize    ((float)*apvtsBootsy.getRawParameterValue ("humanize"));
-    bassEngine.setPocket      ((float)*apvtsBootsy.getRawParameterValue ("pocket"));
-    bassEngine.setVelocity    ((float)*apvtsBootsy.getRawParameterValue ("velocity"));
-    bassEngine.setFillRate    ((float)*apvtsBootsy.getRawParameterValue ("fillRate"));
-    bassEngine.setComplexity  ((float)*apvtsBootsy.getRawParameterValue ("complexity"));
-    bassEngine.setGhostAmount ((float)*apvtsBootsy.getRawParameterValue ("ghostAmount"));
-    bassEngine.setStaccato    ((float)*apvtsBootsy.getRawParameterValue ("staccato"));
+    float temperature = (float)*apvtsBootsy.getRawParameterValue ("temperature");
+    float density     = (float)*apvtsBootsy.getRawParameterValue ("density");
+    float swing       = (float)*apvtsBootsy.getRawParameterValue ("swing");
+    float humanize    = (float)*apvtsBootsy.getRawParameterValue ("humanize");
+    float pocket      = (float)*apvtsBootsy.getRawParameterValue ("pocket");
+    float velocity    = (float)*apvtsBootsy.getRawParameterValue ("velocity");
+    float fillRate    = (float)*apvtsBootsy.getRawParameterValue ("fillRate");
+    float complexity  = (float)*apvtsBootsy.getRawParameterValue ("complexity");
+    float ghostAmount = (float)*apvtsBootsy.getRawParameterValue ("ghostAmount");
+    float staccato    = (float)*apvtsBootsy.getRawParameterValue ("staccato");
+    applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
+                          pocket, velocity, fillRate, complexity, ghostAmount, staccato);
+    bassEngine.setTemperature (temperature);
+    bassEngine.setDensity     (density);
+    bassEngine.setSwing       (swing);
+    bassEngine.setHumanize    (humanize);
+    bassEngine.setPocket      (pocket);
+    bassEngine.setVelocity    (velocity);
+    bassEngine.setFillRate    (fillRate);
+    bassEngine.setComplexity  (complexity);
+    bassEngine.setGhostAmount (ghostAmount);
+    bassEngine.setStaccato    (staccato);
     bassEngine.setPatternLen  (BootsyPreset::NUM_STEPS);
     bassEngine.setLocked      ((bool) *apvtsBootsy.getRawParameterValue ("locked"));
 
@@ -421,16 +575,28 @@ void BridgeProcessor::syncStevieEngineFromAPVTS()
     pianoEngine.setScale       ((int)  *apvtsStevie.getRawParameterValue ("scale"));
     pianoEngine.setRootNote    ((int)  *apvtsStevie.getRawParameterValue ("rootNote"));
     pianoEngine.setOctave      ((int)  *apvtsStevie.getRawParameterValue ("octave"));
-    pianoEngine.setTemperature ((float)*apvtsStevie.getRawParameterValue ("temperature"));
-    pianoEngine.setDensity     ((float)*apvtsStevie.getRawParameterValue ("density"));
-    pianoEngine.setSwing       ((float)*apvtsStevie.getRawParameterValue ("swing"));
-    pianoEngine.setHumanize    ((float)*apvtsStevie.getRawParameterValue ("humanize"));
-    pianoEngine.setPocket      ((float)*apvtsStevie.getRawParameterValue ("pocket"));
-    pianoEngine.setVelocity    ((float)*apvtsStevie.getRawParameterValue ("velocity"));
-    pianoEngine.setFillRate    ((float)*apvtsStevie.getRawParameterValue ("fillRate"));
-    pianoEngine.setComplexity  ((float)*apvtsStevie.getRawParameterValue ("complexity"));
-    pianoEngine.setGhostAmount ((float)*apvtsStevie.getRawParameterValue ("ghostAmount"));
-    pianoEngine.setStaccato    ((float)*apvtsStevie.getRawParameterValue ("staccato"));
+    float temperature = (float)*apvtsStevie.getRawParameterValue ("temperature");
+    float density     = (float)*apvtsStevie.getRawParameterValue ("density");
+    float swing       = (float)*apvtsStevie.getRawParameterValue ("swing");
+    float humanize    = (float)*apvtsStevie.getRawParameterValue ("humanize");
+    float pocket      = (float)*apvtsStevie.getRawParameterValue ("pocket");
+    float velocity    = (float)*apvtsStevie.getRawParameterValue ("velocity");
+    float fillRate    = (float)*apvtsStevie.getRawParameterValue ("fillRate");
+    float complexity  = (float)*apvtsStevie.getRawParameterValue ("complexity");
+    float ghostAmount = (float)*apvtsStevie.getRawParameterValue ("ghostAmount");
+    float staccato    = (float)*apvtsStevie.getRawParameterValue ("staccato");
+    applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
+                          pocket, velocity, fillRate, complexity, ghostAmount, staccato);
+    pianoEngine.setTemperature (temperature);
+    pianoEngine.setDensity     (density);
+    pianoEngine.setSwing       (swing);
+    pianoEngine.setHumanize    (humanize);
+    pianoEngine.setPocket      (pocket);
+    pianoEngine.setVelocity    (velocity);
+    pianoEngine.setFillRate    (fillRate);
+    pianoEngine.setComplexity  (complexity);
+    pianoEngine.setGhostAmount (ghostAmount);
+    pianoEngine.setStaccato    (staccato);
     pianoEngine.setPatternLen  (SteviePreset::NUM_STEPS);
     pianoEngine.setLocked      ((bool) *apvtsStevie.getRawParameterValue ("locked"));
 
@@ -451,16 +617,28 @@ void BridgeProcessor::syncPaulEngineFromAPVTS()
     guitarEngine.setScale       ((int)  *apvtsPaul.getRawParameterValue ("scale"));
     guitarEngine.setRootNote    ((int)  *apvtsPaul.getRawParameterValue ("rootNote"));
     guitarEngine.setOctave      ((int)  *apvtsPaul.getRawParameterValue ("octave"));
-    guitarEngine.setTemperature ((float)*apvtsPaul.getRawParameterValue ("temperature"));
-    guitarEngine.setDensity     ((float)*apvtsPaul.getRawParameterValue ("density"));
-    guitarEngine.setSwing       ((float)*apvtsPaul.getRawParameterValue ("swing"));
-    guitarEngine.setHumanize    ((float)*apvtsPaul.getRawParameterValue ("humanize"));
-    guitarEngine.setPocket      ((float)*apvtsPaul.getRawParameterValue ("pocket"));
-    guitarEngine.setVelocity    ((float)*apvtsPaul.getRawParameterValue ("velocity"));
-    guitarEngine.setFillRate    ((float)*apvtsPaul.getRawParameterValue ("fillRate"));
-    guitarEngine.setComplexity  ((float)*apvtsPaul.getRawParameterValue ("complexity"));
-    guitarEngine.setGhostAmount ((float)*apvtsPaul.getRawParameterValue ("ghostAmount"));
-    guitarEngine.setStaccato    ((float)*apvtsPaul.getRawParameterValue ("staccato"));
+    float temperature = (float)*apvtsPaul.getRawParameterValue ("temperature");
+    float density     = (float)*apvtsPaul.getRawParameterValue ("density");
+    float swing       = (float)*apvtsPaul.getRawParameterValue ("swing");
+    float humanize    = (float)*apvtsPaul.getRawParameterValue ("humanize");
+    float pocket      = (float)*apvtsPaul.getRawParameterValue ("pocket");
+    float velocity    = (float)*apvtsPaul.getRawParameterValue ("velocity");
+    float fillRate    = (float)*apvtsPaul.getRawParameterValue ("fillRate");
+    float complexity  = (float)*apvtsPaul.getRawParameterValue ("complexity");
+    float ghostAmount = (float)*apvtsPaul.getRawParameterValue ("ghostAmount");
+    float staccato    = (float)*apvtsPaul.getRawParameterValue ("staccato");
+    applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
+                          pocket, velocity, fillRate, complexity, ghostAmount, staccato);
+    guitarEngine.setTemperature (temperature);
+    guitarEngine.setDensity     (density);
+    guitarEngine.setSwing       (swing);
+    guitarEngine.setHumanize    (humanize);
+    guitarEngine.setPocket      (pocket);
+    guitarEngine.setVelocity    (velocity);
+    guitarEngine.setFillRate    (fillRate);
+    guitarEngine.setComplexity  (complexity);
+    guitarEngine.setGhostAmount (ghostAmount);
+    guitarEngine.setStaccato    (staccato);
     guitarEngine.setPatternLen  (PaulPreset::NUM_STEPS);
     guitarEngine.setLocked      ((bool) *apvtsPaul.getRawParameterValue ("locked"));
 
@@ -598,20 +776,24 @@ void BridgeProcessor::flushPendingNoteOffs (juce::Array<PendingOff>& pending, ju
 void BridgeProcessor::scheduleAnimalNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
                                                    int sampleOffset, juce::MidiBuffer& midi)
 {
+    if (! mainRowMidiOpen (apvtsMain, "mainMuteAnimal", "mainSoloAnimal"))
+        return;
+
     DrumStep hits;
     drumEngine.evaluateStepForPlayback (globalStep, wrappedStep, hits, samplesPerStep);
 
     for (int drum = 0; drum < NUM_DRUMS; ++drum)
     {
         if (! isAnimalLaneAudible (drum)) continue;
-        if (!hits[drum].active) continue;
+        if (! hits[(size_t) drum].active) continue;
 
         int swingOff = drumEngine.getSwingOffset (wrappedStep, samplesPerStep);
         int humanOff = hits[(size_t) drum].timeShift;
         int finalOff = juce::jlimit (0, samplesPerBlock - 1, sampleOffset + swingOff + humanOff);
 
         const int midiNote = juce::jlimit (1, 127, (int) DRUM_MIDI_NOTES[drum]);
-        uint8 vel = hits[(size_t) drum].velocity;
+        float g = leaderMidiGain (apvtsMain);
+        uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hits[(size_t) drum].velocity * g + 0.5f));
 
         constexpr int midiChannel = 10;
         midi.addEvent (juce::MidiMessage::noteOn  (midiChannel, midiNote, vel), finalOff);
@@ -719,6 +901,9 @@ void BridgeProcessor::processAnimalBlock (juce::AudioBuffer<float>& buffer, juce
 void BridgeProcessor::scheduleBootsyNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
                                                    int sampleOffset, juce::MidiBuffer& midi)
 {
+    if (! mainRowMidiOpen (apvtsMain, "mainMuteBootsy", "mainSoloBootsy"))
+        return;
+
     const BassHit& hit  = bassEngine.getStep (wrappedStep);
     if (!hit.active) return;
 
@@ -726,7 +911,8 @@ void BridgeProcessor::scheduleBootsyNotesForStep (int /*globalStep*/, int wrappe
     int humanOff = hit.timeShift;
     int finalOff = juce::jlimit (0, samplesPerBlock - 1, sampleOffset + swingOff + humanOff);
 
-    uint8 vel    = hit.velocity;
+        float g = leaderMidiGain (apvtsMain);
+    uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hit.velocity * g + 0.5f));
     int   note   = juce::jlimit (0, 127, hit.midiNote);
 
     midi.addEvent (juce::MidiMessage::noteOn (bootsyMidiChannel, note, vel), finalOff);
@@ -826,6 +1012,9 @@ void BridgeProcessor::processBootsyBlock (juce::AudioBuffer<float>& buffer, juce
 void BridgeProcessor::scheduleStevieNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
                                                   int sampleOffset, juce::MidiBuffer& midi)
 {
+    if (! mainRowMidiOpen (apvtsMain, "mainMuteStevie", "mainSoloStevie"))
+        return;
+
     const PianoHit& hit = pianoEngine.getStep (wrappedStep);
     if (! hit.active) return;
 
@@ -833,7 +1022,8 @@ void BridgeProcessor::scheduleStevieNotesForStep (int /*globalStep*/, int wrappe
     int humanOff = hit.timeShift;
     int finalOff = juce::jlimit (0, samplesPerBlock - 1, sampleOffset + swingOff + humanOff);
 
-    uint8 vel  = hit.velocity;
+        float g = leaderMidiGain (apvtsMain);
+    uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hit.velocity * g + 0.5f));
     int   note = juce::jlimit (0, 127, hit.midiNote);
 
     midi.addEvent (juce::MidiMessage::noteOn (stevieMidiChannel, note, vel), finalOff);
@@ -933,6 +1123,9 @@ void BridgeProcessor::processStevieBlock (juce::AudioBuffer<float>& buffer, juce
 void BridgeProcessor::schedulePaulNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
                                                 int sampleOffset, juce::MidiBuffer& midi)
 {
+    if (! mainRowMidiOpen (apvtsMain, "mainMutePaul", "mainSoloPaul"))
+        return;
+
     const GuitarHit& hit = guitarEngine.getStep (wrappedStep);
     if (! hit.active) return;
 
@@ -940,7 +1133,8 @@ void BridgeProcessor::schedulePaulNotesForStep (int /*globalStep*/, int wrappedS
     int humanOff = hit.timeShift;
     int finalOff = juce::jlimit (0, samplesPerBlock - 1, sampleOffset + swingOff + humanOff);
 
-    uint8 vel  = hit.velocity;
+        float g = leaderMidiGain (apvtsMain);
+    uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hit.velocity * g + 0.5f));
     int   note = juce::jlimit (0, 127, hit.midiNote);
 
     midi.addEvent (juce::MidiMessage::noteOn (paulMidiChannel, note, vel), finalOff);
@@ -1120,7 +1314,7 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
 {
     juce::XmlElement root ("BridgeState");
-    root.setAttribute ("bridgeVersion", 2);
+    root.setAttribute ("bridgeVersion", 4);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
     if (auto xmlA = apvtsAnimal.copyState().createXml())

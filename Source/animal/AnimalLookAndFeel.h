@@ -256,7 +256,7 @@ public:
         {
             const auto text = tb->getButtonText();
 
-            auto isPrimaryFilled = text == "GENERATE" || text == "FILL";
+            auto isPrimaryFilled = text == "GEN" || text == "FILL" || text == "PERF";
             auto isToggleStyle   = tb->getClickingTogglesState();
 
             juce::Colour fill = surfaceContainerHigh;
@@ -320,7 +320,7 @@ public:
 
         juce::Colour fill = surfaceContainerHigh;
         if (button.getButtonText() == "S" && on)
-            fill = tertiaryContainer;
+            fill = juce::Colour (0xff143d28);
         else if (button.getButtonText() == "M" && on)
             fill = surfaceBright;
 
@@ -332,8 +332,10 @@ public:
         g.setColour (outline.withAlpha (0.45f));
         g.drawRoundedRectangle (bounds, cornerExtraSmall, 1.0f);
 
-        g.setColour (on ? onSurface : onSurfaceVariant);
-        g.setFont (juce::Font (juce::FontOptions().withHeight (11.0f).withStyle ("Semibold")));
+        g.setColour (button.getButtonText() == "S" && on
+                          ? juce::Colour (0xff7dffb3)
+                          : (on ? onSurface : onSurfaceVariant));
+        g.setFont (juce::Font (juce::FontOptions().withHeight (10.0f).withStyle ("Semibold")));
         g.drawFittedText (button.getButtonText(), button.getLocalBounds(), juce::Justification::centred, 1);
     }
 };

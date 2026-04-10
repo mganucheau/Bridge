@@ -1,5 +1,33 @@
 #include "PaulPanel.h"
 
+namespace
+{
+static void getGuitarMelodicMidiRange (const GuitarEngine& engine, int& minMidi, int& maxMidi)
+{
+    minMidi = 127;
+    maxMidi = 0;
+    const auto& pat = engine.getPatternForGrid();
+    for (int s = 0; s < PaulPreset::NUM_STEPS; ++s)
+    {
+        const auto& h = pat[(size_t) s];
+        if (! h.active) continue;
+        minMidi = juce::jmin (minMidi, h.midiNote);
+        maxMidi = juce::jmax (maxMidi, h.midiNote);
+    }
+    if (minMidi > maxMidi)
+    {
+        const int r = engine.degreeToMidiNote (0, -1);
+        minMidi = juce::jlimit (0, 127, r - 14);
+        maxMidi = juce::jlimit (0, 127, r + 14);
+    }
+    else
+    {
+        minMidi = juce::jmax (0, minMidi - 2);
+        maxMidi = juce::jmin (127, maxMidi + 2);
+    }
+}
+}
+
 class FillHoldListener : public juce::MouseListener
 {
 public:
@@ -52,11 +80,8 @@ void PaulPianoRollComponent::paint (juce::Graphics& g)
     g.drawRoundedRectangle (full.reduced (0.5f), cornerSmall, 1.0f);
 
     auto& engine = proc.guitarEngine;
-    int   root   = engine.degreeToMidiNote (0);
-    int   low    = root - 18;
-    int   high   = root + 24;
-    low  = jlimit (0, 127, low);
-    high = jlimit (0, 127, high);
+    int low, high;
+    getGuitarMelodicMidiRange (engine, low, high);
     if (high <= low) return;
 
     static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -85,9 +110,13 @@ void PaulPianoRollComponent::paint (juce::Graphics& g)
                     juce::Justification::centredRight, true);
     }
 
-    g.setColour (primary.withAlpha (0.35f));
-    const float ry = full.getY() + (float)(high - root) * rowH;
-    g.fillRect (full.getX(), ry, full.getWidth(), rowH);
+    const int root = engine.degreeToMidiNote (0, -1);
+    if (root >= low && root <= high)
+    {
+        g.setColour (primary.withAlpha (0.35f));
+        const float ry = full.getY() + (float)(high - root) * rowH;
+        g.fillRect (full.getX(), ry, full.getWidth(), rowH);
+    }
 }
 
 // ─── PaulBassGridComponent ────────────────────────────────────────────────────────
@@ -121,12 +150,13 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
     float gridTop = inner.getY() + headerH;
     float hBody   = inner.getHeight() - headerH;
 
-    constexpr int DISPLAY_ROWS = 6;
-    float cellW   = inner.getWidth() / (float) PaulPreset::NUM_STEPS;
-    float cellH   = hBody / (float) DISPLAY_ROWS;
-    float pad     = 2.0f;
+    int minMidi = 60, maxMidi = 72;
+    getGuitarMelodicMidiRange (engine, minMidi, maxMidi);
+    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
 
-    static const int rowDegrees[DISPLAY_ROWS] = { 5, 4, 3, 2, 0, 7 };
+    float cellW = inner.getWidth() / (float) PaulPreset::NUM_STEPS;
+    float cellH = hBody / (float) nRows;
+    float pad   = 2.0f;
 
     g.setColour (onSurfaceVariant);
     g.setFont   (juce::Font (juce::FontOptions().withHeight (11.0f)));
@@ -138,13 +168,9 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
                     juce::Justification::centred, false);
     }
 
-    for (int row = 0; row < DISPLAY_ROWS; ++row)
+    for (int row = 0; row < nRows; ++row)
     {
         float cy = gridTop + row * cellH;
-
-        g.setColour (onSurfaceVariant.withAlpha (0.5f));
-        g.setFont   (juce::Font (juce::FontOptions().withHeight (9.0f)));
-
         for (int step = 0; step < PaulPreset::NUM_STEPS; ++step)
         {
             float cx = inner.getX() + step * cellW + pad;
@@ -181,24 +207,22 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
         const GuitarHit& hit = pattern[(size_t) step];
         if (! hit.active) continue;
 
-        int deg = hit.degree;
-        int displayRow = 4;
-        for (int r = 0; r < DISPLAY_ROWS; ++r)
-            if (rowDegrees[r] == deg) { displayRow = r; break; }
+        const int midi = juce::jlimit (minMidi, maxMidi, hit.midiNote);
+        int displayRow = maxMidi - midi;
+        displayRow = juce::jlimit (0, nRows - 1, displayRow);
 
         float cx = inner.getX() + step * cellW + pad;
         float cy = gridTop + displayRow * cellH + pad;
         auto  cell = juce::Rectangle<float> (cx, cy,
                                               cellW - pad * 2.0f, cellH - pad * 2.0f);
 
-        auto col = PaulColors::DegreeColors[jlimit (0, 7, deg)];
-
+        juce::Colour col = primary.withAlpha (hit.isGhost ? 0.35f : 0.72f);
         float velFrac = hit.velocity / 127.0f;
         if (hit.isGhost)
             col = col.withAlpha (0.28f + velFrac * 0.25f);
 
         if (step == currentStep)
-            col = col.brighter (0.25f);
+            col = col.brighter (0.2f);
 
         g.setColour (col);
         g.fillRoundedRectangle (cell, cornerExtraSmall);
@@ -206,11 +230,6 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
         float velLineW = (cell.getWidth() - 2.0f) * velFrac;
         g.setColour (onSurface.withAlpha (0.30f));
         g.fillRect  (cell.getX() + 1.0f, cell.getY() + 1.0f, velLineW, 2.0f);
-
-        g.setColour (hit.isGhost ? onSurfaceVariant.withAlpha (0.5f) : onSurface.withAlpha (0.9f));
-        g.setFont   (juce::Font (juce::FontOptions().withHeight (9.0f)));
-        g.drawFittedText (PaulPreset::DEGREE_NAMES[jlimit (0, 7, deg)], cell.toNearestInt(),
-                         juce::Justification::centred, 1);
     }
 
     if (currentStep >= 0 && currentStep < PaulPreset::NUM_STEPS)
@@ -221,20 +240,6 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
 
         g.setColour (primary.withAlpha (0.85f));
         g.fillRect  (cx + pad, inner.getY(), cellW - pad * 2.0f, 2.0f);
-    }
-
-    const float legendX = full.getRight() - margin - (float)(PaulPreset::NUM_DEGREES) * 26.0f;
-    const float legendY = full.getBottom() - 14.0f;
-    for (int d = 0; d < PaulPreset::NUM_DEGREES; ++d)
-    {
-        float lx = legendX + d * 26.0f;
-        auto legendCell = juce::Rectangle<float> (lx, legendY, 22.0f, 10.0f);
-        g.setColour (PaulColors::DegreeColors[d].withAlpha (0.75f));
-        g.fillRoundedRectangle (legendCell, 3.0f);
-        g.setColour (onSurface.withAlpha (0.7f));
-        g.setFont   (juce::Font (juce::FontOptions().withHeight (8.0f)));
-        g.drawFittedText (PaulPreset::DEGREE_NAMES[d], legendCell.toNearestInt(),
-                         juce::Justification::centred, 1);
     }
 }
 
@@ -248,21 +253,23 @@ void PaulBassGridComponent::mouseDown (const juce::MouseEvent& e)
     const float innerRight = (float)getWidth() - margin;
     const float gridTop    = margin + headerH;
 
-    constexpr int DISPLAY_ROWS = 6;
+    int minMidi = 60, maxMidi = 72;
+    getGuitarMelodicMidiRange (engine, minMidi, maxMidi);
+    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
+
     float cellW = (innerRight - innerLeft) / (float)PaulPreset::NUM_STEPS;
     float gridH = (float)getHeight() - margin * 2.0f - headerH;
-    float cellH = gridH / (float)DISPLAY_ROWS;
+    float cellH = gridH / (float)nRows;
 
     int step = (int)((e.x - innerLeft) / cellW);
     int row  = (int)((e.y - gridTop) / cellH);
 
     if (e.y < gridTop) return;
-    if (step < 0 || step >= PaulPreset::NUM_STEPS || row < 0 || row >= DISPLAY_ROWS) return;
+    if (step < 0 || step >= PaulPreset::NUM_STEPS || row < 0 || row >= nRows) return;
 
     auto& pat = const_cast<GuitarPattern&>(engine.getPattern());
-
-    static const int rowDegrees[DISPLAY_ROWS] = { 5, 4, 3, 2, 0, 7 };
-    int targetDeg = rowDegrees[row];
+    const int targetMidi = juce::jlimit (minMidi, maxMidi, maxMidi - row);
+    int prevMidi = step > 0 ? pat[(size_t) (step - 1)].midiNote : -1;
 
     if (e.mods.isRightButtonDown())
     {
@@ -272,15 +279,16 @@ void PaulBassGridComponent::mouseDown (const juce::MouseEvent& e)
     }
     else
     {
-        if (pat[(size_t)step].active && pat[(size_t)step].degree == targetDeg)
+        if (pat[(size_t)step].active && pat[(size_t)step].midiNote == targetMidi)
         {
             pat[(size_t)step].active = false;
         }
         else
         {
+            const int deg = engine.nearestDegreeForMidi (targetMidi, prevMidi);
             pat[(size_t)step].active   = true;
-            pat[(size_t)step].degree   = targetDeg;
-            pat[(size_t)step].midiNote = engine.degreeToMidiNote (targetDeg);
+            pat[(size_t)step].degree   = deg;
+            pat[(size_t)step].midiNote = engine.degreeToMidiNote (deg, prevMidi);
             pat[(size_t)step].velocity = 100;
             pat[(size_t)step].isGhost  = false;
         }
@@ -438,7 +446,7 @@ PaulPanel::PaulPanel (BridgeProcessor& p)
     addAndMakeVisible (knobStaccato);
     addAndMakeVisible (knobFillRate);
 
-    tickerLabel.setText ("Tick", juce::dontSendNotification);
+    tickerLabel.setText ("Speed", juce::dontSendNotification);
     tickerLabel.setColour (juce::Label::textColourId, PaulColors::TextDim);
     tickerLabel.setFont (juce::Font (juce::FontOptions().withHeight (11.0f)));
     tickerLabel.setJustificationType (juce::Justification::centredLeft);
@@ -450,6 +458,7 @@ PaulPanel::PaulPanel (BridgeProcessor& p)
     addAndMakeVisible (styleLabel);
 
     generateButton.setTooltip ("Randomize groove parameters and generate a new pattern.");
+    generateButton.setButtonText ("GEN");
     generateButton.onClick = [this] { proc.triggerPaulGenerate(); };
 
     fillButton.setTooltip ("Hold to layer live fills on top of the current line.");
@@ -673,21 +682,21 @@ void PaulPanel::resized()
     auto loopRow = bottom.removeFromTop (102);
     loopSectionLabel.setBounds (loopRow.removeFromLeft (40).withHeight (16));
     knobLoopStart.setBounds (loopRow.removeFromLeft (92));
-    loopWidthLockButton.setBounds (loopRow.removeFromLeft (34).withSizeKeepingCentre (30, 30));
+    loopWidthLockButton.setBounds (loopRow.removeFromLeft (32).withSizeKeepingCentre (28, 28));
     knobLoopEnd.setBounds (loopRow.removeFromLeft (92));
-    loopRow.removeFromLeft (10);
+    loopRow.removeFromLeft (8);
 
-    tickerLabel.setBounds (loopRow.removeFromLeft (32).withHeight (18));
-    auto tickStack = loopRow.removeFromLeft (42);
-    const int tih = jmax (22, tickStack.getHeight() / 3);
-    tickerFastButton.setBounds   (tickStack.removeFromTop (tih).reduced (0, 1));
-    tickerNormalButton.setBounds (tickStack.removeFromTop (tih).reduced (0, 1));
-    tickerSlowButton.setBounds   (tickStack.reduced (0, 1));
+    tickerLabel.setBounds (loopRow.removeFromLeft (44).withHeight (18));
+    auto tickRow = loopRow.removeFromLeft (92);
+    const int th = juce::jmin (24, tickRow.getHeight());
+    tickerFastButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
+    tickerNormalButton.setBounds (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
+    tickerSlowButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
 
     loopRow.removeFromLeft (10);
-    const int actW = jmin (88, loopRow.getWidth() / 2);
-    generateButton.setBounds (loopRow.removeFromLeft (actW).reduced (0, 6));
-    fillButton.setBounds     (loopRow.removeFromLeft (actW).reduced (0, 6));
+    const int actW = juce::jmin (56, loopRow.getWidth() / 2);
+    generateButton.setBounds (loopRow.removeFromLeft (actW).reduced (0, 10));
+    fillButton.setBounds     (loopRow.removeFromLeft (actW).reduced (0, 10));
 
     bottom.removeFromTop (6);
 

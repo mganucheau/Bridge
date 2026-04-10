@@ -83,9 +83,10 @@ private:
 
     LabelledKnob knobDensity, knobSwing, knobHumanize;
     LabelledKnob knobVelocity, knobFillRate, knobComplexity;
+    LabelledKnob knobPocket, knobGhost;
 
     juce::Label    tickerLabel;
-    juce::TextButton tickerFastButton   { "2" };
+    juce::TextButton tickerFastButton   { "x2" };
     juce::TextButton tickerNormalButton { "1" };
     juce::TextButton tickerSlowButton   { "1/2" };
 

@@ -27,7 +27,10 @@ public:
     void generateFill (int fromStep = 12);  // from step 12 = last 4 steps
 
     // ── Pattern access ─────────────────────────────────────────────────────
-    const DrumStep&    getStep (int step) const { return pattern[step]; }
+    const DrumStep& getStep (int step) const
+    {
+        return pattern[(size_t) juce::jlimit (0, NUM_STEPS - 1, step)];
+    }
     const DrumPattern& getPattern()       const { return pattern; }
     const DrumPattern& getPatternForGrid() const { return gridPreview; }
 
@@ -42,6 +45,8 @@ public:
     void setVelocity   (float v) { velocityMul = jlimit(0.0f,  1.0f,  v); }
     void setFillRate   (float f) { fillRate    = jlimit(0.0f,  1.0f,  f); }
     void setComplexity (float c) { complexity  = jlimit(0.0f,  1.0f,  c); }
+    void setPocket     (float p) { pocket      = jlimit(0.0f,  1.0f,  p); }
+    void setGhostAmount(float g) { ghostAmount = jlimit(0.0f,  1.0f,  g); }
     void setPatternLen (int   l) { patternLen  = jlimit(1, NUM_STEPS, l); }
     void setSeed       (uint32 s){ seed        = s; rng.seed(seed); }
     void setPhraseBars (int bars) { phraseBars = jlimit (1, 64, bars); }
@@ -56,6 +61,8 @@ public:
     float getVelocity()    const { return velocityMul; }
     float getFillRate()    const { return fillRate; }
     float getComplexity()  const { return complexity; }
+    float getPocket()      const { return pocket; }
+    float getGhostAmount() const { return ghostAmount; }
     int   getPatternLen()  const { return patternLen; }
     uint32 getSeed()       const { return seed; }
     int   getPhraseBars()  const { return phraseBars; }
@@ -93,6 +100,8 @@ private:
     float velocityMul = 0.85f;
     float fillRate    = 0.15f;
     float complexity  = 0.5f;
+    float pocket      = 0.5f;
+    float ghostAmount = 0.5f;
     int   patternLen  = NUM_STEPS;
     uint32 seed       = 42;
 

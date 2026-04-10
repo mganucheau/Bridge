@@ -109,7 +109,7 @@ private:
     int  lockedLoopWidth    = BootsyPreset::NUM_STEPS;
 
     juce::Label    tickerLabel;
-    juce::TextButton tickerFastButton   { "2" };
+    juce::TextButton tickerFastButton   { "x2" };
     juce::TextButton tickerNormalButton { "1" };
     juce::TextButton tickerSlowButton   { "1/2" };
 

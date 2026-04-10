@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.22)
 project(Bridge VERSION 1.0.0)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -33,6 +35,9 @@ juce_add_plugin(Bridge
 )
 
 juce_generate_juce_header(Bridge)
+
+# So #include "LeaderStylePresets.h" and other flat Source/ headers resolve for all toolchains/IDEs.
+target_include_directories(Bridge PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
 target_sources(Bridge PRIVATE
     Source/BridgeProcessor.cpp

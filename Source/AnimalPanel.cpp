@@ -75,10 +75,11 @@ void DrumGridComponent::paint (juce::Graphics& g)
     float hBody = inner.getHeight() - headerH;
     float gridTop = inner.getY() + headerH;
 
-    constexpr float labelW = 64.0f;
-    constexpr float buttonW = 28.0f;
-    constexpr float buttonGap = 4.0f;
-    const float gridX = inner.getX() + labelW + (buttonW * 2.0f) + (buttonGap * 2.0f) + 8.0f;
+    constexpr float labelW = 72.0f;
+    constexpr float buttonW = 22.0f;
+    constexpr float buttonGap = 3.0f;
+    constexpr float labelPadRight = 10.0f;
+    const float gridX = inner.getX() + labelW + labelPadRight + (buttonW * 2.0f) + (buttonGap * 2.0f) + 8.0f;
 
     float cellW = (inner.getRight() - gridX) / (float)NUM_STEPS;
     float cellH = hBody / (float)NUM_DRUMS;
@@ -94,8 +95,8 @@ void DrumGridComponent::paint (juce::Graphics& g)
     }
 
     g.setFont (juce::Font (juce::FontOptions().withHeight (13.0f).withStyle ("Semibold")));
-    g.drawText ("Lane", juce::Rectangle<float> (inner.getX(), inner.getY(), labelW + (buttonW * 2.0f) + (buttonGap * 2.0f), headerH - 2.0f),
-                juce::Justification::centred, false);
+    g.drawText ("Lane", juce::Rectangle<float> (inner.getX(), inner.getY(), labelW, headerH - 2.0f),
+                juce::Justification::centredRight, false);
 
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
@@ -215,12 +216,13 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
 
     constexpr float margin   = 10.0f;
     constexpr float headerH  = 26.0f;
-    constexpr float labelW = 64.0f;
-    constexpr float buttonW = 28.0f;
-    constexpr float buttonGap = 4.0f;
+    constexpr float labelW = 72.0f;
+    constexpr float buttonW = 22.0f;
+    constexpr float buttonGap = 3.0f;
+    constexpr float labelPadRight = 10.0f;
     const float innerLeft = margin;
     const float innerRight = (float) getWidth() - margin;
-    const float gridX = innerLeft + labelW + (buttonW * 2.0f) + (buttonGap * 2.0f) + 8.0f;
+    const float gridX = innerLeft + labelW + labelPadRight + (buttonW * 2.0f) + (buttonGap * 2.0f) + 8.0f;
 
     float hBody = (float) getHeight() - margin * 2.0f - headerH;
     float gridTop = margin + headerH;
@@ -246,9 +248,10 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
 
 void DrumGridComponent::resized()
 {
-    constexpr int labelW = 64;
-    constexpr int buttonW = 28;
-    constexpr int buttonGap = 4;
+    constexpr int labelW = 72;
+    constexpr int labelPad = 10;
+    constexpr int buttonW = 22;
+    constexpr int buttonGap = 3;
     constexpr int margin = 10;
     constexpr int headerH = 26;
 
@@ -260,15 +263,15 @@ void DrumGridComponent::resized()
     {
         const int drum = visualRowToDrum (visualRow);
         auto row = juce::Rectangle<int> (r.getX(), r.getY() + visualRow * rowH, r.getWidth(), rowH);
-        auto controls = row.removeFromLeft (labelW + buttonW * 2 + buttonGap * 2 + 2);
-        controls.removeFromLeft (labelW - 2);
+        auto controls = row.removeFromLeft (labelW + labelPad + buttonW * 2 + buttonGap * 2 + 2);
+        controls.removeFromLeft (labelW + labelPad);
 
         auto mute = controls.removeFromLeft (buttonW);
         controls.removeFromLeft (buttonGap);
         auto solo = controls.removeFromLeft (buttonW);
 
-        muteButtons[drum]->setBounds (mute.reduced (1, 2));
-        soloButtons[drum]->setBounds (solo.reduced (1, 2));
+        muteButtons[drum]->setBounds (mute.reduced (0, 3));
+        soloButtons[drum]->setBounds (solo.reduced (0, 3));
     }
 }
 
@@ -319,7 +322,9 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
       knobHumanize    ("humanize",    "Humanize",  p.apvtsAnimal),
       knobVelocity    ("velocity",    "Velocity",  p.apvtsAnimal),
       knobFillRate    ("fillRate",    "Fill Rate", p.apvtsAnimal),
-      knobComplexity  ("complexity",  "Complexity",p.apvtsAnimal)
+      knobComplexity  ("complexity",  "Complexity",p.apvtsAnimal),
+      knobPocket      ("pocket",      "Pocket",    p.apvtsAnimal),
+      knobGhost       ("ghostAmount", "Ghost",     p.apvtsAnimal)
 {
     setLookAndFeel (&laf);
 
@@ -356,8 +361,10 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
     addAndMakeVisible (knobVelocity);
     addAndMakeVisible (knobFillRate);
     addAndMakeVisible (knobComplexity);
+    addAndMakeVisible (knobPocket);
+    addAndMakeVisible (knobGhost);
 
-    tickerLabel.setText ("Tick", juce::dontSendNotification);
+    tickerLabel.setText ("Speed", juce::dontSendNotification);
     tickerLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
     tickerLabel.setFont (juce::Font (juce::FontOptions().withHeight (11.0f)));
     tickerLabel.setJustificationType (juce::Justification::centredLeft);
@@ -376,13 +383,16 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
 
     generateButton.setTooltip ("Randomize settings and generate a new pattern.");
     generateButton.onClick = [this] { proc.triggerAnimalGenerate(); };
+    generateButton.setButtonText ("GEN");
 
     performButton.setTooltip ("While transport runs: regenerate with seamless crossfade into the next loop.");
+    performButton.setButtonText ("PERF");
     performButton.setClickingTogglesState (true);
     performAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
                         (proc.apvtsAnimal, "perform", performButton);
 
     fillButton.setTooltip ("Hold to layer live fills on top of the current groove.");
+    fillButton.setButtonText ("FILL");
     fillButton.setMouseCursor (juce::MouseCursor::PointingHandCursor);
     fillHoldListener = std::make_unique<FillHoldListener> (proc, fillButton);
     fillButton.addMouseListener (fillHoldListener.get(), false);
@@ -547,42 +557,48 @@ void AnimalPanel::resized()
 
     area.removeFromTop (8);
 
-    const int bottomPanelH = 228;
+    const int bottomPanelH = 332;
     auto bottom = area.removeFromBottom (bottomPanelH);
     drumGrid.setBounds (area);
 
     bottom.removeFromTop (6);
 
-    auto knobRow = bottom.removeFromTop (98);
-    const int knobW = juce::jmax (72, knobRow.getWidth() / 6);
-    knobDensity.setBounds    (knobRow.removeFromLeft (knobW));
-    knobSwing.setBounds      (knobRow.removeFromLeft (knobW));
-    knobHumanize.setBounds   (knobRow.removeFromLeft (knobW));
-    knobVelocity.setBounds   (knobRow.removeFromLeft (knobW));
-    knobFillRate.setBounds   (knobRow.removeFromLeft (knobW));
-    knobComplexity.setBounds (knobRow);
+    auto knobRow1 = bottom.removeFromTop (96);
+    int knobW = juce::jmax (68, knobRow1.getWidth() / 4);
+    knobDensity.setBounds    (knobRow1.removeFromLeft (knobW));
+    knobSwing.setBounds      (knobRow1.removeFromLeft (knobW));
+    knobHumanize.setBounds   (knobRow1.removeFromLeft (knobW));
+    knobPocket.setBounds     (knobRow1);
+
+    bottom.removeFromTop (4);
+    auto knobRow2 = bottom.removeFromTop (96);
+    knobW = juce::jmax (68, knobRow2.getWidth() / 4);
+    knobVelocity.setBounds   (knobRow2.removeFromLeft (knobW));
+    knobFillRate.setBounds   (knobRow2.removeFromLeft (knobW));
+    knobComplexity.setBounds (knobRow2.removeFromLeft (knobW));
+    knobGhost.setBounds      (knobRow2);
 
     bottom.removeFromTop (8);
 
-    auto loopRow = bottom.removeFromTop (102);
+    auto loopRow = bottom.removeFromTop (100);
     loopSectionLabel.setBounds (loopRow.removeFromLeft (40).withHeight (16));
-    knobLoopStart.setBounds (loopRow.removeFromLeft (92));
-    loopWidthLockButton.setBounds (loopRow.removeFromLeft (34).withSizeKeepingCentre (30, 30));
-    knobLoopEnd.setBounds (loopRow.removeFromLeft (92));
-    loopRow.removeFromLeft (10);
+    knobLoopStart.setBounds (loopRow.removeFromLeft (88));
+    loopWidthLockButton.setBounds (loopRow.removeFromLeft (32).withSizeKeepingCentre (28, 28));
+    knobLoopEnd.setBounds (loopRow.removeFromLeft (88));
+    loopRow.removeFromLeft (8);
 
-    tickerLabel.setBounds (loopRow.removeFromLeft (32).withHeight (18));
-    auto tickStack = loopRow.removeFromLeft (42);
-    const int tih = juce::jmax (22, tickStack.getHeight() / 3);
-    tickerFastButton.setBounds   (tickStack.removeFromTop (tih).reduced (0, 1));
-    tickerNormalButton.setBounds (tickStack.removeFromTop (tih).reduced (0, 1));
-    tickerSlowButton.setBounds   (tickStack.reduced (0, 1));
+    tickerLabel.setBounds (loopRow.removeFromLeft (44).withHeight (18));
+    auto tickRow = loopRow.removeFromLeft (92);
+    const int th = juce::jmin (24, tickRow.getHeight());
+    tickerFastButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
+    tickerNormalButton.setBounds (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
+    tickerSlowButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
 
     loopRow.removeFromLeft (10);
-    const int actW = juce::jmin (88, loopRow.getWidth() / 3);
-    generateButton.setBounds (loopRow.removeFromLeft (actW).reduced (0, 6));
-    performButton.setBounds  (loopRow.removeFromLeft (actW).reduced (0, 6));
-    fillButton.setBounds     (loopRow.removeFromLeft (actW).reduced (0, 6));
+    const int actW = juce::jmin (56, loopRow.getWidth() / 3);
+    generateButton.setBounds (loopRow.removeFromLeft (actW).reduced (0, 10));
+    performButton.setBounds  (loopRow.removeFromLeft (actW).reduced (0, 10));
+    fillButton.setBounds     (loopRow.removeFromLeft (actW).reduced (0, 10));
 
     bottom.removeFromTop (6);
 

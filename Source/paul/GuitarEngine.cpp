@@ -40,6 +40,23 @@ int GuitarEngine::degreeToMidiNote (int degree, int prevMidi) const
     return rootMidiBase() + DEGREE_SEMITONES[degree];
 }
 
+int GuitarEngine::nearestDegreeForMidi (int midi, int prevMidi) const
+{
+    int best = 0;
+    int bestDist = 128;
+    for (int d = 0; d < NUM_DEGREES; ++d)
+    {
+        int m = degreeToMidiNote (d, prevMidi);
+        int dist = std::abs (m - midi);
+        if (dist < bestDist)
+        {
+            bestDist = dist;
+            best = d;
+        }
+    }
+    return best;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // generatePattern
 // ─────────────────────────────────────────────────────────────────────────────

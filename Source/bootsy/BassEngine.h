@@ -96,6 +96,7 @@ public:
 
     // Resolve absolute MIDI note from degree, style, root, octave, scale
     int  degreeToMidiNote (int degree, int prevMidi = -1) const;
+    int  nearestDegreeForMidi (int midi, int prevMidi = -1) const;
 
 private:
     BassPattern  pattern;

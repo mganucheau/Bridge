@@ -109,12 +109,12 @@ private:
     int  lockedLoopWidth    = PaulPreset::NUM_STEPS;
 
     juce::Label    tickerLabel;
-    juce::TextButton tickerFastButton   { "2" };
+    juce::TextButton tickerFastButton   { "x2" };
     juce::TextButton tickerNormalButton { "1" };
     juce::TextButton tickerSlowButton   { "1/2" };
 
     juce::Label    styleLabel;
-    juce::TextButton generateButton { "GENERATE" };
+    juce::TextButton generateButton { "GEN" };
     juce::TextButton fillButton     { "FILL" };
     std::unique_ptr<FillHoldListener> fillHoldListener;
 

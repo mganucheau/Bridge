@@ -249,7 +249,7 @@ public:
         if (auto* tb = dynamic_cast<juce::TextButton*> (&button))
         {
             const auto text = tb->getButtonText();
-            bool isPrimaryFilled = (text == "GENERATE" || text == "FILL");
+            bool isPrimaryFilled = (text == "GEN" || text == "FILL");
             bool isToggleStyle   = tb->getClickingTogglesState();
 
             juce::Colour fill    = surfaceContainerHigh;
