@@ -1,4 +1,8 @@
 #include "BridgeEditor.h"
+#include "animal/AnimalLookAndFeel.h"
+#include "bootsy/BootsyLookAndFeel.h"
+#include "stevie/StevieLookAndFeel.h"
+#include "paul/PaulLookAndFeel.h"
 
 namespace
 {
@@ -111,7 +115,6 @@ BridgeEditor::BridgeEditor (BridgeProcessor& p)
     tabStevie.setToggleState (t == 3, juce::dontSendNotification);
     tabPaul.setToggleState   (t == 4, juce::dontSendNotification);
     showTab (t);
-    updateTabStripFromParams();
 }
 
 BridgeEditor::~BridgeEditor()
@@ -126,20 +129,21 @@ void BridgeEditor::valueTreePropertyChanged (juce::ValueTree&, const juce::Ident
 
 void BridgeEditor::updateTabStripFromParams()
 {
-    const juce::Colour cLeader (0xffd4a84b);
-    const juce::Colour cAnimal (0xffe07a5a);
-    const juce::Colour cBootsy (0xff5cb8a8);
-    const juce::Colour cStevie (0xffb88cff);
-    const juce::Colour cPaul (0xff6eb3ff);
+    const juce::Colour powerOnGreen (0xff4caf50);
     const juce::Colour offBg (0xff2a2830);
     const juce::Colour offTx (0xff6a6578);
+    const juce::Colour tabInactive (0xff2e2c35);
+    const juce::Colour tabTextOn (0xffe8e8f0);
+    const juce::Colour tabTextMuted (0xff9e99a8);
 
-    auto stylePower = [&] (juce::TextButton& b, bool on, juce::Colour c)
+    const int active = juce::jlimit (0, 4, proc.activeTab.load());
+
+    auto stylePower = [&] (juce::TextButton& b, bool on)
     {
         if (on)
         {
-            b.setColour (juce::TextButton::buttonColourId, c.withAlpha (0.55f));
-            b.setColour (juce::TextButton::textColourOffId, c.brighter (0.15f));
+            b.setColour (juce::TextButton::buttonColourId, powerOnGreen.withAlpha (0.65f));
+            b.setColour (juce::TextButton::textColourOffId, juce::Colours::white.withAlpha (0.95f));
         }
         else
         {
@@ -148,30 +152,70 @@ void BridgeEditor::updateTabStripFromParams()
         }
     };
 
-    stylePower (powerLeader, paramOn (proc.apvtsMain, "leaderTabOn"), cLeader);
-    stylePower (powerAnimal, paramOn (proc.apvtsMain, "animalOn"), cAnimal);
-    stylePower (powerBootsy, paramOn (proc.apvtsMain, "bootsyOn"), cBootsy);
-    stylePower (powerStevie, paramOn (proc.apvtsMain, "stevieOn"), cStevie);
-    stylePower (powerPaul, paramOn (proc.apvtsMain, "paulOn"), cPaul);
+    stylePower (powerLeader, paramOn (proc.apvtsMain, "leaderTabOn"));
+    stylePower (powerAnimal, paramOn (proc.apvtsMain, "animalOn"));
+    stylePower (powerBootsy, paramOn (proc.apvtsMain, "bootsyOn"));
+    stylePower (powerStevie, paramOn (proc.apvtsMain, "stevieOn"));
+    stylePower (powerPaul, paramOn (proc.apvtsMain, "paulOn"));
 
-    tabMain.setAlpha   (paramOn (proc.apvtsMain, "leaderTabOn") ? 1.0f : 0.42f);
-    tabAnimal.setAlpha (paramOn (proc.apvtsMain, "animalOn") ? 1.0f : 0.42f);
-    tabBootsy.setAlpha (paramOn (proc.apvtsMain, "bootsyOn") ? 1.0f : 0.42f);
-    tabStevie.setAlpha (paramOn (proc.apvtsMain, "stevieOn") ? 1.0f : 0.42f);
-    tabPaul.setAlpha   (paramOn (proc.apvtsMain, "paulOn") ? 1.0f : 0.42f);
+    juce::TextButton* tabs[]   = { &tabMain, &tabAnimal, &tabBootsy, &tabStevie, &tabPaul };
+    const bool powerOn[] = {
+        paramOn (proc.apvtsMain, "leaderTabOn"),
+        paramOn (proc.apvtsMain, "animalOn"),
+        paramOn (proc.apvtsMain, "bootsyOn"),
+        paramOn (proc.apvtsMain, "stevieOn"),
+        paramOn (proc.apvtsMain, "paulOn")
+    };
+
+    using namespace AnimalM3;
+    const juce::Colour surfaceLeader  = surfaceDim;
+    const juce::Colour surfaceDrums   = surface;
+    const juce::Colour surfaceBass    = BootsyM3::surface;
+    const juce::Colour surfaceKeys    = StevieM3::surface;
+    const juce::Colour surfaceGuitar  = PaulM3::surface;
+    const juce::Colour tabSurfaces[] = { surfaceLeader, surfaceDrums, surfaceBass, surfaceKeys, surfaceGuitar };
+
+    for (int i = 0; i < 5; ++i)
+    {
+        auto& t = *tabs[i];
+        const bool on = powerOn[i];
+        const bool sel = (active == i);
+
+        if (on && sel)
+        {
+            t.setColour (juce::TextButton::buttonColourId, tabSurfaces[i]);
+            t.setColour (juce::TextButton::textColourOffId, tabTextOn);
+            t.setAlpha (1.0f);
+        }
+        else if (on && ! sel)
+        {
+            t.setColour (juce::TextButton::buttonColourId, tabInactive);
+            t.setColour (juce::TextButton::textColourOffId, tabTextMuted);
+            t.setAlpha (1.0f);
+        }
+        else
+        {
+            t.setColour (juce::TextButton::buttonColourId, offBg);
+            t.setColour (juce::TextButton::textColourOffId, offTx);
+            t.setAlpha (0.42f);
+        }
+    }
 }
 
 void BridgeEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1a1820));
+    using namespace AnimalM3;
+    g.fillAll (surfaceDim);
+    g.setColour (outline.withAlpha (0.28f));
+    g.drawHorizontalLine (51, 0.0f, (float) getWidth());
 }
 
 void BridgeEditor::resized()
 {
     auto r = getLocalBounds();
-    auto tabBar = r.removeFromTop (44);
+    auto tabBar = r.removeFromTop (52);
     const int cols = 5;
-    const int pw = 26;
+    const int pw = 28;
     const int colW = tabBar.getWidth() / cols;
 
     juce::TextButton* powers[] = { &powerLeader, &powerAnimal, &powerBootsy, &powerStevie, &powerPaul };
@@ -180,8 +224,8 @@ void BridgeEditor::resized()
     for (int i = 0; i < cols; ++i)
     {
         auto cell = tabBar.removeFromLeft (colW);
-        powers[i]->setBounds (cell.removeFromLeft (pw).reduced (2, 8));
-        tabs[i]->setBounds (cell.reduced (4, 6));
+        powers[i]->setBounds (cell.removeFromLeft (pw).reduced (4, 10));
+        tabs[i]->setBounds (cell.reduced (6, 8));
     }
 
     mainPanel.setBounds   (r);
@@ -204,6 +248,8 @@ void BridgeEditor::showTab (int index)
     else if (index == 2)   bootsyPanel.toFront (true);
     else if (index == 3)   steviePanel.toFront (true);
     else                   paulPanel.toFront (true);
+
+    updateTabStripFromParams();
 }
 
 void BridgeEditor::notifyAnimalPatternChanged()

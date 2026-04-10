@@ -37,10 +37,10 @@ private:
     juce::TextButton powerPaul   { juce::CharPointer_UTF8 ("\u25cf") };
 
     juce::TextButton tabMain   { "Leader" };
-    juce::TextButton tabAnimal { "Animal" };
-    juce::TextButton tabBootsy { "Bootsy" };
-    juce::TextButton tabStevie { "Stevie" };
-    juce::TextButton tabPaul   { "Paul" };
+    juce::TextButton tabAnimal { "Drums" };
+    juce::TextButton tabBootsy { "Bass" };
+    juce::TextButton tabStevie { "Keys" };
+    juce::TextButton tabPaul   { "Guitar" };
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerLeaderAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAnimalAttach;

@@ -1,123 +1,19 @@
 #include "MainPanel.h"
 #include "LeaderStylePresets.h"
+#include "MelodicGridLayout.h"
 #include "bootsy/BootsyStylePresets.h"
 #include "stevie/StevieStylePresets.h"
 #include "paul/PaulStylePresets.h"
 #include "animal/AnimalStylePresets.h"
 
-namespace
-{
-static void getBassMelodicMidiRange (const BassEngine& engine, int& minMidi, int& maxMidi)
-{
-    minMidi = 127;
-    maxMidi = 0;
-    const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < BootsyPreset::NUM_STEPS; ++s)
-    {
-        const auto& h = pat[(size_t) s];
-        if (! h.active) continue;
-        minMidi = juce::jmin (minMidi, h.midiNote);
-        maxMidi = juce::jmax (maxMidi, h.midiNote);
-    }
-    if (minMidi > maxMidi)
-    {
-        const int r = engine.degreeToMidiNote (0, -1);
-        minMidi = juce::jlimit (0, 127, r - 14);
-        maxMidi = juce::jlimit (0, 127, r + 14);
-    }
-    else
-    {
-        minMidi = juce::jmax (0, minMidi - 2);
-        maxMidi = juce::jmin (127, maxMidi + 2);
-    }
-}
-
-static void getPianoMelodicMidiRange (const PianoEngine& engine, int& minMidi, int& maxMidi)
-{
-    minMidi = 127;
-    maxMidi = 0;
-    const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < SteviePreset::NUM_STEPS; ++s)
-    {
-        const auto& h = pat[(size_t) s];
-        if (! h.active) continue;
-        minMidi = juce::jmin (minMidi, h.midiNote);
-        maxMidi = juce::jmax (maxMidi, h.midiNote);
-    }
-    if (minMidi > maxMidi)
-    {
-        const int r = engine.degreeToMidiNote (0, -1);
-        minMidi = juce::jlimit (0, 127, r - 14);
-        maxMidi = juce::jlimit (0, 127, r + 14);
-    }
-    else
-    {
-        minMidi = juce::jmax (0, minMidi - 2);
-        maxMidi = juce::jmin (127, maxMidi + 2);
-    }
-}
-
-static void getGuitarMelodicMidiRange (const GuitarEngine& engine, int& minMidi, int& maxMidi)
-{
-    minMidi = 127;
-    maxMidi = 0;
-    const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < PaulPreset::NUM_STEPS; ++s)
-    {
-        const auto& h = pat[(size_t) s];
-        if (! h.active) continue;
-        minMidi = juce::jmin (minMidi, h.midiNote);
-        maxMidi = juce::jmax (maxMidi, h.midiNote);
-    }
-    if (minMidi > maxMidi)
-    {
-        const int r = engine.degreeToMidiNote (0, -1);
-        minMidi = juce::jlimit (0, 127, r - 14);
-        maxMidi = juce::jlimit (0, 127, r + 14);
-    }
-    else
-    {
-        minMidi = juce::jmax (0, minMidi - 2);
-        maxMidi = juce::jmin (127, maxMidi + 2);
-    }
-}
-}
-
-MainPanel::LeaderKnob::LeaderKnob (const juce::String& paramId, const juce::String& name,
-                                  juce::AudioProcessorValueTreeState& apvts)
-{
-    slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
-    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 44, 14);
-    slider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xffb0a8c4));
-    slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff1e1c24));
-    slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    slider.setRotaryParameters (juce::MathConstants<float>::pi * 1.25f,
-                                juce::MathConstants<float>::pi * 2.75f, true);
-    addAndMakeVisible (slider);
-
-    label.setText (name, juce::dontSendNotification);
-    label.setJustificationType (juce::Justification::centred);
-    label.setColour (juce::Label::textColourId, juce::Colour (0xff8a8299));
-    label.setFont (juce::Font (juce::FontOptions().withHeight (11.0f)));
-    addAndMakeVisible (label);
-
-    attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, paramId, slider);
-}
-
-void MainPanel::LeaderKnob::resized()
-{
-    auto b = getLocalBounds();
-    label.setBounds (b.removeFromBottom (14));
-    slider.setBounds (b);
-}
-
 void MainPanel::StripPreview::paint (juce::Graphics& g)
 {
+    using namespace AnimalM3;
     auto bounds = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff252030));
-    g.fillRoundedRectangle (bounds, 4.0f);
-    g.setColour (juce::Colour (0xff3a3548));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
+    g.setColour (surfaceContainerHigh);
+    g.fillRoundedRectangle (bounds, cornerExtraSmall);
+    g.setColour (outline.withAlpha (0.35f));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), cornerExtraSmall, 1.0f);
 
     switch (kind)
     {
@@ -146,20 +42,21 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
         {
             const auto& pat = proc.bassEngine.getPatternForGrid();
             int lo = 60, hi = 72;
-            getBassMelodicMidiRange (proc.bassEngine, lo, hi);
-            const int nRows = juce::jmax (1, hi - lo + 1);
-            const float rowH = bounds.getHeight() / (float) nRows;
-            const float cw = bounds.getWidth() / (float) BootsyPreset::NUM_STEPS;
+            bridge::setOneOctaveMelodicRange (proc.bassEngine, lo, hi);
+            const int nRows = bridge::kMelodicOctaveRows;
+            float ox = 0.0f, oy = 0.0f, cs = 1.0f;
+            bridge::computeSquareMelodicGrid (bounds.getX(), bounds.getWidth(), bounds.getY(), bounds.getHeight(),
+                                              BootsyPreset::NUM_STEPS, nRows, ox, oy, cs);
             for (int step = 0; step < BootsyPreset::NUM_STEPS; ++step)
             {
                 const auto& h = pat[(size_t) step];
                 if (! h.active) continue;
                 int row = juce::jlimit (0, nRows - 1, hi - h.midiNote);
-                float y = bounds.getY() + (float) row * rowH;
+                float y = oy + (float) row * cs;
                 float a = juce::jlimit (0.2f, 1.f, (float) h.velocity / 127.f);
                 g.setColour (juce::Colour (0xff5cb8a8).withAlpha (a));
-                g.fillEllipse (bounds.getX() + (float) step * cw + 1.f, y + 1.f,
-                               juce::jmax (2.f, cw - 2.f), juce::jmax (2.f, rowH - 2.f));
+                g.fillEllipse (ox + (float) step * cs + 1.f, y + 1.f,
+                               juce::jmax (2.f, cs - 2.f), juce::jmax (2.f, cs - 2.f));
             }
             break;
         }
@@ -167,20 +64,21 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
         {
             const auto& pat = proc.pianoEngine.getPatternForGrid();
             int lo = 60, hi = 72;
-            getPianoMelodicMidiRange (proc.pianoEngine, lo, hi);
-            const int nRows = juce::jmax (1, hi - lo + 1);
-            const float rowH = bounds.getHeight() / (float) nRows;
-            const float cw = bounds.getWidth() / (float) SteviePreset::NUM_STEPS;
+            bridge::setOneOctaveMelodicRange (proc.pianoEngine, lo, hi);
+            const int nRows = bridge::kMelodicOctaveRows;
+            float ox = 0.0f, oy = 0.0f, cs = 1.0f;
+            bridge::computeSquareMelodicGrid (bounds.getX(), bounds.getWidth(), bounds.getY(), bounds.getHeight(),
+                                              SteviePreset::NUM_STEPS, nRows, ox, oy, cs);
             for (int step = 0; step < SteviePreset::NUM_STEPS; ++step)
             {
                 const auto& h = pat[(size_t) step];
                 if (! h.active) continue;
                 int row = juce::jlimit (0, nRows - 1, hi - h.midiNote);
-                float y = bounds.getY() + (float) row * rowH;
+                float y = oy + (float) row * cs;
                 float a = juce::jlimit (0.2f, 1.f, (float) h.velocity / 127.f);
                 g.setColour (juce::Colour (0xffb88cff).withAlpha (a));
-                g.fillEllipse (bounds.getX() + (float) step * cw + 1.f, y + 1.f,
-                               juce::jmax (2.f, cw - 2.f), juce::jmax (2.f, rowH - 2.f));
+                g.fillEllipse (ox + (float) step * cs + 1.f, y + 1.f,
+                               juce::jmax (2.f, cs - 2.f), juce::jmax (2.f, cs - 2.f));
             }
             break;
         }
@@ -188,20 +86,21 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
         {
             const auto& pat = proc.guitarEngine.getPatternForGrid();
             int lo = 60, hi = 72;
-            getGuitarMelodicMidiRange (proc.guitarEngine, lo, hi);
-            const int nRows = juce::jmax (1, hi - lo + 1);
-            const float rowH = bounds.getHeight() / (float) nRows;
-            const float cw = bounds.getWidth() / (float) PaulPreset::NUM_STEPS;
+            bridge::setOneOctaveMelodicRange (proc.guitarEngine, lo, hi);
+            const int nRows = bridge::kMelodicOctaveRows;
+            float ox = 0.0f, oy = 0.0f, cs = 1.0f;
+            bridge::computeSquareMelodicGrid (bounds.getX(), bounds.getWidth(), bounds.getY(), bounds.getHeight(),
+                                              PaulPreset::NUM_STEPS, nRows, ox, oy, cs);
             for (int step = 0; step < PaulPreset::NUM_STEPS; ++step)
             {
                 const auto& h = pat[(size_t) step];
                 if (! h.active) continue;
                 int row = juce::jlimit (0, nRows - 1, hi - h.midiNote);
-                float y = bounds.getY() + (float) row * rowH;
+                float y = oy + (float) row * cs;
                 float a = juce::jlimit (0.2f, 1.f, (float) h.velocity / 127.f);
                 g.setColour (juce::Colour (0xff6eb3ff).withAlpha (a));
-                g.fillEllipse (bounds.getX() + (float) step * cw + 1.f, y + 1.f,
-                               juce::jmax (2.f, cw - 2.f), juce::jmax (2.f, rowH - 2.f));
+                g.fillEllipse (ox + (float) step * cs + 1.f, y + 1.f,
+                               juce::jmax (2.f, cs - 2.f), juce::jmax (2.f, cs - 2.f));
             }
             break;
         }
@@ -216,7 +115,7 @@ void MainPanel::setupRow (Row& row,
 {
     row.name.setText (rowName, juce::dontSendNotification);
     row.name.setFont (juce::Font (juce::FontOptions().withHeight (14.0f).withStyle ("Semibold")));
-    row.name.setColour (juce::Label::textColourId, juce::Colours::white);
+    row.name.setColour (juce::Label::textColourId, AnimalColors::TextPrimary);
     row.name.setJustificationType (juce::Justification::centredLeft);
 
     row.preview = std::make_unique<StripPreview> (proc, previewKind);
@@ -238,18 +137,25 @@ void MainPanel::setupRow (Row& row,
 }
 
 MainPanel::MainPanel (BridgeProcessor& p)
-    : proc (p)
+    : proc (p),
+      knobPresence ("leaderPresence", "Presence", p.apvtsMain),
+      knobTight ("leaderTight", "Tight", p.apvtsMain),
+      knobUnity ("leaderUnity", "Unity", p.apvtsMain),
+      knobBreath ("leaderBreath", "Breath", p.apvtsMain),
+      knobSpark ("leaderSpark", "Spark", p.apvtsMain)
 {
+    setLookAndFeel (&laf);
+
     title.setText ("Leader", juce::dontSendNotification);
     title.setFont (juce::Font (juce::FontOptions().withHeight (22.0f).withStyle ("Semibold")));
-    title.setColour (juce::Label::textColourId, juce::Colours::white);
+    title.setColour (juce::Label::textColourId, AnimalColors::TextPrimary);
     addAndMakeVisible (title);
     addAndMakeVisible (bandControls);
     addAndMakeVisible (mixerArea);
 
     styleLabel.setText ("Style", juce::dontSendNotification);
     styleLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
-    styleLabel.setColour (juce::Label::textColourId, juce::Colour (0xff8a8299));
+    styleLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
     styleLabel.setJustificationType (juce::Justification::centredLeft);
     bandControls.addAndMakeVisible (styleLabel);
 
@@ -260,22 +166,16 @@ MainPanel::MainPanel (BridgeProcessor& p)
     styleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (proc.apvtsMain, "leaderStyle", styleBox);
 
-    knobPresence = std::make_unique<LeaderKnob> ("leaderPresence", "Presence", proc.apvtsMain);
-    knobTight    = std::make_unique<LeaderKnob> ("leaderTight",    "Tight",    proc.apvtsMain);
-    knobUnity    = std::make_unique<LeaderKnob> ("leaderUnity",    "Unity",    proc.apvtsMain);
-    knobBreath   = std::make_unique<LeaderKnob> ("leaderBreath",   "Breath",   proc.apvtsMain);
-    knobSpark    = std::make_unique<LeaderKnob> ("leaderSpark",    "Spark",    proc.apvtsMain);
+    bandControls.addAndMakeVisible (knobPresence);
+    bandControls.addAndMakeVisible (knobTight);
+    bandControls.addAndMakeVisible (knobUnity);
+    bandControls.addAndMakeVisible (knobBreath);
+    bandControls.addAndMakeVisible (knobSpark);
 
-    bandControls.addAndMakeVisible (*knobPresence);
-    bandControls.addAndMakeVisible (*knobTight);
-    bandControls.addAndMakeVisible (*knobUnity);
-    bandControls.addAndMakeVisible (*knobBreath);
-    bandControls.addAndMakeVisible (*knobSpark);
-
-    setupRow (animal, "Animal", StripPreview::Kind::animal, "mainMuteAnimal", "mainSoloAnimal");
-    setupRow (bootsy, "Bootsy", StripPreview::Kind::bootsy, "mainMuteBootsy", "mainSoloBootsy");
-    setupRow (stevie, "Stevie", StripPreview::Kind::stevie, "mainMuteStevie", "mainSoloStevie");
-    setupRow (paul, "Paul", StripPreview::Kind::paul, "mainMutePaul", "mainSoloPaul");
+    setupRow (animal, "Drums", StripPreview::Kind::animal, "mainMuteAnimal", "mainSoloAnimal");
+    setupRow (bootsy, "Bass", StripPreview::Kind::bootsy, "mainMuteBootsy", "mainSoloBootsy");
+    setupRow (stevie, "Keys", StripPreview::Kind::stevie, "mainMuteStevie", "mainSoloStevie");
+    setupRow (paul, "Guitar", StripPreview::Kind::paul, "mainMutePaul", "mainSoloPaul");
 
     proc.apvtsMain.state.addListener (this);
     applyLeaderEngaged();
@@ -286,6 +186,7 @@ MainPanel::MainPanel (BridgeProcessor& p)
 MainPanel::~MainPanel()
 {
     proc.apvtsMain.state.removeListener (this);
+    setLookAndFeel (nullptr);
 }
 
 void MainPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&)
@@ -369,51 +270,65 @@ void MainPanel::timerCallback()
 
 void MainPanel::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff14121a));
+    using namespace AnimalM3;
+    g.fillAll (surfaceDim);
+
+    auto drawCard = [&] (juce::Component& c)
+    {
+        auto rf = c.getBounds().toFloat().reduced (0.5f);
+        drawShadow (g, rf, cornerLarge, 1);
+        fillSurface (g, rf, surfaceContainer, cornerLarge);
+        g.setColour (outline.withAlpha (0.35f));
+        g.drawRoundedRectangle (rf.reduced (0.5f), cornerLarge, 1.0f);
+    };
+
+    drawCard (mixerArea);
+    drawCard (bandControls);
 }
 
 void MainPanel::resized()
 {
-    auto r = getLocalBounds().reduced (20);
+    constexpr int edge = 24;
+    constexpr int bandH = 212;
+    auto r = getLocalBounds().reduced (edge);
     title.setBounds (r.removeFromTop (28));
-    r.removeFromTop (8);
+    r.removeFromTop (12);
 
-    auto bandR = r.removeFromTop (198);
+    auto bandR = r.removeFromBottom (bandH);
+    r.removeFromBottom (12);
+    mixerArea.setBounds (r);
     bandControls.setBounds (bandR);
     {
-        auto b = bandControls.getLocalBounds();
+        auto b = bandControls.getLocalBounds().reduced (16, 14);
         auto styleRow = b.removeFromTop (30);
-        styleLabel.setBounds (styleRow.removeFromLeft (44));
+        styleLabel.setBounds (styleRow.removeFromLeft (48));
         styleBox.setBounds (styleRow.removeFromLeft (juce::jmin (320, styleRow.getWidth())).reduced (0, 2));
 
-        b.removeFromTop (8);
-        const int knobH = 86;
+        b.removeFromTop (12);
+        const int knobH = 88;
         auto row1 = b.removeFromTop (knobH);
-        const int gap = 6;
+        const int gap = 8;
         const int n1 = 3;
         int kw = (row1.getWidth() - gap * (n1 - 1)) / n1;
-        knobPresence->setBounds (row1.removeFromLeft (kw));
+        knobPresence.setBounds (row1.removeFromLeft (kw));
         row1.removeFromLeft (gap);
-        knobTight->setBounds (row1.removeFromLeft (kw));
+        knobTight.setBounds (row1.removeFromLeft (kw));
         row1.removeFromLeft (gap);
-        knobUnity->setBounds (row1.removeFromLeft (kw));
+        knobUnity.setBounds (row1.removeFromLeft (kw));
 
-        b.removeFromTop (4);
+        b.removeFromTop (6);
         auto row2 = b.removeFromTop (knobH);
         const int n2 = 2;
         int kw2 = (row2.getWidth() - gap) / n2;
-        knobBreath->setBounds (row2.removeFromLeft (kw2));
+        knobBreath.setBounds (row2.removeFromLeft (kw2));
         row2.removeFromLeft (gap);
-        knobSpark->setBounds (row2.removeFromLeft (kw2));
+        knobSpark.setBounds (row2.removeFromLeft (kw2));
     }
-
-    r.removeFromTop (10);
-    mixerArea.setBounds (r);
 
     auto area = mixerArea.getLocalBounds();
     const int rowH = 56;
     const int gap = 8;
-    const int nameW = 52;
+    const int nameW = 64;
     const int prevW = juce::jmax (160, area.getWidth() - nameW - 80);
     const int msW = 28;
 

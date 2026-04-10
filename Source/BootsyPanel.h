@@ -77,9 +77,6 @@ private:
     BridgeProcessor& proc;
     BootsyLookAndFeel laf;
 
-    juce::OwnedArray<juce::TextButton> styleButtons;
-    void updateStyleButtonStates (int active);
-
     PianoRollComponent pianoRoll;
     BassGridComponent  bassGrid;
 
@@ -114,8 +111,13 @@ private:
     juce::TextButton tickerSlowButton   { "1/2" };
 
     juce::Label    styleLabel;
-    juce::TextButton generateButton { "GENERATE" };
+    juce::ComboBox styleBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
+
+    juce::TextButton generateButton { "GEN" };
+    juce::TextButton performButton  { "PERF" };
     juce::TextButton fillButton     { "FILL" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> performAttach;
     std::unique_ptr<FillHoldListener> fillHoldListener;
 
     struct StepTimer : public juce::Timer
@@ -127,6 +129,7 @@ private:
 
     void updateStepAnimation();
     int  lastAnimStep = -1;
+    uint32_t performBlinkTick = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BootsyPanel)
 };

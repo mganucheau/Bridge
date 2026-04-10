@@ -38,8 +38,15 @@ public:
 
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override
     {
-        return layouts.getMainInputChannelSet() == juce::AudioChannelSet::disabled()
-            || layouts.getMainInputChannelSet() == juce::AudioChannelSet::stereo();
+        const auto& out = layouts.getMainOutputChannelSet();
+        if (out != juce::AudioChannelSet::mono()
+            && out != juce::AudioChannelSet::stereo())
+            return false;
+
+        const auto& in = layouts.getMainInputChannelSet();
+        return in == juce::AudioChannelSet::disabled()
+            || in == juce::AudioChannelSet::mono()
+            || in == juce::AudioChannelSet::stereo();
     }
 
     DrumEngine   drumEngine;

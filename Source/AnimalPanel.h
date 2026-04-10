@@ -77,7 +77,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopWidthLockAttach;
 
     bool updatingLoopParams = false;
-    int  lockedLoopWidth    = 16;
+    int  lockedLoopWidth    = NUM_STEPS;
 
     DrumGridComponent drumGrid;
 
@@ -94,8 +94,20 @@ private:
     juce::ComboBox styleBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
 
-    juce::TextButton generateButton { "GENERATE" };
-    juce::TextButton performButton  { "PERFORM" };
+    juce::ComboBox rootNoteBox;
+    juce::Label    rootNoteLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> rootNoteAttach;
+
+    juce::ComboBox scaleBox;
+    juce::Label    scaleLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> scaleAttach;
+
+    juce::ComboBox octaveBox;
+    juce::Label    octaveLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> octaveAttach;
+
+    juce::TextButton generateButton { "GEN" };
+    juce::TextButton performButton  { "PERF" };
     juce::TextButton fillButton     { "FILL" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> performAttach;
     std::unique_ptr<FillHoldListener> fillHoldListener;
@@ -109,6 +121,7 @@ private:
 
     void updateStepAnimation();
     int  lastAnimStep = -1;
+    uint32_t performBlinkTick = 0;
 
     void updateTickerButtonStates();
     void setTickerSpeedChoice (int index);

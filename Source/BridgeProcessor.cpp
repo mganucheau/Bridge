@@ -1,5 +1,6 @@
 #include "BridgeProcessor.h"
 #include "BridgeEditor.h"
+#include "BridgeInstrumentStyles.h"
 #include "LeaderStylePresets.h"
 #include "bootsy/BootsyStylePresets.h"
 #include "stevie/StevieStylePresets.h"
@@ -9,6 +10,13 @@ namespace
 {
 static constexpr const char* kAnimalStateId = "AnimalDrummer";
 static constexpr const char* kBootsyStateId = "Bootsy";
+
+static int readMelodicStyleEngineIndex (juce::AudioProcessorValueTreeState& apvts)
+{
+    if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvts.getParameter ("style")))
+        return bridgeMelodicEngineStyleIndex (p->getIndex());
+    return bridgeMelodicEngineStyleIndex ((int) *apvts.getRawParameterValue ("style"));
+}
 
 static bool mainMixerEngaged (juce::AudioProcessorValueTreeState& m)
 {
@@ -107,19 +115,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     layout.add (std::make_unique<juce::AudioParameterBool> ("leaderTabOn", "Leader tab", true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("animalOn",  "Animal on",  true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("bootsyOn",  "Bootsy on",  true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("stevieOn",  "Stevie on",  true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("paulOn",    "Paul on",    true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("animalOn",  "Drums on",  true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("bootsyOn",  "Bass on",  true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("stevieOn",  "Keys on",  true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("paulOn",    "Guitar on",    true));
 
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteAnimal", "Mute Animal", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloAnimal", "Solo Animal", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteBootsy", "Mute Bootsy", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloBootsy", "Solo Bootsy", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteStevie", "Mute Stevie", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloStevie", "Solo Stevie", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMutePaul",   "Mute Paul",   false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloPaul",   "Solo Paul",   false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteAnimal", "Mute Drums", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloAnimal", "Solo Drums", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteBootsy", "Mute Bass", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloBootsy", "Solo Bass", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteStevie", "Mute Keys", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloStevie", "Solo Keys", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMutePaul",   "Mute Guitar",   false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloPaul",   "Solo Guitar",   false));
 
     juce::StringArray leaderStyleNames;
     for (int i = 0; i < NUM_LEADER_STYLES; ++i)
@@ -140,10 +148,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildAnimal
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
     juce::StringArray styleNames;
-    for (int i = 0; i < NUM_STYLES; ++i)
-        styleNames.add (STYLE_NAMES[i]);
+    for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
+        styleNames.add (bridgeUnifiedStyleNames()[i]);
 
     layout.add (std::make_unique<juce::AudioParameterChoice> ("style", "Style", styleNames, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("scale",       "Scale",
+                                                             0, BootsyPreset::NUM_SCALES - 1, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("rootNote",    "Root Note",   0, 11, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("octave",      "Octave",      1, 4, 2));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.7f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.2f));
@@ -176,8 +188,11 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("style",       "Style",
-                                                             0, BootsyPreset::NUM_STYLES - 1, 0));
+    juce::StringArray styleNames;
+    for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
+        styleNames.add (bridgeUnifiedStyleNames()[i]);
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("style", "Style", styleNames, 0));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("perform", "Perform", false));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("scale",       "Scale",
                                                              0, BootsyPreset::NUM_SCALES - 1, 0));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("rootNote",    "Root Note",   0, 11, 0));
@@ -450,7 +465,7 @@ void BridgeProcessor::triggerAnimalFill (int fromStep)
 
 void BridgeProcessor::syncBootsyEngineFromAPVTS()
 {
-    bassEngine.setStyle       ((int)  *apvtsBootsy.getRawParameterValue ("style"));
+    bassEngine.setStyle       (readMelodicStyleEngineIndex (apvtsBootsy));
     bassEngine.setScale       ((int)  *apvtsBootsy.getRawParameterValue ("scale"));
     bassEngine.setRootNote    ((int)  *apvtsBootsy.getRawParameterValue ("rootNote"));
     bassEngine.setOctave      ((int)  *apvtsBootsy.getRawParameterValue ("octave"));
@@ -499,10 +514,10 @@ void BridgeProcessor::triggerBootsyGenerate()
 
 void BridgeProcessor::applyBootsyStyleAndRegenerate (int styleIndex)
 {
-    styleIndex = juce::jlimit (0, BootsyPreset::NUM_STYLES - 1, styleIndex);
+    styleIndex = juce::jlimit (0, bridgeUnifiedStyleCount() - 1, styleIndex);
     if (auto* p = apvtsBootsy.getParameter ("style"))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
-            ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) styleIndex));
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+            c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
     syncBootsyEngineFromAPVTS();
     bassEngine.generatePattern();
 }
@@ -571,7 +586,7 @@ void BridgeProcessor::getPaulLoopBounds (int& loopStart, int& loopEnd) const
 
 void BridgeProcessor::syncStevieEngineFromAPVTS()
 {
-    pianoEngine.setStyle       ((int)  *apvtsStevie.getRawParameterValue ("style"));
+    pianoEngine.setStyle       (readMelodicStyleEngineIndex (apvtsStevie));
     pianoEngine.setScale       ((int)  *apvtsStevie.getRawParameterValue ("scale"));
     pianoEngine.setRootNote    ((int)  *apvtsStevie.getRawParameterValue ("rootNote"));
     pianoEngine.setOctave      ((int)  *apvtsStevie.getRawParameterValue ("octave"));
@@ -613,7 +628,7 @@ void BridgeProcessor::syncStevieEngineFromAPVTS()
 
 void BridgeProcessor::syncPaulEngineFromAPVTS()
 {
-    guitarEngine.setStyle       ((int)  *apvtsPaul.getRawParameterValue ("style"));
+    guitarEngine.setStyle       (readMelodicStyleEngineIndex (apvtsPaul));
     guitarEngine.setScale       ((int)  *apvtsPaul.getRawParameterValue ("scale"));
     guitarEngine.setRootNote    ((int)  *apvtsPaul.getRawParameterValue ("rootNote"));
     guitarEngine.setOctave      ((int)  *apvtsPaul.getRawParameterValue ("octave"));
@@ -710,10 +725,10 @@ void BridgeProcessor::triggerStevieGenerate()
 
 void BridgeProcessor::applyStevieStyleAndRegenerate (int styleIndex)
 {
-    styleIndex = juce::jlimit (0, SteviePreset::NUM_STYLES - 1, styleIndex);
+    styleIndex = juce::jlimit (0, bridgeUnifiedStyleCount() - 1, styleIndex);
     if (auto* p = apvtsStevie.getParameter ("style"))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
-            ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) styleIndex));
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+            c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
     syncStevieEngineFromAPVTS();
     pianoEngine.generatePattern();
 }
@@ -741,10 +756,10 @@ void BridgeProcessor::triggerPaulGenerate()
 
 void BridgeProcessor::applyPaulStyleAndRegenerate (int styleIndex)
 {
-    styleIndex = juce::jlimit (0, PaulPreset::NUM_STYLES - 1, styleIndex);
+    styleIndex = juce::jlimit (0, bridgeUnifiedStyleCount() - 1, styleIndex);
     if (auto* p = apvtsPaul.getParameter ("style"))
-        if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
-            ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) styleIndex));
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+            c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
     syncPaulEngineFromAPVTS();
     guitarEngine.generatePattern();
 }
