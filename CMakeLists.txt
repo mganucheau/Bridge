@@ -31,7 +31,7 @@ juce_add_plugin(Bridge
     PLUGIN_CODE                 Brdg
     FORMATS                     VST3 AU Standalone
     PRODUCT_NAME                "Bridge"
-    DESCRIPTION                 "Animal Drummer and Bootsy bass in one plugin"
+    DESCRIPTION                 "Drums, bass, keys, and guitar MIDI ensemble in one plugin"
 )
 
 juce_generate_juce_header(Bridge)
@@ -76,3 +76,51 @@ target_link_libraries(Bridge
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags
 )
+
+# ── QA: headless unit tests (JUCE UnitTest + CTest) ───────────────────────────
+enable_testing()
+
+juce_add_console_app(BridgeTests
+    PRODUCT_NAME "BridgeTests"
+    COMPANY_NAME "Bridge Audio"
+    BUNDLE_ID "com.bridgeaudio.bridgetests"
+)
+
+juce_generate_juce_header(BridgeTests)
+
+target_sources(BridgeTests PRIVATE
+    Tests/BridgeTests_main.cpp
+    Tests/LeaderStyleTests.cpp
+    Tests/PresetConsistencyTests.cpp
+    Tests/ProcessorStateTests.cpp
+)
+
+target_include_directories(BridgeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
+
+target_compile_definitions(BridgeTests PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+)
+
+target_link_libraries(BridgeTests PRIVATE
+    Bridge
+    juce::juce_audio_utils
+    juce::juce_audio_processors
+    juce::juce_core
+    juce::juce_events
+    juce::juce_graphics
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+    juce::juce_dsp
+    juce::juce_recommended_config_flags
+    juce::juce_recommended_warning_flags
+)
+
+# Linking the plugin static lib pulls JucePlugin_* compile defs; console app also sets JUCE_STANDALONE_APPLICATION.
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|AppleClang|GNU")
+    target_compile_options (BridgeTests PRIVATE "-Wno-macro-redefined")
+endif()
+
+add_test(NAME BridgeQA COMMAND BridgeTests)
+set_tests_properties(BridgeQA PROPERTIES TIMEOUT 120)

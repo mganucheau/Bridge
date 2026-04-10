@@ -1,4 +1,50 @@
 #include "AnimalPanel.h"
+#include "BridgeInstrumentStyles.h"
+#include "MelodicGridLayout.h"
+#include "bootsy/BootsyStylePresets.h"
+
+namespace
+{
+bool drumMidiIsBlackKey (int midi)
+{
+    switch (midi % 12)
+    {
+        case 1: case 3: case 6: case 8: case 10: return true;
+        default: return false;
+    }
+}
+
+void computeDrumGridGeometry (juce::Rectangle<float> fullBounds,
+                              float& innerX, float& innerY, float& innerW, float& innerH,
+                              float& gridTop, float& hBody,
+                              float& originX, float& originY, float& cellSize,
+                              float& pianoX, float& msX, float& msW,
+                              float& leftBlockW)
+{
+    constexpr float margin  = 10.0f;
+    constexpr float headerH = 26.0f;
+    constexpr float pianoW  = 56.0f;
+    constexpr float gap1    = 6.0f;
+    constexpr float btnColW = 52.0f;
+    constexpr float gap2    = 8.0f;
+
+    auto inner = fullBounds.reduced (margin);
+    innerX = inner.getX();
+    innerY = inner.getY();
+    innerW = inner.getWidth();
+    innerH = inner.getHeight();
+    gridTop = innerY + headerH;
+    hBody = innerH - headerH;
+    leftBlockW = pianoW + gap1 + btnColW + gap2;
+    const float gridInnerX = innerX + leftBlockW;
+    const float gridInnerW = innerW - leftBlockW;
+    bridge::computeSquareMelodicGrid (gridInnerX, gridInnerW, gridTop, hBody,
+                                      NUM_STEPS, NUM_DRUMS, originX, originY, cellSize);
+    pianoX = innerX;
+    msX = innerX + pianoW + gap1;
+    msW = btnColW;
+}
+} // namespace
 
 class FillHoldListener : public juce::MouseListener
 {
@@ -68,40 +114,58 @@ void DrumGridComponent::paint (juce::Graphics& g)
     g.setColour (outline.withAlpha (0.35f));
     g.drawRoundedRectangle (full.reduced (0.5f), cornerLarge, 1.0f);
 
-    constexpr float margin   = 10.0f;
-    constexpr float headerH  = 26.0f;
-    auto inner = full.reduced (margin);
+    float innerX = 0, innerY = 0, innerW = 0, innerH = 0;
+    float gridTop = 0, hBody = 0;
+    float originX = 0, originY = 0, cellSize = 0;
+    float pianoX = 0, msX = 0, msW = 0, leftBlockW = 0;
+    constexpr float headerH = 26.0f;
+    constexpr float pianoW  = 56.0f;
+    constexpr float gap1    = 6.0f;
+    constexpr float btnColW = 52.0f;
+    const float keyNotesHeaderW = pianoW + gap1 + btnColW;
 
-    float hBody = inner.getHeight() - headerH;
-    float gridTop = inner.getY() + headerH;
+    computeDrumGridGeometry (full, innerX, innerY, innerW, innerH, gridTop, hBody,
+                             originX, originY, cellSize, pianoX, msX, msW, leftBlockW);
 
-    constexpr float labelW = 72.0f;
-    constexpr float buttonW = 22.0f;
-    constexpr float buttonGap = 3.0f;
-    constexpr float labelPadRight = 10.0f;
-    const float gridX = inner.getX() + labelW + labelPadRight + (buttonW * 2.0f) + (buttonGap * 2.0f) + 8.0f;
-
-    float cellW = (inner.getRight() - gridX) / (float)NUM_STEPS;
-    float cellH = hBody / (float)NUM_DRUMS;
-    float pad   = 2.0f;
+    const float pad = 2.0f;
 
     g.setColour (onSurfaceVariant);
     g.setFont (juce::Font (juce::FontOptions().withHeight (11.0f)));
     for (int step = 0; step < NUM_STEPS; ++step)
     {
-        float cx = gridX + step * cellW;
-        auto cell = juce::Rectangle<float> (cx, inner.getY(), cellW, headerH - 2.0f);
-        g.drawText (juce::String (step + 1), cell, juce::Justification::centred, false);
+        float cx = originX + (float) step * cellSize;
+        g.drawText (juce::String (step + 1),
+                    juce::Rectangle<float> (cx, innerY, cellSize, headerH - 2.0f),
+                    juce::Justification::centred, false);
     }
 
-    g.setFont (juce::Font (juce::FontOptions().withHeight (13.0f).withStyle ("Semibold")));
-    g.drawText ("Lane", juce::Rectangle<float> (inner.getX(), inner.getY(), labelW, headerH - 2.0f),
-                juce::Justification::centredRight, false);
+    g.setFont (juce::Font (juce::FontOptions().withHeight (12.0f).withStyle ("Semibold")));
+    g.drawText ("Key notes", juce::Rectangle<float> (innerX, innerY, keyNotesHeaderW, headerH - 2.0f),
+                juce::Justification::centred, false);
+
+    // Piano strip: one row per drum lane; row height matches grid cellSize
+    for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
+    {
+        const int drum = visualRowToDrum (visualRow);
+        const int midi = DRUM_MIDI_NOTES[drum];
+        float cy = originY + (float) visualRow * cellSize;
+        auto row = juce::Rectangle<float> (pianoX, cy, pianoW, cellSize);
+        bool bk = drumMidiIsBlackKey (midi);
+        g.setColour (bk ? surfaceDim.withAlpha (0.88f) : surfaceContainerHighest.withAlpha (0.55f));
+        g.fillRect (row);
+        g.setColour (outlineVariant.withAlpha (0.28f));
+        g.drawHorizontalLine ((int) (cy + cellSize), row.getX() + 1.0f, row.getRight() - 1.0f);
+        g.setColour (onSurfaceVariant.withAlpha (0.88f));
+        g.setFont (juce::Font (juce::FontOptions().withHeight (9.0f)));
+        static const char* n12[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
+        juce::String label = n12[midi % 12] + juce::String (midi / 12 - 1);
+        g.drawText (label, row.reduced (2.0f, 0.0f), juce::Justification::centredRight, true);
+    }
 
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
         const int drum = visualRowToDrum (visualRow);
-        float cy = gridTop + visualRow * cellH;
+        float cy = originY + (float) visualRow * cellSize;
 
         const bool muted = proc.apvtsAnimal.getRawParameterValue ("mute_" + juce::String (drum))->load() > 0.5f;
         const bool soloed = proc.apvtsAnimal.getRawParameterValue ("solo_" + juce::String (drum))->load() > 0.5f;
@@ -111,21 +175,15 @@ void DrumGridComponent::paint (juce::Graphics& g)
 
         const bool audible = anySolo ? soloed : ! muted;
 
-        g.setColour (audible ? onSurfaceVariant : onSurfaceVariant.withAlpha (0.35f));
-        g.setFont   (juce::Font (juce::FontOptions().withHeight (13.0f)));
-        g.drawText  (DRUM_NAMES[drum],
-                     (int) inner.getX(), (int) cy, (int) labelW, (int) cellH,
-                     juce::Justification::centredRight, false);
-
         for (int step = 0; step < NUM_STEPS; ++step)
         {
-            float cx = gridX + step * cellW + pad;
+            float cx = originX + (float) step * cellSize + pad;
             auto  cell = juce::Rectangle<float> (cx, cy + pad,
-                                                 cellW - pad * 2, cellH - pad * 2);
+                                                   cellSize - pad * 2.0f, cellSize - pad * 2.0f);
 
             bool inPattern = (step < patLen);
             bool inLoop = inPattern && (step >= ls0 && step <= le0);
-            const auto& hit = pattern[step][drum];
+            const auto& hit = pattern[(size_t) step][(size_t) drum];
 
             if (! inPattern)
             {
@@ -198,80 +256,74 @@ void DrumGridComponent::paint (juce::Graphics& g)
 
     if (currentStep >= 0 && currentStep < NUM_STEPS)
     {
-        float cx = gridX + currentStep * cellW;
+        float cx = originX + (float) currentStep * cellSize;
         g.setColour (primary.withAlpha (0.08f));
-        g.fillRect  (cx, gridTop, cellW, hBody);
+        g.fillRect  (cx, originY, cellSize, cellSize * (float) NUM_DRUMS);
 
         g.setColour (primary.withAlpha (0.85f));
-        g.fillRect  (cx + pad, inner.getY(), cellW - pad * 2, 2.0f);
+        g.fillRect  (cx + pad, innerY, cellSize - pad * 2.0f, 2.0f);
     }
 }
 
 void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
 {
-    int   patLen = proc.drumEngine.getPatternLen();
+    int patLen = proc.drumEngine.getPatternLen();
 
     int loopStart = 1, loopEnd = NUM_STEPS;
     proc.getAnimalLoopBounds (loopStart, loopEnd);
+    juce::ignoreUnused (loopStart, loopEnd);
 
-    constexpr float margin   = 10.0f;
-    constexpr float headerH  = 26.0f;
-    constexpr float labelW = 72.0f;
-    constexpr float buttonW = 22.0f;
-    constexpr float buttonGap = 3.0f;
-    constexpr float labelPadRight = 10.0f;
-    const float innerLeft = margin;
-    const float innerRight = (float) getWidth() - margin;
-    const float gridX = innerLeft + labelW + labelPadRight + (buttonW * 2.0f) + (buttonGap * 2.0f) + 8.0f;
+    auto full = getLocalBounds().toFloat();
+    float innerX = 0, innerY = 0, innerW = 0, innerH = 0;
+    float gridTop = 0, hBody = 0;
+    float originX = 0, originY = 0, cellSize = 0;
+    float pianoX = 0, msX = 0, msW = 0, leftBlockW = 0;
+    computeDrumGridGeometry (full, innerX, innerY, innerW, innerH, gridTop, hBody,
+                             originX, originY, cellSize, pianoX, msX, msW, leftBlockW);
 
-    float hBody = (float) getHeight() - margin * 2.0f - headerH;
-    float gridTop = margin + headerH;
+    if (e.position.y < gridTop || e.position.x < originX) return;
 
-    float cellW  = (innerRight - gridX) / (float) NUM_STEPS;
-    float cellH  = hBody / (float)NUM_DRUMS;
-
-    int step = (int) ((e.x - gridX) / cellW);
-    int visualRow = (int) ((e.y - gridTop) / cellH);
+    int step = (int) ((e.position.x - originX) / cellSize);
+    int visualRow = (int) ((e.position.y - originY) / cellSize);
     int drum = visualRowToDrum (visualRow);
 
-    if (e.y < gridTop) return;
-
-    if (step < 0 || step >= patLen || drum < 0 || drum >= NUM_DRUMS) return;
+    if (step < 0 || step >= patLen || visualRow < 0 || visualRow >= NUM_DRUMS
+        || drum < 0 || drum >= NUM_DRUMS) return;
 
     auto& pat = const_cast<DrumPattern&>(proc.drumEngine.getPattern());
-    pat[step][drum].active   = !pat[step][drum].active;
-    pat[step][drum].velocity = 100;
+    pat[(size_t) step][(size_t) drum].active   = ! pat[(size_t) step][(size_t) drum].active;
+    pat[(size_t) step][(size_t) drum].velocity = 100;
 
-    juce::ignoreUnused (loopStart, loopEnd);
     repaint();
 }
 
 void DrumGridComponent::resized()
 {
-    constexpr int labelW = 72;
-    constexpr int labelPad = 10;
     constexpr int buttonW = 22;
     constexpr int buttonGap = 3;
-    constexpr int margin = 10;
-    constexpr int headerH = 26;
 
-    auto r = getLocalBounds().reduced (margin);
-    r.removeFromTop (headerH);
-    const int rowH = r.getHeight() / NUM_DRUMS;
+    auto full = getLocalBounds().toFloat();
+    float innerX = 0, innerY = 0, innerW = 0, innerH = 0;
+    float gridTop = 0, hBody = 0;
+    float originX = 0, originY = 0, cellSize = 0;
+    float pianoX = 0, msX = 0, msW = 0, leftBlockW = 0;
+    computeDrumGridGeometry (full, innerX, innerY, innerW, innerH, gridTop, hBody,
+                             originX, originY, cellSize, pianoX, msX, msW, leftBlockW);
+
+    const int rowH = (int) juce::jmax (1.0f, cellSize);
 
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
         const int drum = visualRowToDrum (visualRow);
-        auto row = juce::Rectangle<int> (r.getX(), r.getY() + visualRow * rowH, r.getWidth(), rowH);
-        auto controls = row.removeFromLeft (labelW + labelPad + buttonW * 2 + buttonGap * 2 + 2);
-        controls.removeFromLeft (labelW + labelPad);
-
+        int y = (int) (originY + (float) visualRow * cellSize);
+        auto row = juce::Rectangle<int> ((int) msX, y, (int) msW, rowH);
+        auto controls = row.reduced (2, juce::jmax (0, (rowH - buttonW - buttonGap - buttonW) / 2));
         auto mute = controls.removeFromLeft (buttonW);
         controls.removeFromLeft (buttonGap);
         auto solo = controls.removeFromLeft (buttonW);
 
-        muteButtons[drum]->setBounds (mute.reduced (0, 3));
-        soloButtons[drum]->setBounds (solo.reduced (0, 3));
+        muteButtons[drum]->setBounds (mute);
+        soloButtons[drum]->setBounds (solo);
     }
 }
 
@@ -350,10 +402,49 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
     proc.apvtsAnimal.addParameterListener ("loopEnd", this);
     proc.apvtsAnimal.addParameterListener ("loopWidthLock", this);
     proc.apvtsAnimal.addParameterListener ("tickerSpeed", this);
+    proc.apvtsAnimal.addParameterListener ("style", this);
+    proc.apvtsAnimal.addParameterListener ("rootNote", this);
+    proc.apvtsAnimal.addParameterListener ("scale", this);
+    proc.apvtsAnimal.addParameterListener ("octave", this);
 
     proc.apvtsAnimal.state.addListener (this);
 
     addAndMakeVisible (drumGrid);
+
+    rootNoteLabel.setText ("Root", juce::dontSendNotification);
+    rootNoteLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
+    rootNoteLabel.setFont   (juce::Font (juce::FontOptions().withHeight (11.0f)));
+    addAndMakeVisible (rootNoteLabel);
+
+    static const char* noteNames[] = { "C", "C#", "D", "Eb", "E", "F",
+                                        "F#", "G", "Ab", "A", "Bb", "B" };
+    for (int i = 0; i < 12; ++i)
+        rootNoteBox.addItem (noteNames[i], i + 1);
+    addAndMakeVisible (rootNoteBox);
+    rootNoteAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+                         (proc.apvtsAnimal, "rootNote", rootNoteBox);
+
+    scaleLabel.setText ("Scale", juce::dontSendNotification);
+    scaleLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
+    scaleLabel.setFont   (juce::Font (juce::FontOptions().withHeight (11.0f)));
+    addAndMakeVisible (scaleLabel);
+
+    for (int i = 0; i < BootsyPreset::NUM_SCALES; ++i)
+        scaleBox.addItem (BootsyPreset::SCALE_NAMES[i], i + 1);
+    addAndMakeVisible (scaleBox);
+    scaleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+                      (proc.apvtsAnimal, "scale", scaleBox);
+
+    octaveLabel.setText ("Octave", juce::dontSendNotification);
+    octaveLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
+    octaveLabel.setFont   (juce::Font (juce::FontOptions().withHeight (11.0f)));
+    addAndMakeVisible (octaveLabel);
+
+    for (int o = 1; o <= 4; ++o)
+        octaveBox.addItem (juce::String (o), o);
+    addAndMakeVisible (octaveBox);
+    octaveAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+                       (proc.apvtsAnimal, "octave", octaveBox);
 
     addAndMakeVisible (knobDensity);
     addAndMakeVisible (knobSwing);
@@ -375,24 +466,21 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
     styleLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
     addAndMakeVisible (styleLabel);
 
-    for (int i = 0; i < NUM_STYLES; ++i)
-        styleBox.addItem (STYLE_NAMES[i], i + 1);
+    for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
+        styleBox.addItem (bridgeUnifiedStyleNames()[i], i + 1);
     addAndMakeVisible (styleBox);
     styleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
                       (proc.apvtsAnimal, "style", styleBox);
 
     generateButton.setTooltip ("Randomize settings and generate a new pattern.");
     generateButton.onClick = [this] { proc.triggerAnimalGenerate(); };
-    generateButton.setButtonText ("GEN");
 
     performButton.setTooltip ("While transport runs: regenerate with seamless crossfade into the next loop.");
-    performButton.setButtonText ("PERF");
     performButton.setClickingTogglesState (true);
     performAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
                         (proc.apvtsAnimal, "perform", performButton);
 
     fillButton.setTooltip ("Hold to layer live fills on top of the current groove.");
-    fillButton.setButtonText ("FILL");
     fillButton.setMouseCursor (juce::MouseCursor::PointingHandCursor);
     fillHoldListener = std::make_unique<FillHoldListener> (proc, fillButton);
     fillButton.addMouseListener (fillHoldListener.get(), false);
@@ -427,6 +515,10 @@ AnimalPanel::~AnimalPanel()
     proc.apvtsAnimal.removeParameterListener ("loopEnd", this);
     proc.apvtsAnimal.removeParameterListener ("loopWidthLock", this);
     proc.apvtsAnimal.removeParameterListener ("tickerSpeed", this);
+    proc.apvtsAnimal.removeParameterListener ("style", this);
+    proc.apvtsAnimal.removeParameterListener ("rootNote", this);
+    proc.apvtsAnimal.removeParameterListener ("scale", this);
+    proc.apvtsAnimal.removeParameterListener ("octave", this);
 
     if (fillHoldListener != nullptr)
         fillButton.removeMouseListener (fillHoldListener.get());
@@ -491,6 +583,22 @@ void AnimalPanel::parameterChanged (const juce::String& parameterID, float newVa
 {
     juce::ignoreUnused (newValue);
 
+    if (parameterID == "style")
+    {
+        const bool perf = proc.apvtsAnimal.getRawParameterValue ("perform")->load() > 0.5f;
+        proc.rebuildAnimalGridPreview();
+        proc.drumEngine.generatePattern (perf);
+        proc.rebuildAnimalGridPreview();
+        triggerAsyncUpdate();
+        return;
+    }
+
+    if (parameterID == "rootNote" || parameterID == "octave" || parameterID == "scale")
+    {
+        drumGrid.repaint();
+        triggerAsyncUpdate();
+    }
+
     if (parameterID == "tickerSpeed")
         updateTickerButtonStates();
 
@@ -553,58 +661,91 @@ void AnimalPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identi
 
 void AnimalPanel::resized()
 {
-    auto area = getLocalBounds().reduced (16);
+    using namespace bridge::instrumentLayout;
 
+    auto area = getLocalBounds().reduced (16);
     area.removeFromTop (8);
 
-    const int bottomPanelH = 332;
-    auto bottom = area.removeFromBottom (bottomPanelH);
+    const int bottomH = kKnobRowH + kGap + kDropdownRow + kGap + kLoopRowH;
+    auto bottom = area.removeFromBottom (bottomH);
     drumGrid.setBounds (area);
 
     bottom.removeFromTop (6);
 
-    auto knobRow1 = bottom.removeFromTop (96);
-    int knobW = juce::jmax (68, knobRow1.getWidth() / 4);
-    knobDensity.setBounds    (knobRow1.removeFromLeft (knobW));
-    knobSwing.setBounds      (knobRow1.removeFromLeft (knobW));
-    knobHumanize.setBounds   (knobRow1.removeFromLeft (knobW));
-    knobPocket.setBounds     (knobRow1);
+    {
+        auto knobRow = bottom.removeFromTop (kKnobRowH);
+        const int gap = 6;
+        const int n = 8;
+        const int totalGaps = gap * (n - 1);
+        int kw = (knobRow.getWidth() - totalGaps) / n;
+        knobDensity.setBounds    (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobSwing.setBounds      (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobHumanize.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobPocket.setBounds     (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobVelocity.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobFillRate.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobComplexity.setBounds (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobGhost.setBounds      (knobRow.removeFromLeft (knobRow.getWidth()));
+    }
 
-    bottom.removeFromTop (4);
-    auto knobRow2 = bottom.removeFromTop (96);
-    knobW = juce::jmax (68, knobRow2.getWidth() / 4);
-    knobVelocity.setBounds   (knobRow2.removeFromLeft (knobW));
-    knobFillRate.setBounds   (knobRow2.removeFromLeft (knobW));
-    knobComplexity.setBounds (knobRow2.removeFromLeft (knobW));
-    knobGhost.setBounds      (knobRow2);
+    bottom.removeFromTop (kGap);
 
-    bottom.removeFromTop (8);
+    {
+        auto row = bottom.removeFromTop (kDropdownRow);
+        const int dh = kDropdownH;
+        const int yPad = (kDropdownRow - dh) / 2;
+        auto placeCombo = [&] (juce::Label& lab, juce::ComboBox& box, int labW, int boxW)
+        {
+            lab.setBounds (row.removeFromLeft (labW).withHeight (kDropdownRow).reduced (0, 10));
+            box.setBounds (row.removeFromLeft (boxW).withHeight (dh).translated (0, yPad));
+            row.removeFromLeft (10);
+        };
+        placeCombo (rootNoteLabel, rootNoteBox, 36, 56);
+        placeCombo (scaleLabel, scaleBox, 40, juce::jmin (120, juce::jmax (80, row.getWidth() / 6)));
+        placeCombo (octaveLabel, octaveBox, 48, 52);
+        placeCombo (styleLabel, styleBox, 40, juce::jmin (200, juce::jmax (120, row.getWidth() / 5)));
+    }
 
-    auto loopRow = bottom.removeFromTop (100);
-    loopSectionLabel.setBounds (loopRow.removeFromLeft (40).withHeight (16));
-    knobLoopStart.setBounds (loopRow.removeFromLeft (88));
-    loopWidthLockButton.setBounds (loopRow.removeFromLeft (32).withSizeKeepingCentre (28, 28));
-    knobLoopEnd.setBounds (loopRow.removeFromLeft (88));
-    loopRow.removeFromLeft (8);
+    bottom.removeFromTop (kGap);
 
-    tickerLabel.setBounds (loopRow.removeFromLeft (44).withHeight (18));
-    auto tickRow = loopRow.removeFromLeft (92);
-    const int th = juce::jmin (24, tickRow.getHeight());
-    tickerFastButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
-    tickerNormalButton.setBounds (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
-    tickerSlowButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
+    {
+        auto loopRow = bottom.removeFromTop (kLoopRowH);
+        loopSectionLabel.setBounds (loopRow.removeFromLeft (36).withHeight (14).translated (0, 4));
 
-    loopRow.removeFromLeft (10);
-    const int actW = juce::jmin (56, loopRow.getWidth() / 3);
-    generateButton.setBounds (loopRow.removeFromLeft (actW).reduced (0, 10));
-    performButton.setBounds  (loopRow.removeFromLeft (actW).reduced (0, 10));
-    fillButton.setBounds     (loopRow.removeFromLeft (actW).reduced (0, 10));
+        knobLoopStart.setBounds (loopRow.removeFromLeft (86));
+        loopRow.removeFromLeft (4);
+        loopWidthLockButton.setBounds (loopRow.removeFromLeft (30).withSizeKeepingCentre (26, 26));
+        loopRow.removeFromLeft (4);
+        knobLoopEnd.setBounds (loopRow.removeFromLeft (86));
+        loopRow.removeFromLeft (10);
 
-    bottom.removeFromTop (6);
+        const int speedBlockW = kSpeedBlockW;
+        auto speedBlock = loopRow.removeFromLeft (speedBlockW);
+        tickerLabel.setBounds (speedBlock.removeFromTop (14));
+        {
+            auto strip = speedBlock;
+            const int gapS = kSpeedBtnGap;
+            const int bw = (strip.getWidth() - gapS * 2) / 3;
+            const int bh = juce::jmin (bw, strip.getHeight());
+            const int x0 = strip.getX();
+            const int y0 = strip.getY() + (strip.getHeight() - bh) / 2;
+            tickerFastButton.setBounds   (x0, y0, bw, bh);
+            tickerNormalButton.setBounds (x0 + bw + gapS, y0, bw, bh);
+            tickerSlowButton.setBounds   (x0 + 2 * (bw + gapS), y0, bw, bh);
+        }
 
-    auto styleRow = bottom.removeFromTop (36);
-    styleLabel.setBounds (styleRow.removeFromLeft (48).reduced (0, 6));
-    styleBox.setBounds (styleRow.removeFromLeft (juce::jmin (420, styleRow.getWidth())).reduced (0, 4));
+        loopRow.removeFromLeft (kActionBtnGap);
+
+        const int sq = kActionBtnSide;
+        const int gapA = kActionBtnGap;
+        const int rowTop = loopRow.getY();
+        const int yOff = (kLoopRowH - sq) / 2;
+        generateButton.setBounds (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+        loopRow.removeFromLeft (gapA);
+        fillButton.setBounds     (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+        loopRow.removeFromLeft (gapA);
+        performButton.setBounds  (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+    }
 }
 
 void AnimalPanel::paint (juce::Graphics& g)
@@ -625,5 +766,26 @@ void AnimalPanel::updateStepAnimation()
     {
         lastAnimStep = step;
         drumGrid.update (step);
+    }
+
+    const bool perfOn = proc.apvtsAnimal.getRawParameterValue ("perform")->load() > 0.5f;
+    ++performBlinkTick;
+    if (perfOn)
+    {
+        const bool flash = (performBlinkTick % (bridge::instrumentLayout::kPerformBlinkTicks * 2))
+                            < bridge::instrumentLayout::kPerformBlinkTicks;
+        const juce::Colour g (0xff4caf50);
+        performButton.setColour (juce::TextButton::buttonColourId,
+                                 flash ? g.withAlpha (0.82f) : g.withAlpha (0.30f));
+        performButton.setColour (juce::TextButton::textColourOffId,
+                                 juce::Colours::white.withAlpha (0.95f));
+    }
+    else
+    {
+        using namespace AnimalM3;
+        performButton.setColour (juce::TextButton::buttonColourId,
+                                 performButton.getToggleState() ? primary.withAlpha (0.35f)
+                                                                : juce::Colours::transparentBlack);
+        performButton.setColour (juce::TextButton::textColourOffId, AnimalColors::TextDim);
     }
 }

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "BridgeProcessor.h"
+#include "AnimalPanel.h"
 
 class MainPanel : public juce::Component,
                   private juce::Timer,
@@ -18,16 +19,6 @@ private:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     void syncSoloButtonColours();
     void applyLeaderEngaged();
-
-    struct LeaderKnob : public juce::Component
-    {
-        LeaderKnob (const juce::String& paramId, const juce::String& name,
-                    juce::AudioProcessorValueTreeState& apvts);
-        void resized() override;
-        juce::Slider slider;
-        juce::Label label;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
-    };
 
     struct StripPreview : public juce::Component
     {
@@ -57,17 +48,19 @@ private:
 
     BridgeProcessor& proc;
 
+    AnimalLookAndFeel laf;
+
     juce::Label title;
     juce::Component bandControls;
     juce::Label styleLabel;
     juce::ComboBox styleBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
 
-    std::unique_ptr<LeaderKnob> knobPresence;
-    std::unique_ptr<LeaderKnob> knobTight;
-    std::unique_ptr<LeaderKnob> knobUnity;
-    std::unique_ptr<LeaderKnob> knobBreath;
-    std::unique_ptr<LeaderKnob> knobSpark;
+    LabelledKnob knobPresence;
+    LabelledKnob knobTight;
+    LabelledKnob knobUnity;
+    LabelledKnob knobBreath;
+    LabelledKnob knobSpark;
 
     juce::Component mixerArea;
 

@@ -1,32 +1,6 @@
 #include "PaulPanel.h"
-
-namespace
-{
-static void getGuitarMelodicMidiRange (const GuitarEngine& engine, int& minMidi, int& maxMidi)
-{
-    minMidi = 127;
-    maxMidi = 0;
-    const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < PaulPreset::NUM_STEPS; ++s)
-    {
-        const auto& h = pat[(size_t) s];
-        if (! h.active) continue;
-        minMidi = juce::jmin (minMidi, h.midiNote);
-        maxMidi = juce::jmax (maxMidi, h.midiNote);
-    }
-    if (minMidi > maxMidi)
-    {
-        const int r = engine.degreeToMidiNote (0, -1);
-        minMidi = juce::jlimit (0, 127, r - 14);
-        maxMidi = juce::jlimit (0, 127, r + 14);
-    }
-    else
-    {
-        minMidi = juce::jmax (0, minMidi - 2);
-        maxMidi = juce::jmin (127, maxMidi + 2);
-    }
-}
-}
+#include "BridgeInstrumentStyles.h"
+#include "MelodicGridLayout.h"
 
 class FillHoldListener : public juce::MouseListener
 {
@@ -80,13 +54,13 @@ void PaulPianoRollComponent::paint (juce::Graphics& g)
     g.drawRoundedRectangle (full.reduced (0.5f), cornerSmall, 1.0f);
 
     auto& engine = proc.guitarEngine;
-    int low, high;
-    getGuitarMelodicMidiRange (engine, low, high);
+    int low = 60, high = 72;
+    bridge::setOneOctaveMelodicRange (engine, low, high);
     if (high <= low) return;
 
     static const char* names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
-    const int nRows = high - low + 1;
+    const int nRows = bridge::kMelodicOctaveRows;
     const float rowH = full.getHeight() / (float) nRows;
     const float leftPad = 2.0f;
 
@@ -151,31 +125,32 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
     float hBody   = inner.getHeight() - headerH;
 
     int minMidi = 60, maxMidi = 72;
-    getGuitarMelodicMidiRange (engine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
+    bridge::setOneOctaveMelodicRange (engine, minMidi, maxMidi);
+    const int nRows = bridge::kMelodicOctaveRows;
 
-    float cellW = inner.getWidth() / (float) PaulPreset::NUM_STEPS;
-    float cellH = hBody / (float) nRows;
+    float originX = 0.0f, originY = 0.0f, cellSize = 1.0f;
+    bridge::computeSquareMelodicGrid (inner.getX(), inner.getWidth(), gridTop, hBody,
+                                      PaulPreset::NUM_STEPS, nRows, originX, originY, cellSize);
     float pad   = 2.0f;
 
     g.setColour (onSurfaceVariant);
     g.setFont   (juce::Font (juce::FontOptions().withHeight (11.0f)));
     for (int step = 0; step < PaulPreset::NUM_STEPS; ++step)
     {
-        float cx = inner.getX() + step * cellW;
+        float cx = originX + (float) step * cellSize;
         g.drawText (juce::String (step + 1),
-                    juce::Rectangle<float> (cx, inner.getY(), cellW, headerH - 2.0f),
+                    juce::Rectangle<float> (cx, inner.getY(), cellSize, headerH - 2.0f),
                     juce::Justification::centred, false);
     }
 
     for (int row = 0; row < nRows; ++row)
     {
-        float cy = gridTop + row * cellH;
+        float cy = originY + (float) row * cellSize;
         for (int step = 0; step < PaulPreset::NUM_STEPS; ++step)
         {
-            float cx = inner.getX() + step * cellW + pad;
+            float cx = originX + (float) step * cellSize + pad;
             auto  cell = juce::Rectangle<float> (cx, cy + pad,
-                                                  cellW - pad * 2.0f, cellH - pad * 2.0f);
+                                                  cellSize - pad * 2.0f, cellSize - pad * 2.0f);
 
             bool isBeat  = (step % 4 == 0);
             bool inLoop  = (step >= ls0 && step <= le0);
@@ -211,10 +186,10 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
         int displayRow = maxMidi - midi;
         displayRow = juce::jlimit (0, nRows - 1, displayRow);
 
-        float cx = inner.getX() + step * cellW + pad;
-        float cy = gridTop + displayRow * cellH + pad;
+        float cx = originX + (float) step * cellSize + pad;
+        float cy = originY + (float) displayRow * cellSize + pad;
         auto  cell = juce::Rectangle<float> (cx, cy,
-                                              cellW - pad * 2.0f, cellH - pad * 2.0f);
+                                              cellSize - pad * 2.0f, cellSize - pad * 2.0f);
 
         juce::Colour col = primary.withAlpha (hit.isGhost ? 0.35f : 0.72f);
         float velFrac = hit.velocity / 127.0f;
@@ -234,12 +209,12 @@ void PaulBassGridComponent::paint (juce::Graphics& g)
 
     if (currentStep >= 0 && currentStep < PaulPreset::NUM_STEPS)
     {
-        float cx = inner.getX() + currentStep * cellW;
+        float cx = originX + (float) currentStep * cellSize;
         g.setColour (primary.withAlpha (0.08f));
-        g.fillRect  (cx, gridTop, cellW, hBody);
+        g.fillRect  (cx, originY, cellSize, cellSize * (float) nRows);
 
         g.setColour (primary.withAlpha (0.85f));
-        g.fillRect  (cx + pad, inner.getY(), cellW - pad * 2.0f, 2.0f);
+        g.fillRect  (cx + pad, inner.getY(), cellSize - pad * 2.0f, 2.0f);
     }
 }
 
@@ -251,20 +226,22 @@ void PaulBassGridComponent::mouseDown (const juce::MouseEvent& e)
     constexpr float headerH = 26.0f;
     const float innerLeft  = margin;
     const float innerRight = (float)getWidth() - margin;
+    const float innerW     = innerRight - innerLeft;
     const float gridTop    = margin + headerH;
+    const float hBody      = (float)getHeight() - margin * 2.0f - headerH;
 
     int minMidi = 60, maxMidi = 72;
-    getGuitarMelodicMidiRange (engine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
+    bridge::setOneOctaveMelodicRange (engine, minMidi, maxMidi);
+    const int nRows = bridge::kMelodicOctaveRows;
 
-    float cellW = (innerRight - innerLeft) / (float)PaulPreset::NUM_STEPS;
-    float gridH = (float)getHeight() - margin * 2.0f - headerH;
-    float cellH = gridH / (float)nRows;
+    float originX = 0.0f, originY = 0.0f, cellSize = 1.0f;
+    bridge::computeSquareMelodicGrid (innerLeft, innerW, gridTop, hBody,
+                                      PaulPreset::NUM_STEPS, nRows, originX, originY, cellSize);
 
-    int step = (int)((e.x - innerLeft) / cellW);
-    int row  = (int)((e.y - gridTop) / cellH);
+    int step = (int)((e.x - originX) / cellSize);
+    int row  = (int)((e.y - originY) / cellSize);
 
-    if (e.y < gridTop) return;
+    if (e.y < gridTop || e.y > originY + cellSize * (float) nRows) return;
     if (step < 0 || step >= PaulPreset::NUM_STEPS || row < 0 || row >= nRows) return;
 
     auto& pat = const_cast<GuitarPattern&>(engine.getPattern());
@@ -382,21 +359,9 @@ PaulPanel::PaulPanel (BridgeProcessor& p)
     proc.apvtsPaul.addParameterListener ("rootNote", this);
     proc.apvtsPaul.addParameterListener ("octave", this);
     proc.apvtsPaul.addParameterListener ("scale", this);
+    proc.apvtsPaul.addParameterListener ("style", this);
 
     proc.apvtsPaul.state.addListener (this);
-
-    for (int i = 0; i < PaulPreset::NUM_STYLES; ++i)
-    {
-        auto* btn = styleButtons.add (new juce::TextButton (PaulPreset::STYLE_NAMES[i]));
-        btn->setRadioGroupId (1);
-        btn->setClickingTogglesState (true);
-        btn->onClick = [this, i]
-        {
-            updateStyleButtonStates (i);
-            proc.applyPaulStyleAndRegenerate (i);
-        };
-        addAndMakeVisible (btn);
-    }
 
     addAndMakeVisible (pianoRoll);
     addAndMakeVisible (bassGrid);
@@ -457,9 +422,20 @@ PaulPanel::PaulPanel (BridgeProcessor& p)
     styleLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
     addAndMakeVisible (styleLabel);
 
+    for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
+        styleBox.addItem (bridgeUnifiedStyleNames()[i], i + 1);
+    addAndMakeVisible (styleBox);
+    styleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+                      (proc.apvtsPaul, "style", styleBox);
+
     generateButton.setTooltip ("Randomize groove parameters and generate a new pattern.");
-    generateButton.setButtonText ("GEN");
     generateButton.onClick = [this] { proc.triggerPaulGenerate(); };
+
+    performButton.setTooltip ("While transport runs: regenerate with seamless crossfade into the next loop.");
+    performButton.setClickingTogglesState (true);
+    performAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+                        (proc.apvtsPaul, "perform", performButton);
+    addAndMakeVisible (performButton);
 
     fillButton.setTooltip ("Hold to layer live fills on top of the current line.");
     fillButton.setMouseCursor (juce::MouseCursor::PointingHandCursor);
@@ -485,9 +461,6 @@ PaulPanel::PaulPanel (BridgeProcessor& p)
     updateTickerButtonStates();
     syncLockedWidthFromParams();
 
-    int curStyle = (int)*proc.apvtsPaul.getRawParameterValue ("style");
-    updateStyleButtonStates (curStyle);
-
     stepTimer.startTimerHz (30);
 }
 
@@ -500,6 +473,7 @@ PaulPanel::~PaulPanel()
     proc.apvtsPaul.removeParameterListener ("rootNote", this);
     proc.apvtsPaul.removeParameterListener ("octave", this);
     proc.apvtsPaul.removeParameterListener ("scale", this);
+    proc.apvtsPaul.removeParameterListener ("style", this);
 
     if (fillHoldListener != nullptr)
         fillButton.removeMouseListener (fillHoldListener.get());
@@ -565,6 +539,15 @@ void PaulPanel::applyLoopLockAfterEndChange()
 void PaulPanel::parameterChanged (const juce::String& parameterID, float newValue)
 {
     juce::ignoreUnused (newValue);
+
+    if (parameterID == "style")
+    {
+        proc.rebuildPaulGridPreview();
+        proc.guitarEngine.generatePattern();
+        proc.rebuildPaulGridPreview();
+        triggerAsyncUpdate();
+        return;
+    }
 
     if (parameterID == "rootNote" || parameterID == "octave" || parameterID == "scale")
     {
@@ -634,24 +617,13 @@ void PaulPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identifi
 
 void PaulPanel::resized()
 {
+    using namespace bridge::instrumentLayout;
+
     auto area = getLocalBounds().reduced (16);
-
     area.removeFromTop (8);
 
-    const int bottomPanelH = 360;
-    auto bottom = area.removeFromBottom (bottomPanelH);
-
-    auto pitchRow = area.removeFromTop (34);
-    rootNoteLabel.setBounds (pitchRow.removeFromLeft (32));
-    rootNoteBox  .setBounds (pitchRow.removeFromLeft (65).reduced (0, 4));
-    pitchRow.removeFromLeft (12);
-    scaleLabel   .setBounds (pitchRow.removeFromLeft (36));
-    scaleBox     .setBounds (pitchRow.removeFromLeft (100).reduced (0, 4));
-    pitchRow.removeFromLeft (12);
-    octaveLabel  .setBounds (pitchRow.removeFromLeft (44));
-    octaveBox    .setBounds (pitchRow.removeFromLeft (55).reduced (0, 4));
-
-    area.removeFromTop (8);
+    const int bottomH = kKnobRowH + kGap + kDropdownRow + kGap + kLoopRowH;
+    auto bottom = area.removeFromBottom (bottomH);
 
     auto gridRow = area;
     constexpr int pianoW = 56;
@@ -661,62 +633,87 @@ void PaulPanel::resized()
 
     bottom.removeFromTop (6);
 
-    auto knobRow1 = bottom.removeFromTop (98);
-    int knobW = jmax (72, knobRow1.getWidth() / 5);
-    knobDensity.setBounds    (knobRow1.removeFromLeft (knobW));
-    knobSwing.setBounds      (knobRow1.removeFromLeft (knobW));
-    knobHumanize.setBounds   (knobRow1.removeFromLeft (knobW));
-    knobPocket.setBounds     (knobRow1.removeFromLeft (knobW));
-    knobVelocity.setBounds   (knobRow1);
+    {
+        auto knobRow = bottom.removeFromTop (kKnobRowH);
+        const int gap = 6;
+        const int n = 9;
+        const int totalGaps = gap * (n - 1);
+        int kw = (knobRow.getWidth() - totalGaps) / n;
+        knobDensity.setBounds    (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobSwing.setBounds      (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobHumanize.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobPocket.setBounds     (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobVelocity.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobFillRate.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobComplexity.setBounds (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobGhost.setBounds      (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
+        knobStaccato.setBounds   (knobRow.removeFromLeft (knobRow.getWidth()));
+    }
 
-    bottom.removeFromTop (4);
-    auto knobRow2 = bottom.removeFromTop (98);
-    knobW = jmax (72, knobRow2.getWidth() / 4);
-    knobFillRate.setBounds   (knobRow2.removeFromLeft (knobW));
-    knobComplexity.setBounds (knobRow2.removeFromLeft (knobW));
-    knobGhost.setBounds      (knobRow2.removeFromLeft (knobW));
-    knobStaccato.setBounds   (knobRow2);
+    bottom.removeFromTop (kGap);
 
-    bottom.removeFromTop (8);
+    {
+        auto row = bottom.removeFromTop (kDropdownRow);
+        const int dh = kDropdownH;
+        const int yPad = (kDropdownRow - dh) / 2;
+        auto placeCombo = [&] (juce::Label& lab, juce::ComboBox& box, int labW, int boxW)
+        {
+            lab.setBounds (row.removeFromLeft (labW).withHeight (kDropdownRow).reduced (0, 10));
+            box.setBounds (row.removeFromLeft (boxW).withHeight (dh).translated (0, yPad));
+            row.removeFromLeft (10);
+        };
+        placeCombo (rootNoteLabel, rootNoteBox, 36, 56);
+        placeCombo (scaleLabel, scaleBox, 40, juce::jmin (120, juce::jmax (80, row.getWidth() / 6)));
+        placeCombo (octaveLabel, octaveBox, 48, 52);
+        placeCombo (styleLabel, styleBox, 40, juce::jmin (200, juce::jmax (120, row.getWidth() / 5)));
+    }
 
-    auto loopRow = bottom.removeFromTop (102);
-    loopSectionLabel.setBounds (loopRow.removeFromLeft (40).withHeight (16));
-    knobLoopStart.setBounds (loopRow.removeFromLeft (92));
-    loopWidthLockButton.setBounds (loopRow.removeFromLeft (32).withSizeKeepingCentre (28, 28));
-    knobLoopEnd.setBounds (loopRow.removeFromLeft (92));
-    loopRow.removeFromLeft (8);
+    bottom.removeFromTop (kGap);
 
-    tickerLabel.setBounds (loopRow.removeFromLeft (44).withHeight (18));
-    auto tickRow = loopRow.removeFromLeft (92);
-    const int th = juce::jmin (24, tickRow.getHeight());
-    tickerFastButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
-    tickerNormalButton.setBounds (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
-    tickerSlowButton.setBounds   (tickRow.removeFromLeft (30).withHeight (th).reduced (0, 2));
+    {
+        auto loopRow = bottom.removeFromTop (kLoopRowH);
+        loopSectionLabel.setBounds (loopRow.removeFromLeft (36).withHeight (14).translated (0, 4));
 
-    loopRow.removeFromLeft (10);
-    const int actW = juce::jmin (56, loopRow.getWidth() / 2);
-    generateButton.setBounds (loopRow.removeFromLeft (actW).reduced (0, 10));
-    fillButton.setBounds     (loopRow.removeFromLeft (actW).reduced (0, 10));
+        knobLoopStart.setBounds (loopRow.removeFromLeft (86));
+        loopRow.removeFromLeft (4);
+        loopWidthLockButton.setBounds (loopRow.removeFromLeft (30).withSizeKeepingCentre (26, 26));
+        loopRow.removeFromLeft (4);
+        knobLoopEnd.setBounds (loopRow.removeFromLeft (86));
+        loopRow.removeFromLeft (10);
 
-    bottom.removeFromTop (6);
+        const int speedBlockW = kSpeedBlockW;
+        auto speedBlock = loopRow.removeFromLeft (speedBlockW);
+        tickerLabel.setBounds (speedBlock.removeFromTop (14));
+        {
+            auto strip = speedBlock;
+            const int gapS = kSpeedBtnGap;
+            const int bw = (strip.getWidth() - gapS * 2) / 3;
+            const int bh = juce::jmin (bw, strip.getHeight());
+            const int x0 = strip.getX();
+            const int y0 = strip.getY() + (strip.getHeight() - bh) / 2;
+            tickerFastButton.setBounds   (x0, y0, bw, bh);
+            tickerNormalButton.setBounds (x0 + bw + gapS, y0, bw, bh);
+            tickerSlowButton.setBounds   (x0 + 2 * (bw + gapS), y0, bw, bh);
+        }
 
-    auto styleRow = bottom.removeFromTop (36);
-    styleLabel.setBounds (styleRow.removeFromLeft (48).reduced (0, 6));
-    const int btnW = styleRow.getWidth() / PaulPreset::NUM_STYLES;
-    for (auto* btn : styleButtons)
-        btn->setBounds (styleRow.removeFromLeft (btnW).reduced (2, 4));
+        loopRow.removeFromLeft (kActionBtnGap);
+
+        const int sq = kActionBtnSide;
+        const int gapA = kActionBtnGap;
+        const int rowTop = loopRow.getY();
+        const int yOff = (kLoopRowH - sq) / 2;
+        generateButton.setBounds (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+        loopRow.removeFromLeft (gapA);
+        fillButton.setBounds     (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+        loopRow.removeFromLeft (gapA);
+        performButton.setBounds  (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+    }
 }
 
 void PaulPanel::paint (juce::Graphics& g)
 {
     using namespace PaulM3;
     g.fillAll (surface);
-}
-
-void PaulPanel::updateStyleButtonStates (int active)
-{
-    for (int i = 0; i < styleButtons.size(); ++i)
-        styleButtons[i]->setToggleState (i == active, juce::dontSendNotification);
 }
 
 void PaulPanel::handleAsyncUpdate()
@@ -734,7 +731,24 @@ void PaulPanel::updateStepAnimation()
         bassGrid.update (step);
     }
 
-    int curStyle = (int)*proc.apvtsPaul.getRawParameterValue ("style");
-    if (! styleButtons.isEmpty() && ! styleButtons[curStyle]->getToggleState())
-        updateStyleButtonStates (curStyle);
+    const bool perfOn = proc.apvtsPaul.getRawParameterValue ("perform")->load() > 0.5f;
+    ++performBlinkTick;
+    if (perfOn)
+    {
+        const bool flash = (performBlinkTick % (bridge::instrumentLayout::kPerformBlinkTicks * 2))
+                            < bridge::instrumentLayout::kPerformBlinkTicks;
+        const juce::Colour g (0xff4caf50);
+        performButton.setColour (juce::TextButton::buttonColourId,
+                                 flash ? g.withAlpha (0.82f) : g.withAlpha (0.30f));
+        performButton.setColour (juce::TextButton::textColourOffId,
+                                 juce::Colours::white.withAlpha (0.95f));
+    }
+    else
+    {
+        using namespace PaulM3;
+        performButton.setColour (juce::TextButton::buttonColourId,
+                                 performButton.getToggleState() ? primary.withAlpha (0.35f)
+                                                                : juce::Colours::transparentBlack);
+        performButton.setColour (juce::TextButton::textColourOffId, PaulColors::TextDim);
+    }
 }
