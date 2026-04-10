@@ -1,0 +1,134 @@
+#pragma once
+
+#include <JuceHeader.h>
+#include "BootsyStylePresets.h"
+#include <array>
+#include <random>
+#include <functional>
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BassHit — one 16th-note slot in the generated bass line
+// ─────────────────────────────────────────────────────────────────────────────
+struct BassHit
+{
+    bool    active      = false;
+    uint8   velocity    = 100;
+    int     midiNote    = 36;     // absolute MIDI note (root + degree offset)
+    int     degree      = 0;      // degree index (0–7) for UI display
+    bool    isGhost     = false;  // affects velocity tier and note duration
+    int     timeShift   = 0;      // timing feel + humanize, in samples
+    int     durationSamples = 0;  // calculated at scheduling time
+};
+
+using BassPattern = std::array<BassHit, BootsyPreset::NUM_STEPS>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+class BassEngine
+{
+public:
+    BassEngine();
+
+    // ── Generation ─────────────────────────────────────────────────────────
+    void generatePattern();
+    void generateFill (int fromStep = 12);
+
+    // ── Pattern access ─────────────────────────────────────────────────────
+    const BassHit&     getStep    (int step) const { return pattern[(size_t)step]; }
+    const BassPattern& getPattern ()         const { return pattern; }
+    const BassPattern& getPatternForGrid()   const { return displayPattern; }
+    bool               isLocked  ()          const { return locked; }
+
+    void setFillHoldActive (bool on) { fillHoldActive = on; }
+    void rebuildGridPreview();
+
+    // ── Parameters ─────────────────────────────────────────────────────────
+    void setStyle       (int  s) { style       = jlimit (0, BootsyPreset::NUM_STYLES - 1, s); }
+    void setScale       (int  s) { scale       = jlimit (0, BootsyPreset::NUM_SCALES - 1, s); }
+    void setRootNote    (int  r) { rootNote    = jlimit (0, 11, r); }  // 0=C … 11=B
+    void setOctave      (int  o) { octave      = jlimit (1, 4, o);  }  // MIDI octave (2=bass register)
+    void setTemperature (float t){ temperature = jlimit (0.01f, 2.0f,  t); }
+    void setDensity     (float d){ density     = jlimit (0.0f,  1.0f,  d); }
+    void setSwing       (float s){ swing       = jlimit (0.0f,  1.0f,  s); }
+    void setHumanize    (float h){ humanize    = jlimit (0.0f,  1.0f,  h); }
+    void setPocket      (float p){ pocket      = jlimit (0.0f,  1.0f,  p); }  // timing feel intensity
+    void setVelocity    (float v){ velocityMul = jlimit (0.0f,  1.0f,  v); }
+    void setFillRate    (float f){ fillRate    = jlimit (0.0f,  1.0f,  f); }
+    void setComplexity  (float c){ complexity  = jlimit (0.0f,  1.0f,  c); }
+    void setGhostAmount (float g){ ghostAmount = jlimit (0.0f,  1.0f,  g); }  // scales ghost tendency
+    void setStaccato    (float s){ staccato    = jlimit (0.0f,  1.0f,  s); }  // 0=legato, 1=staccato
+    void setPatternLen  (int   l){ patternLen  = jlimit (1, BootsyPreset::NUM_STEPS, l); }
+    void setLocked      (bool  l){ locked      = l; }
+    void setSeed        (uint32 s){ seed       = s; rng.seed (seed); }
+    void setPhraseBars  (int bars){ phraseBars = jlimit (1, 64, bars); }
+
+    int   getStyle      () const { return style; }
+    int   getScale      () const { return scale; }
+    int   getRootNote   () const { return rootNote; }
+    int   getOctave     () const { return octave; }
+    float getTemperature() const { return temperature; }
+    float getDensity    () const { return density; }
+    float getSwing      () const { return swing; }
+    float getHumanize   () const { return humanize; }
+    float getPocket     () const { return pocket; }
+    float getVelocity   () const { return velocityMul; }
+    float getFillRate   () const { return fillRate; }
+    float getComplexity () const { return complexity; }
+    float getGhostAmount() const { return ghostAmount; }
+    float getStaccato   () const { return staccato; }
+    int   getPatternLen () const { return patternLen; }
+    uint32 getSeed      () const { return seed; }
+    int   getPhraseBars () const { return phraseBars; }
+
+    // Swing offset in samples for a given step
+    int  getSwingOffset (int step, double samplesPerStep) const;
+
+    // Combined timing feel offset (pocket) in samples
+    int  getTimingFeelOffset (int step, double samplesPerStep) const;
+
+    // Note duration in samples for a given hit
+    int  calcNoteDuration (const BassHit& hit, double samplesPerStep) const;
+
+    // Called each bar — may auto-trigger a fill based on fillRate
+    bool shouldTriggerFill();
+
+    // Register callback so editor can repaint when pattern changes
+    std::function<void()> onPatternChanged;
+
+    // Resolve absolute MIDI note from degree, style, root, octave, scale
+    int  degreeToMidiNote (int degree, int prevMidi = -1) const;
+
+private:
+    BassPattern  pattern;
+    BassPattern  displayPattern {};  // pattern + optional fill-hold overlay for UI
+    std::mt19937 rng;
+    bool         fillHoldActive = false;
+
+    int   style       = 0;
+    int   scale       = 0;   // 0=Dorian
+    int   rootNote    = 0;   // 0=C
+    int   octave      = 2;   // bass register (C2 = MIDI 36)
+    float temperature = 1.0f;
+    float density     = 0.70f;
+    float swing       = 0.0f;
+    float humanize    = 0.20f;
+    float pocket      = 0.50f;
+    float velocityMul = 0.85f;
+    float fillRate    = 0.15f;
+    float complexity  = 0.50f;
+    float ghostAmount = 0.70f;
+    float staccato    = 0.20f;
+    int   patternLen  = BootsyPreset::NUM_STEPS;
+    bool  locked      = false;
+    uint32 seed       = 42;
+    int   barCount    = 0;
+    int   phraseBars  = 4;
+
+    int   rootMidiBase() const;            // = rootNote + (octave + 1) * 12
+    float sampleProb (float p) const;
+    uint8 sampleVelocity (int step, bool ghost, bool accent) const;
+    int   chooseDegreeProbabilistic (int step, int preferredDegree) const;
+    int   resolveApproachNote (int step) const;  // looks ahead for chromatic approach
+    void  resolveApproachNotes();                 // post-pass: fix approach degrees
+    float complexityMod (int step) const;
+    void  applyHumanize (double samplesPerStep);
+};
