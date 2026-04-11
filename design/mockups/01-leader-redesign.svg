@@ -1,308 +1,375 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 740" width="960" height="740" font-family="Inter, system-ui, -apple-system, Helvetica, Arial, sans-serif">
-  <title>Bridge — Leader (redesign v2)</title>
+  <title>Bridge — Leader panel redesign</title>
 
   <defs>
     <linearGradient id="appBg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#17141F"/>
-      <stop offset="1" stop-color="#0E0C13"/>
+      <stop offset="0"  stop-color="#1A1722"/>
+      <stop offset="1"  stop-color="#100E16"/>
+    </linearGradient>
+    <linearGradient id="headerBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"  stop-color="#221E2C"/>
+      <stop offset="1"  stop-color="#17141E"/>
     </linearGradient>
     <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#23202B"/>
-      <stop offset="1" stop-color="#1B1823"/>
+      <stop offset="0"  stop-color="#23202B"/>
+      <stop offset="1"  stop-color="#1B1823"/>
     </linearGradient>
-    <linearGradient id="mixerRowBg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1D1A25"/>
-      <stop offset="1" stop-color="#161320"/>
+    <linearGradient id="conductorGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0"  stop-color="#D4A84B" stop-opacity="0.22"/>
+      <stop offset="0.6" stop-color="#D4A84B" stop-opacity="0.05"/>
+      <stop offset="1"  stop-color="#D4A84B" stop-opacity="0.0"/>
     </linearGradient>
     <radialGradient id="knobFace" cx="0.5" cy="0.4" r="0.7">
-      <stop offset="0" stop-color="#2A2632"/>
-      <stop offset="1" stop-color="#15131B"/>
+      <stop offset="0"  stop-color="#2A2632"/>
+      <stop offset="1"  stop-color="#15131B"/>
     </radialGradient>
     <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
       <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
-      <feOffset dx="0" dy="2"/>
-      <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
+      <feOffset dx="0" dy="2" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.45"/></feComponentTransfer>
       <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
 
-    <symbol id="knob" viewBox="0 0 72 72" overflow="visible">
-      <circle cx="36" cy="36" r="30" fill="none" stroke="#2E2937" stroke-width="5"/>
-      <path d="M 14.75 54.25 A 30 30 0 1 1 57.25 54.25" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
-      <circle cx="36" cy="36" r="23" fill="url(#knobFace)" stroke="#3A3548"/>
-      <line x1="36" y1="36" x2="36" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
-      <circle cx="36" cy="36" r="2" fill="currentColor"/>
+    <!-- Reusable conductor knob (gold accent) -->
+    <symbol id="knobGold" viewBox="0 0 92 92" overflow="visible">
+      <circle cx="46" cy="46" r="38" fill="none" stroke="#2E2937" stroke-width="6"/>
+      <path d="M 18.4 69.6 A 38 38 0 1 1 73.6 69.6" fill="none" stroke="#D4A84B" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="46" cy="46" r="30" fill="url(#knobFace)" stroke="#3A3548" stroke-width="1"/>
+      <line x1="46" y1="46" x2="46" y2="22" stroke="#D4A84B" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="46" cy="46" r="2.4" fill="#D4A84B"/>
     </symbol>
 
-    <symbol id="miniDrumGrid" viewBox="0 0 640 56" overflow="visible">
-      <rect width="640" height="56" rx="6" fill="#131019"/>
-      <g fill="#E07A5A">
-        <rect x="6"   y="46" width="32" height="6" rx="2"/>
-        <rect x="166" y="46" width="32" height="6" rx="2"/>
-        <rect x="326" y="46" width="32" height="6" rx="2"/>
-        <rect x="486" y="46" width="32" height="6" rx="2"/>
-      </g>
-      <g fill="#E07A5A" opacity="0.9">
-        <rect x="86"  y="40" width="32" height="4" rx="2"/>
-        <rect x="246" y="40" width="32" height="4" rx="2"/>
-        <rect x="406" y="40" width="32" height="4" rx="2"/>
-        <rect x="566" y="40" width="32" height="4" rx="2"/>
-      </g>
-      <g fill="#E07A5A" opacity="0.7">
-        <rect x="6"   y="24" width="28" height="3" rx="1.5"/>
-        <rect x="46"  y="24" width="28" height="3" rx="1.5"/>
-        <rect x="86"  y="24" width="28" height="3" rx="1.5"/>
-        <rect x="126" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="166" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="206" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="246" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="286" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="326" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="366" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="406" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="446" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="486" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="526" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="566" y="24" width="28" height="3" rx="1.5"/>
-        <rect x="606" y="24" width="28" height="3" rx="1.5"/>
-      </g>
-      <g fill="#E07A5A" opacity="0.85">
-        <rect x="126" y="16" width="24" height="5" rx="2"/>
-        <rect x="446" y="16" width="24" height="5" rx="2"/>
-      </g>
-      <g fill="#E07A5A" opacity="0.55">
-        <rect x="220" y="32" width="12" height="3" rx="1.5"/>
-        <rect x="540" y="32" width="12" height="3" rx="1.5"/>
-      </g>
-      <g stroke="#2E2937" stroke-width="0.5" opacity="0.7">
-        <line x1="160" y1="4" x2="160" y2="52"/>
-        <line x1="320" y1="4" x2="320" y2="52"/>
-        <line x1="480" y1="4" x2="480" y2="52"/>
-      </g>
-    </symbol>
-
-    <symbol id="miniNoteGrid" viewBox="0 0 640 56" overflow="visible">
-      <rect width="640" height="56" rx="6" fill="#131019"/>
-      <g>
-        <circle cx="16"  cy="40" r="3" fill="currentColor"/>
-        <circle cx="56"  cy="34" r="3" fill="currentColor"/>
-        <circle cx="96"  cy="40" r="3" fill="currentColor"/>
-        <circle cx="136" cy="28" r="3" fill="currentColor"/>
-        <circle cx="176" cy="22" r="3" fill="currentColor"/>
-        <circle cx="216" cy="28" r="3" fill="currentColor"/>
-        <circle cx="256" cy="34" r="3" fill="currentColor"/>
-        <circle cx="296" cy="40" r="3" fill="currentColor"/>
-        <circle cx="336" cy="34" r="3" fill="currentColor"/>
-        <circle cx="376" cy="28" r="3" fill="currentColor"/>
-        <circle cx="416" cy="22" r="3" fill="currentColor"/>
-        <circle cx="456" cy="16" r="3" fill="currentColor"/>
-        <circle cx="496" cy="22" r="3" fill="currentColor"/>
-        <circle cx="536" cy="28" r="3" fill="currentColor"/>
-        <circle cx="576" cy="34" r="3" fill="currentColor"/>
-        <circle cx="616" cy="40" r="3" fill="currentColor"/>
-      </g>
-      <g stroke="#2E2937" stroke-width="0.5" opacity="0.6">
-        <line x1="160" y1="4" x2="160" y2="52"/>
-        <line x1="320" y1="4" x2="320" y2="52"/>
-        <line x1="480" y1="4" x2="480" y2="52"/>
-      </g>
+    <!-- Mini pattern cell generator for previews -->
+    <symbol id="patternDot" viewBox="0 0 10 10">
+      <rect x="1" y="1" width="8" height="8" rx="2" fill="currentColor"/>
     </symbol>
   </defs>
 
-  <rect width="960" height="740" fill="url(#appBg)"/>
+  <!-- ░░░░░  APP BACKGROUND  ░░░░░ -->
+  <rect x="0" y="0" width="960" height="740" fill="url(#appBg)"/>
 
-  <!-- ═══ TAB STRIP (52 px) — power dots removed from each chip ═══ -->
-  <g transform="translate(0,0)">
-    <rect width="960" height="52" fill="#14121A"/>
-    <line x1="0" y1="51.5" x2="960" y2="51.5" stroke="#2E2937"/>
-    <g font-size="12" font-weight="700" letter-spacing="2" text-anchor="middle">
-      <g transform="translate(12,8)">
-        <rect width="168" height="36" rx="10" fill="#1F1B25" stroke="#D4A84B" stroke-opacity="0.85"/>
-        <rect y="33" width="168" height="3" rx="1.5" fill="#D4A84B"/>
-        <text x="84" y="23" fill="#EAE2D5">LEADER</text>
+  <!-- ░░░░░  HEADER BAR  ░░░░░ -->
+  <rect x="0" y="0" width="960" height="60" fill="url(#headerBg)"/>
+  <line x1="0" y1="60" x2="960" y2="60" stroke="#2A2434" stroke-width="1"/>
+
+  <!-- Wordmark -->
+  <g transform="translate(20,21)">
+    <rect x="0" y="0" width="4" height="22" fill="#D4A84B"/>
+    <text x="14" y="17" fill="#EAE2D5" font-size="17" font-weight="700" letter-spacing="2">BRIDGE</text>
+    <text x="14" y="30" fill="#6A6578" font-size="8.5" letter-spacing="1.6">AI BAND GENERATOR</text>
+  </g>
+
+  <!-- Transport cluster (centered) -->
+  <g transform="translate(360,14)">
+    <rect x="0" y="0" width="64" height="32" rx="6" fill="#1B1823" stroke="#32303C"/>
+    <text x="32" y="20" text-anchor="middle" fill="#EAE2D5" font-size="14" font-weight="600">120</text>
+    <text x="32" y="29" text-anchor="middle" fill="#6A6578" font-size="7" letter-spacing="1">BPM</text>
+
+    <g transform="translate(74,0)">
+      <rect x="0" y="0" width="36" height="32" rx="6" fill="#1B1823" stroke="#32303C"/>
+      <polygon points="13,10 13,22 25,16" fill="#8DE0B8"/>
+    </g>
+    <g transform="translate(118,0)">
+      <rect x="0" y="0" width="36" height="32" rx="6" fill="#1B1823" stroke="#32303C"/>
+      <rect x="13" y="11" width="10" height="10" rx="1" fill="#6A6578"/>
+    </g>
+    <g transform="translate(162,0)">
+      <rect x="0" y="0" width="74" height="32" rx="6" fill="#1B1823" stroke="#32303C"/>
+      <circle cx="12" cy="16" r="3" fill="#8DE0B8"/>
+      <text x="22" y="20" fill="#B0A8C4" font-size="10">HOST SYNC</text>
+    </g>
+  </g>
+
+  <!-- Tab chips (right side) -->
+  <g transform="translate(0,14)" font-size="10" font-weight="600">
+    <!-- Leader (active) -->
+    <g transform="translate(642,0)">
+      <rect x="0" y="0" width="58" height="32" rx="6" fill="#D4A84B" fill-opacity="0.20" stroke="#D4A84B"/>
+      <circle cx="11" cy="16" r="3" fill="#D4A84B"/>
+      <text x="20" y="20" fill="#F4D896">LEADER</text>
+    </g>
+    <!-- Animal -->
+    <g transform="translate(703,0)">
+      <rect x="0" y="0" width="58" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
+      <circle cx="11" cy="16" r="3" fill="#E07A5A"/>
+      <text x="20" y="20" fill="#B0A8C4">ANIMAL</text>
+    </g>
+    <g transform="translate(764,0)">
+      <rect x="0" y="0" width="58" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
+      <circle cx="11" cy="16" r="3" fill="#5CB8A8"/>
+      <text x="20" y="20" fill="#B0A8C4">BOOTSY</text>
+    </g>
+    <g transform="translate(825,0)">
+      <rect x="0" y="0" width="56" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
+      <circle cx="11" cy="16" r="3" fill="#B88CFF"/>
+      <text x="20" y="20" fill="#B0A8C4">STEVIE</text>
+    </g>
+    <g transform="translate(884,0)">
+      <rect x="0" y="0" width="56" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
+      <circle cx="11" cy="16" r="3" fill="#6EB3FF"/>
+      <text x="22" y="20" fill="#B0A8C4">PAUL</text>
+    </g>
+  </g>
+
+  <!-- ░░░░░  TITLE STRIP  ░░░░░ -->
+  <g transform="translate(24,82)">
+    <text fill="#EAE2D5" font-size="26" font-weight="700" letter-spacing="1">THE LEADER</text>
+    <text y="20" fill="#6A6578" font-size="11" letter-spacing="1.4">CONDUCT THE ENSEMBLE · 5 GLOBAL CONTROLS SHAPE EVERY INSTRUMENT</text>
+  </g>
+
+  <!-- ░░░░░  CONDUCTOR CARD  ░░░░░ -->
+  <g transform="translate(24,134)">
+    <rect x="0" y="0" width="912" height="180" rx="14" fill="url(#cardBg)" stroke="#2E2937" filter="url(#softShadow)"/>
+    <rect x="0" y="0" width="912" height="180" rx="14" fill="url(#conductorGlow)"/>
+    <!-- section header -->
+    <g transform="translate(24,22)">
+      <rect x="0" y="0" width="3" height="14" fill="#D4A84B"/>
+      <text x="10" y="12" fill="#D4A84B" font-size="11" font-weight="700" letter-spacing="2">CONDUCTOR</text>
+      <!-- Style pill -->
+      <g transform="translate(660,-6)">
+        <text x="0" y="15" fill="#6A6578" font-size="10" letter-spacing="1.4">STYLE</text>
+        <rect x="36" y="0" width="192" height="24" rx="12" fill="#1B1823" stroke="#3A3548"/>
+        <text x="50" y="16" fill="#EAE2D5" font-size="11">Soul Classic · Deep Pocket</text>
+        <path d="M 215 10 L 220 16 L 225 10" stroke="#B0A8C4" stroke-width="1.5" fill="none" stroke-linecap="round"/>
       </g>
-      <g transform="translate(196,8)">
-        <rect width="168" height="36" rx="10" fill="#1A171F" stroke="#2E2937"/>
-        <text x="84" y="23" fill="#9E99A8">DRUMS</text>
+    </g>
+
+    <!-- Five knobs evenly spaced -->
+    <g transform="translate(0,58)">
+      <g transform="translate(80,0)">
+        <use href="#knobGold" x="0" y="0" width="92" height="92"/>
+        <text x="46" y="108" text-anchor="middle" fill="#B0A8C4" font-size="11" font-weight="600">PRESENCE</text>
+        <text x="46" y="122" text-anchor="middle" fill="#6A6578" font-size="9">Foreground</text>
       </g>
-      <g transform="translate(380,8)">
-        <rect width="168" height="36" rx="10" fill="#1A171F" stroke="#2E2937"/>
-        <text x="84" y="23" fill="#9E99A8">BASS</text>
+      <g transform="translate(245,0)">
+        <use href="#knobGold" x="0" y="0" width="92" height="92"/>
+        <text x="46" y="108" text-anchor="middle" fill="#B0A8C4" font-size="11" font-weight="600">TIGHT</text>
+        <text x="46" y="122" text-anchor="middle" fill="#6A6578" font-size="9">Timing lock</text>
       </g>
-      <g transform="translate(564,8)">
-        <rect width="168" height="36" rx="10" fill="#1A171F" stroke="#2E2937"/>
-        <text x="84" y="23" fill="#9E99A8">KEYS</text>
+      <g transform="translate(410,0)">
+        <use href="#knobGold" x="0" y="0" width="92" height="92"/>
+        <text x="46" y="108" text-anchor="middle" fill="#B0A8C4" font-size="11" font-weight="600">UNITY</text>
+        <text x="46" y="122" text-anchor="middle" fill="#6A6578" font-size="9">Cohesion</text>
       </g>
-      <g transform="translate(748,8)">
-        <rect width="168" height="36" rx="10" fill="#1A171F" stroke="#2E2937"/>
-        <text x="84" y="23" fill="#9E99A8">GUITAR</text>
+      <g transform="translate(575,0)">
+        <use href="#knobGold" x="0" y="0" width="92" height="92"/>
+        <text x="46" y="108" text-anchor="middle" fill="#B0A8C4" font-size="11" font-weight="600">BREATH</text>
+        <text x="46" y="122" text-anchor="middle" fill="#6A6578" font-size="9">Dynamic air</text>
+      </g>
+      <g transform="translate(740,0)">
+        <use href="#knobGold" x="0" y="0" width="92" height="92"/>
+        <text x="46" y="108" text-anchor="middle" fill="#B0A8C4" font-size="11" font-weight="600">SPARK</text>
+        <text x="46" y="122" text-anchor="middle" fill="#6A6578" font-size="9">Surprise</text>
       </g>
     </g>
   </g>
 
-  <!-- ═══ PAGE TITLE ROW (top-padded; on/off toggle left of title) ═══ -->
-  <g transform="translate(24,76)">
+  <!-- ░░░░░  BAND MIXER  ░░░░░ -->
+  <g transform="translate(24,334)">
+    <!-- section header -->
     <g>
-      <rect width="44" height="22" rx="11" fill="#1F3A26" stroke="#4CAF50" stroke-opacity="0.6"/>
-      <circle cx="33" cy="11" r="8" fill="#4CAF50"/>
+      <rect x="0" y="0" width="3" height="14" fill="#B0A8C4"/>
+      <text x="10" y="12" fill="#B0A8C4" font-size="11" font-weight="700" letter-spacing="2">BAND</text>
+      <text x="60" y="12" fill="#6A6578" font-size="10">4 INSTRUMENTS</text>
     </g>
-    <rect x="60" y="-3" width="4" height="28" fill="#D4A84B"/>
-    <text x="72" y="19" fill="#EAE2D5" font-size="22" font-weight="700" letter-spacing="3">LEADER</text>
-  </g>
 
-  <!-- ═══ BAND CARD (top section — replaces grid area) ═══ -->
-  <g transform="translate(24,116)" filter="url(#softShadow)">
-    <rect width="912" height="360" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
-
-    <!-- Card header row: "Band" title + Style/Key/Root on the SAME row -->
-    <g transform="translate(22,22)">
-      <text fill="#D4A84B" font-size="13" font-weight="700" letter-spacing="2.2">BAND</text>
-      <line x1="0" y1="28" x2="868" y2="28" stroke="#2E2937"/>
-
-      <g font-size="11" fill="#B0A8C4">
-        <g transform="translate(520,-5)">
-          <text x="0" y="14" fill="#9E99A8">Root</text>
-          <rect x="38" y="0" width="60" height="22" rx="6" fill="#14121A" stroke="#3A3548"/>
-          <text x="48" y="15" fill="#EAE2D5">C</text>
-          <path d="M 88 10 l 4 5 l 4 -5 z" fill="#9E99A8"/>
+    <!-- Row template (per instrument) used 4x -->
+    <!-- ANIMAL -->
+    <g transform="translate(0,24)">
+      <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
+      <rect x="0" y="0" width="4" height="86" fill="#E07A5A" rx="2"/>
+      <g transform="translate(20,0)">
+        <circle cx="14" cy="43" r="5" fill="#E07A5A"/>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Animal</text>
+        <text x="30" y="54" fill="#6A6578" font-size="10">Drums · 16 steps · 8 lanes</text>
+      </g>
+      <!-- pattern preview (drum grid) -->
+      <g transform="translate(200,18)" color="#E07A5A">
+        <rect x="-6" y="-4" width="500" height="58" rx="6" fill="#15131B" stroke="#2A2632"/>
+        <!-- 8 lanes × 16 steps -->
+        <g>
+          <!-- row 0 kick -->
+          <rect x="0"   y="0"  width="26" height="5" fill="#E07A5A" opacity="1.0"/>
+          <rect x="120" y="0"  width="26" height="5" fill="#E07A5A" opacity="0.9"/>
+          <rect x="240" y="0"  width="26" height="5" fill="#E07A5A" opacity="1.0"/>
+          <rect x="360" y="0"  width="26" height="5" fill="#E07A5A" opacity="0.9"/>
+          <!-- snare -->
+          <rect x="60"  y="7"  width="26" height="5" fill="#E07A5A" opacity="0.85"/>
+          <rect x="180" y="7"  width="26" height="5" fill="#E07A5A" opacity="0.85"/>
+          <rect x="300" y="7"  width="26" height="5" fill="#E07A5A" opacity="0.85"/>
+          <rect x="420" y="7"  width="26" height="5" fill="#E07A5A" opacity="0.85"/>
+          <!-- hats — sixteen -->
+          <g fill="#E07A5A" opacity="0.65">
+            <rect x="0"   y="14" width="20" height="4"/>
+            <rect x="30"  y="14" width="20" height="4"/>
+            <rect x="60"  y="14" width="20" height="4"/>
+            <rect x="90"  y="14" width="20" height="4"/>
+            <rect x="120" y="14" width="20" height="4"/>
+            <rect x="150" y="14" width="20" height="4"/>
+            <rect x="180" y="14" width="20" height="4"/>
+            <rect x="210" y="14" width="20" height="4"/>
+            <rect x="240" y="14" width="20" height="4"/>
+            <rect x="270" y="14" width="20" height="4"/>
+            <rect x="300" y="14" width="20" height="4"/>
+            <rect x="330" y="14" width="20" height="4"/>
+            <rect x="360" y="14" width="20" height="4"/>
+            <rect x="390" y="14" width="20" height="4"/>
+            <rect x="420" y="14" width="20" height="4"/>
+            <rect x="450" y="14" width="20" height="4"/>
+          </g>
+          <rect x="0"   y="22" width="12" height="4" fill="#E07A5A" opacity="0.4"/>
+          <rect x="90"  y="22" width="12" height="4" fill="#E07A5A" opacity="0.4"/>
+          <rect x="180" y="22" width="12" height="4" fill="#E07A5A" opacity="0.4"/>
+          <rect x="270" y="22" width="12" height="4" fill="#E07A5A" opacity="0.4"/>
+          <rect x="360" y="22" width="12" height="4" fill="#E07A5A" opacity="0.4"/>
+          <rect x="450" y="22" width="12" height="4" fill="#E07A5A" opacity="0.4"/>
+          <rect x="210" y="30" width="20" height="4" fill="#E07A5A" opacity="0.7"/>
+          <rect x="450" y="30" width="20" height="4" fill="#E07A5A" opacity="0.7"/>
+          <rect x="60"  y="38" width="12" height="4" fill="#E07A5A" opacity="0.35"/>
+          <rect x="300" y="38" width="12" height="4" fill="#E07A5A" opacity="0.35"/>
+          <rect x="120" y="44" width="12" height="4" fill="#E07A5A" opacity="0.3"/>
         </g>
-        <g transform="translate(622,-5)">
-          <text x="0" y="14" fill="#9E99A8">Key</text>
-          <rect x="30" y="0" width="100" height="22" rx="6" fill="#14121A" stroke="#3A3548"/>
-          <text x="40" y="15" fill="#EAE2D5">Minor</text>
-          <path d="M 120 10 l 4 5 l 4 -5 z" fill="#9E99A8"/>
+        <!-- playhead -->
+        <line x1="210" y1="-4" x2="210" y2="54" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+      </g>
+      <!-- M/S and OPEN -->
+      <g transform="translate(742,26)">
+        <rect x="0"  y="0" width="32" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="16" y="21" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700">M</text>
+        <rect x="40" y="0" width="32" height="32" rx="6" fill="#1A3D28" stroke="#2F6B4A"/>
+        <text x="56" y="21" text-anchor="middle" fill="#6EE7A0" font-size="12" font-weight="700">S</text>
+        <rect x="86" y="0" width="64" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="118" y="21" text-anchor="middle" fill="#EAE2D5" font-size="10" font-weight="600" letter-spacing="1">OPEN →</text>
+      </g>
+    </g>
+
+    <!-- BOOTSY -->
+    <g transform="translate(0,118)">
+      <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
+      <rect x="0" y="0" width="4" height="86" fill="#5CB8A8" rx="2"/>
+      <g transform="translate(20,0)">
+        <circle cx="14" cy="43" r="5" fill="#5CB8A8"/>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Bootsy</text>
+        <text x="30" y="54" fill="#6A6578" font-size="10">Bass · C Mixolydian · Oct 2</text>
+      </g>
+      <g transform="translate(200,18)">
+        <rect x="-6" y="-4" width="500" height="58" rx="6" fill="#15131B" stroke="#2A2632"/>
+        <!-- bass line: circles on a melodic staff -->
+        <g fill="#5CB8A8">
+          <circle cx="12"  cy="38" r="6"/>
+          <circle cx="42"  cy="38" r="4.5" opacity="0.6"/>
+          <circle cx="72"  cy="30" r="6"/>
+          <circle cx="102" cy="30" r="4.5" opacity="0.6"/>
+          <circle cx="132" cy="22" r="6"/>
+          <circle cx="162" cy="30" r="4.5" opacity="0.6"/>
+          <circle cx="192" cy="38" r="6"/>
+          <circle cx="222" cy="38" r="4.5" opacity="0.6"/>
+          <circle cx="252" cy="30" r="6"/>
+          <circle cx="282" cy="22" r="6"/>
+          <circle cx="312" cy="22" r="4.5" opacity="0.6"/>
+          <circle cx="342" cy="14" r="6"/>
+          <circle cx="372" cy="22" r="4.5" opacity="0.6"/>
+          <circle cx="402" cy="30" r="6"/>
+          <circle cx="432" cy="38" r="6"/>
+          <circle cx="462" cy="38" r="4.5" opacity="0.6"/>
         </g>
-        <g transform="translate(758,-5)">
-          <text x="0" y="14" fill="#9E99A8">Style</text>
-          <rect x="34" y="0" width="110" height="22" rx="6" fill="#14121A" stroke="#3A3548"/>
-          <text x="44" y="15" fill="#EAE2D5">Ballad</text>
-          <path d="M 134 10 l 4 5 l 4 -5 z" fill="#9E99A8"/>
+        <line x1="132" y1="-4" x2="132" y2="54" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+      </g>
+      <g transform="translate(742,26)">
+        <rect x="0"  y="0" width="32" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="16" y="21" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700">M</text>
+        <rect x="40" y="0" width="32" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="56" y="21" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700">S</text>
+        <rect x="86" y="0" width="64" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="118" y="21" text-anchor="middle" fill="#EAE2D5" font-size="10" font-weight="600" letter-spacing="1">OPEN →</text>
+      </g>
+    </g>
+
+    <!-- STEVIE -->
+    <g transform="translate(0,212)">
+      <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
+      <rect x="0" y="0" width="4" height="86" fill="#B88CFF" rx="2"/>
+      <g transform="translate(20,0)">
+        <circle cx="14" cy="43" r="5" fill="#B88CFF"/>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Stevie</text>
+        <text x="30" y="54" fill="#6A6578" font-size="10">Piano · C Major · Oct 4</text>
+      </g>
+      <g transform="translate(200,18)">
+        <rect x="-6" y="-4" width="500" height="58" rx="6" fill="#15131B" stroke="#2A2632"/>
+        <g fill="#B88CFF">
+          <circle cx="12"  cy="14" r="5"/>
+          <circle cx="12"  cy="26" r="5" opacity="0.8"/>
+          <circle cx="42"  cy="20" r="4.5" opacity="0.7"/>
+          <circle cx="72"  cy="14" r="5"/>
+          <circle cx="72"  cy="28" r="5" opacity="0.8"/>
+          <circle cx="102" cy="22" r="4" opacity="0.6"/>
+          <circle cx="132" cy="14" r="5"/>
+          <circle cx="132" cy="30" r="5" opacity="0.8"/>
+          <circle cx="162" cy="22" r="4" opacity="0.6"/>
+          <circle cx="192" cy="18" r="5"/>
+          <circle cx="192" cy="32" r="5" opacity="0.8"/>
+          <circle cx="222" cy="22" r="4" opacity="0.6"/>
+          <circle cx="252" cy="10" r="5"/>
+          <circle cx="282" cy="18" r="4" opacity="0.7"/>
+          <circle cx="312" cy="12" r="5"/>
+          <circle cx="342" cy="18" r="4" opacity="0.6"/>
+          <circle cx="372" cy="14" r="5"/>
+          <circle cx="402" cy="22" r="4.5" opacity="0.7"/>
+          <circle cx="432" cy="14" r="5"/>
+          <circle cx="432" cy="28" r="5" opacity="0.8"/>
+          <circle cx="462" cy="22" r="4" opacity="0.6"/>
         </g>
+        <line x1="252" y1="-4" x2="252" y2="54" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
+      </g>
+      <g transform="translate(742,26)">
+        <rect x="0"  y="0" width="32" height="32" rx="6" fill="#3A2020" stroke="#6B2F2F"/>
+        <text x="16" y="21" text-anchor="middle" fill="#FF9999" font-size="12" font-weight="700">M</text>
+        <rect x="40" y="0" width="32" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="56" y="21" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700">S</text>
+        <rect x="86" y="0" width="64" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="118" y="21" text-anchor="middle" fill="#EAE2D5" font-size="10" font-weight="600" letter-spacing="1">OPEN →</text>
       </g>
     </g>
 
-    <!-- 4 mixer rows, each ≈ a mini replica of its instrument grid -->
-    <g transform="translate(22,74)">
-      <rect width="868" height="64" rx="10" fill="url(#mixerRowBg)" stroke="#2E2937"/>
-      <rect width="4" height="64" rx="2" fill="#E07A5A"/>
-      <text x="18" y="28" fill="#EAE2D5" font-size="13" font-weight="600">Drums</text>
-      <use href="#miniDrumGrid" x="96" y="4" width="640" height="56"/>
-      <g transform="translate(762,18)" font-size="11" font-weight="700">
-        <rect width="44" height="28" rx="6" fill="#14121A" stroke="#3A3548"/>
-        <text x="22" y="19" fill="#9E99A8" text-anchor="middle">M</text>
-        <rect x="54" width="44" height="28" rx="6" fill="#1A3D28" stroke="#2E5A3B"/>
-        <text x="76" y="19" fill="#6EE7A0" text-anchor="middle">S</text>
+    <!-- PAUL -->
+    <g transform="translate(0,306)">
+      <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
+      <rect x="0" y="0" width="4" height="86" fill="#6EB3FF" rx="2"/>
+      <g transform="translate(20,0)">
+        <circle cx="14" cy="43" r="5" fill="#6EB3FF"/>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Paul</text>
+        <text x="30" y="54" fill="#6A6578" font-size="10">Guitar · C Major · Oct 3</text>
       </g>
-    </g>
-
-    <g transform="translate(22,146)">
-      <rect width="868" height="64" rx="10" fill="url(#mixerRowBg)" stroke="#2E2937"/>
-      <rect width="4" height="64" rx="2" fill="#5CB8A8"/>
-      <text x="18" y="28" fill="#EAE2D5" font-size="13" font-weight="600">Bass</text>
-      <g color="#5CB8A8"><use href="#miniNoteGrid" x="96" y="4" width="640" height="56"/></g>
-      <g transform="translate(762,18)" font-size="11" font-weight="700">
-        <rect width="44" height="28" rx="6" fill="#14121A" stroke="#3A3548"/>
-        <text x="22" y="19" fill="#9E99A8" text-anchor="middle">M</text>
-        <rect x="54" width="44" height="28" rx="6" fill="#14121A" stroke="#3A3548"/>
-        <text x="76" y="19" fill="#9E99A8" text-anchor="middle">S</text>
-      </g>
-    </g>
-
-    <g transform="translate(22,218)">
-      <rect width="868" height="64" rx="10" fill="url(#mixerRowBg)" stroke="#2E2937"/>
-      <rect width="4" height="64" rx="2" fill="#B88CFF"/>
-      <text x="18" y="28" fill="#EAE2D5" font-size="13" font-weight="600">Keys</text>
-      <g color="#B88CFF"><use href="#miniNoteGrid" x="96" y="4" width="640" height="56"/></g>
-      <g transform="translate(762,18)" font-size="11" font-weight="700">
-        <rect width="44" height="28" rx="6" fill="#14121A" stroke="#3A3548"/>
-        <text x="22" y="19" fill="#9E99A8" text-anchor="middle">M</text>
-        <rect x="54" width="44" height="28" rx="6" fill="#14121A" stroke="#3A3548"/>
-        <text x="76" y="19" fill="#9E99A8" text-anchor="middle">S</text>
-      </g>
-    </g>
-
-    <g transform="translate(22,290)">
-      <rect width="868" height="64" rx="10" fill="url(#mixerRowBg)" stroke="#2E2937"/>
-      <rect width="4" height="64" rx="2" fill="#6EB3FF"/>
-      <text x="18" y="28" fill="#EAE2D5" font-size="13" font-weight="600">Guitar</text>
-      <g color="#6EB3FF"><use href="#miniNoteGrid" x="96" y="4" width="640" height="56"/></g>
-      <g transform="translate(762,18)" font-size="11" font-weight="700">
-        <rect width="44" height="28" rx="6" fill="#3A2020" stroke="#5A3030"/>
-        <text x="22" y="19" fill="#FF9999" text-anchor="middle">M</text>
-        <rect x="54" width="44" height="28" rx="6" fill="#14121A" stroke="#3A3548"/>
-        <text x="76" y="19" fill="#9E99A8" text-anchor="middle">S</text>
-      </g>
-    </g>
-  </g>
-
-  <!-- ═══ BOTTOM HALF — identical on every window ═══ -->
-  <g transform="translate(24,498)">
-    <!-- 5 Leader knobs on the left -->
-    <g font-size="10" fill="#B0A8C4" text-anchor="middle" letter-spacing="0.8">
-      <g transform="translate(0,0)"   color="#D4A84B"><use href="#knob" width="72" height="72" x="14" y="0"/><text x="50" y="84">PRESENCE</text></g>
-      <g transform="translate(108,0)" color="#D4A84B"><use href="#knob" width="72" height="72" x="14" y="0"/><text x="50" y="84">TIGHT</text></g>
-      <g transform="translate(216,0)" color="#D4A84B"><use href="#knob" width="72" height="72" x="14" y="0"/><text x="50" y="84">UNITY</text></g>
-      <g transform="translate(324,0)" color="#D4A84B"><use href="#knob" width="72" height="72" x="14" y="0"/><text x="50" y="84">BREATH</text></g>
-      <g transform="translate(432,0)" color="#D4A84B"><use href="#knob" width="72" height="72" x="14" y="0"/><text x="50" y="84">SPARK</text></g>
-    </g>
-
-    <!-- Loop + Style + Actions card — next to the knob section -->
-    <g transform="translate(548,0)" filter="url(#softShadow)">
-      <rect width="364" height="108" rx="12" fill="url(#cardBg)" stroke="#2E2937"/>
-
-      <!-- Row 1: Loop Start 🔒 | Loop End 🔒 | Speed -->
-      <g transform="translate(16,12)" font-size="9" fill="#9E99A8" letter-spacing="0.8">
-        <text x="0" y="8">LOOP START</text>
-        <rect x="0" y="12" width="86" height="18" rx="9" fill="#14121A" stroke="#3A3548"/>
-        <line x1="6" y1="21" x2="80" y2="21" stroke="#2E2937"/>
-        <line x1="6" y1="21" x2="38" y2="21" stroke="#D4A84B" stroke-width="2"/>
-        <circle cx="38" cy="21" r="5" fill="#D4A84B"/>
-        <g transform="translate(92,12)">
-          <rect width="22" height="18" rx="6" fill="#1F1B25" stroke="#D4A84B" stroke-opacity="0.6"/>
-          <text x="11" y="12" fill="#D4A84B" text-anchor="middle" font-size="10">L</text>
+      <g transform="translate(200,18)">
+        <rect x="-6" y="-4" width="500" height="58" rx="6" fill="#15131B" stroke="#2A2632"/>
+        <g fill="#6EB3FF">
+          <circle cx="12"  cy="22" r="5"/>
+          <circle cx="42"  cy="22" r="4.5" opacity="0.7"/>
+          <circle cx="72"  cy="14" r="5"/>
+          <circle cx="102" cy="14" r="4.5" opacity="0.7"/>
+          <circle cx="132" cy="22" r="5"/>
+          <circle cx="162" cy="22" r="4.5" opacity="0.7"/>
+          <circle cx="192" cy="30" r="5"/>
+          <circle cx="222" cy="22" r="4.5" opacity="0.7"/>
+          <circle cx="252" cy="14" r="5"/>
+          <circle cx="282" cy="14" r="4.5" opacity="0.7"/>
+          <circle cx="312" cy="22" r="5"/>
+          <circle cx="342" cy="30" r="5" opacity="0.8"/>
+          <circle cx="372" cy="22" r="4.5" opacity="0.7"/>
+          <circle cx="402" cy="14" r="5"/>
+          <circle cx="432" cy="14" r="4.5" opacity="0.7"/>
+          <circle cx="462" cy="22" r="5"/>
         </g>
-
-        <text x="128" y="8">LOOP END</text>
-        <rect x="128" y="12" width="86" height="18" rx="9" fill="#14121A" stroke="#3A3548"/>
-        <line x1="134" y1="21" x2="208" y2="21" stroke="#2E2937"/>
-        <line x1="134" y1="21" x2="196" y2="21" stroke="#D4A84B" stroke-width="2"/>
-        <circle cx="196" cy="21" r="5" fill="#D4A84B"/>
-        <g transform="translate(220,12)">
-          <rect width="22" height="18" rx="6" fill="#14121A" stroke="#3A3548"/>
-          <text x="11" y="12" fill="#6A6578" text-anchor="middle" font-size="10">L</text>
-        </g>
-
-        <text x="256" y="8">SPEED</text>
-        <g transform="translate(256,12)" font-size="9" font-weight="600">
-          <rect width="24" height="18" rx="5" fill="#14121A" stroke="#3A3548"/>
-          <text x="12" y="12" fill="#9E99A8" text-anchor="middle">x2</text>
-          <rect x="28" width="24" height="18" rx="5" fill="#D4A84B" fill-opacity="0.35" stroke="#D4A84B" stroke-opacity="0.5"/>
-          <text x="40" y="12" fill="#EAE2D5" text-anchor="middle">1</text>
-          <rect x="56" width="24" height="18" rx="5" fill="#14121A" stroke="#3A3548"/>
-          <text x="68" y="12" fill="#9E99A8" text-anchor="middle">1/2</text>
-        </g>
+        <line x1="342" y1="-4" x2="342" y2="54" stroke="#FFFFFF" stroke-width="1" opacity="0.7"/>
       </g>
-
-      <!-- Row 2: Style dropdown -->
-      <g transform="translate(16,52)" font-size="10">
-        <text fill="#9E99A8" y="4" letter-spacing="0.8">STYLE</text>
-        <rect x="36" y="-6" width="312" height="22" rx="7" fill="#14121A" stroke="#3A3548"/>
-        <text x="46" y="9" fill="#EAE2D5">Power Ballad</text>
-        <path d="M 332 2 l 5 7 l 5 -7 z" fill="#9E99A8"/>
-      </g>
-
-      <!-- Row 3: Actions (no helper text) -->
-      <g transform="translate(16,80)" font-size="10" font-weight="700" letter-spacing="1.2">
-        <rect width="108" height="20" rx="6" fill="#D4A84B"/>
-        <text x="54" y="14" fill="#1F1408" text-anchor="middle">GEN</text>
-        <rect x="120" width="108" height="20" rx="6" fill="#1F1B25" stroke="#3A3548"/>
-        <text x="174" y="14" fill="#D4A84B" text-anchor="middle">FILL</text>
-        <rect x="240" width="108" height="20" rx="6" fill="#1F1B25" stroke="#3A3548"/>
-        <text x="294" y="14" fill="#D4A84B" text-anchor="middle">PERF</text>
+      <g transform="translate(742,26)">
+        <rect x="0"  y="0" width="32" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="16" y="21" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700">M</text>
+        <rect x="40" y="0" width="32" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="56" y="21" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700">S</text>
+        <rect x="86" y="0" width="64" height="32" rx="6" fill="#1B1823" stroke="#3A3548"/>
+        <text x="118" y="21" text-anchor="middle" fill="#EAE2D5" font-size="10" font-weight="600" letter-spacing="1">OPEN →</text>
       </g>
     </g>
-  </g>
-
-  <g transform="translate(24,722)" font-size="9" fill="#6A6578">
-    <text>v2 · Band mixer on top (mini replica of each grid) · on/off toggle + top-padded title · style/key/root on Band header row · shared bottom half</text>
   </g>
 </svg>

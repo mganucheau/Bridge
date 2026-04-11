@@ -12,116 +12,63 @@ self-contained vector files with no external dependencies.
 
 | File | What it shows |
 | --- | --- |
-| `00-design-system.svg` | Colour tokens, typography scale, and component atoms (knobs, buttons, selectors, tab chip, page-title + on/off toggle). |
-| `01-leader-redesign.svg` | The **Leader** view — Band mixer on top, knobs + loop/style/actions on the bottom. |
-| `02-animal-redesign.svg` | The **Drums** (Animal) panel — kick at bottom, in-grid loop brackets, 8-knob row + shared bottom card. |
-| `03-bootsy-redesign.svg` | The **Bass** (Bootsy) panel — piano sidebar + note grid, 9-knob row + shared bottom card. |
-| `04-stevie-redesign.svg` | The **Keys** (Stevie) panel — same template as Bass, chord-stack voicings. |
-| `05-paul-redesign.svg` | The **Guitar** (Paul) panel — fretboard dropped, piano sidebar + note grid just like Bass/Keys. |
-
-## v2 — what changed after the Phase 2 review
-
-This pass applies the user's follow-up brief on top of the merged `main`
-(commit `e70ea6e`, which introduced `BridgeInstrumentStyles.h` and
-`MelodicGridLayout.h` for shared layout helpers and renamed the tab labels
-from `Animal/Bootsy/Stevie/Paul` → `Drums/Bass/Keys/Guitar`).
-
-### Leader page
-- **Band mixer is now at the top** (replaces the old grid area), knobs + the
-  loop/style/actions card are at the bottom — so the Leader's bottom half
-  matches every instrument page.
-- **Style / Key / Root pickers live on the same row as the "Band" title**
-  inside the mixer card header. The per-row description text
-  (`# of instruments`, `key`, `octave`) has been removed.
-- **Each mixer row is now the same overall size as an instrument grid
-  section**, and each row is a tiny live replica of that instrument's grid
-  (drum cells for Drums; one-octave note scatter for Bass / Keys / Guitar).
-- The loop + style + actions card sits next to the knob section, just like
-  on every other instrument.
-
-### Every page (unified bottom half)
-- **Bottom half is identical on every window**: one horizontal row of
-  knobs on the left, one `Loop / Style / Actions` card on the right. Only
-  the knob labels and accent colour change per instrument.
-- Inside the bottom card, in vertical order:
-  1. Loop Start slider + 🔒 lock, Loop End slider + 🔒 lock, Speed x2 / 1 / 1/2
-  2. Style dropdown
-  3. `GEN` / `FILL` / `PERF` action buttons — no helper text underneath.
-- Section sub-titles above the knob rows (`Time & feel`,
-  `Velocity & expression`, …) are **removed** — the knobs are labelled
-  individually and that's enough.
-
-### Tabs, titles and toggles
-- **Power dot is removed from each tab chip.** The top tab strip is now
-  clean text chips; the active chip is distinguished by its instrument
-  accent border + bottom rule.
-- **An on/off toggle sits to the LEFT of each page title** (a small green
-  pill-switch), replacing the old power dot that was overflowing the tab
-  chip. Clicking it still toggles the instrument on/off — same parameter,
-  cleaner home.
-- **Page title is top-padded** so it's no longer flush with the panel
-  border — it gets the same vertical breathing room as every other section.
-- **Page sub-titles are gone from under the title.** Their content (the
-  `8 LANES · 16 STEPS · …` descriptor) moves to the same row as
-  `Root / Scale / Oct`, right-aligned, centred to the dropdown baseline.
-
-### Dropdown row (non-Leader)
-- `Root`, `Scale` and `Oct` labels are the same size as the dropdown text
-  and vertically centred with the dropdown baseline — no more off-by-a-pixel
-  label stack.
-- `Style` dropdown is no longer on this row — it lives inside the bottom
-  loop/style/actions card.
-
-### Grid cards
-- **In-grid loop selectors replace the old "loop slider above the grid"
-  pill.** A coloured bracket now draws on the grid at the Start and End
-  columns with a small `START · N` / `END · N` hint above each bracket.
-- **Drums: kick is at the bottom of the grid** (lanes reversed); the piano
-  sidebar labels follow the new order.
-- **Drum grid has matching vertical padding above and below** to mirror the
-  Bass/Keys/Guitar piano-roll card — Animal no longer feels cramped while
-  the melodic engines breathe.
-- **Paul no longer uses a fretboard sidebar.** Guitar now uses the same
-  `piano sidebar + note grid` layout as Bass and Keys so tabbing between the
-  three melodic instruments feels like one tool.
+| `00-design-system.svg` | Colour tokens, typography scale, and component atoms (knobs, buttons, selectors, tab strip). One language for all five panels. |
+| `01-leader-redesign.svg` | The **Leader** (main band-leader) view — header, conductor knobs, and the band mixer. |
+| `02-animal-redesign.svg` | The **Animal** drum panel — drum grid with lane M/S, grouped groove + dynamics knobs, actions. |
+| `03-bootsy-redesign.svg` | The **Bootsy** bass panel — pitch pickers, piano-roll note grid, groove + expression knobs, style chips, actions. |
+| `04-stevie-redesign.svg` | The **Stevie** piano panel — same layout as Bootsy to prove cross-page uniformity, different accent colour and chord-stack note data. |
+| `05-paul-redesign.svg` | The **Paul** guitar panel — identical layout to Bootsy / Stevie with a fretboard sidebar instead of a piano keyboard. |
 
 ## Problems this redesign addresses
 
-The user's original brief: flat / unbalanced layout, no cross-page
-uniformity, and "functions that shouldn't be there." After reading every
-panel file and the merged-main helpers, here's what is actually broken
-today:
+The user called out three things: flat / unbalanced layout, no cross-page
+uniformity, and "functions that shouldn't be there." After reading every panel
+file, here's what is actually broken today:
 
 1. **Colour identity is inconsistent.** The tab strip in `BridgeEditor.cpp`
-   assigns a different surface per instrument, but three of the four panel
-   LookAndFeels (`BootsyM3`, `StevieM3`, `PaulM3`) share the same amber
-   `#FFB84D` while `AnimalM3` uses purple `#D0BCFF` — none of which match
-   their own tab colour.
-   **Fix:** one accent per instrument, flowing from tab chip → title rule
-   → knob rings → primary action button.
-2. **A "visual only" ticker speed control.** Each panel has an `x2 / 1 / 1/2`
-   cluster whose tooltip literally reads *"(visual only)"*. For an audio
-   plugin that's dead weight.
-   **Fix:** kept in the design for parameter-state compatibility but
-   demoted to a small inline control inside the loop/style/actions card —
-   no longer a standalone section.
-3. **Unbalanced knob layouts.** Animal has 8 knobs, Bootsy/Stevie/Paul have
-   9; the current code splits them awkwardly across sub-rows.
-   **Fix:** one horizontal row, per-instrument, labelled per-knob, no
-   sub-section headings.
-4. **Loop + actions crammed together.** Loop start/end, lock, speed and
-   GEN / FILL / PERF all share one cramped horizontal row in the existing
-   panels.
-   **Fix:** a single dedicated card at the bottom-right stacks them
-   vertically (loop → style → actions), identical on every page.
-5. **No grouping, no card affordance.** The current panels drop controls
-   into the panel with no visible cards or dividers.
-   **Fix:** every content area is a rounded card with a soft drop-shadow
-   and an instrument accent rule so the eye gets clear zones.
-6. **Tab chip overflow.** The power dot packed inside each 168 × 36 tab
-   chip visibly overflows the label on the current build.
-   **Fix:** remove the dot from the chip; the on/off toggle moves to the
-   left of the page title.
+   assigns a different colour per instrument (`cLeader 0xffd4a84b`,
+   `cAnimal 0xffe07a5a`, `cBootsy 0xff5cb8a8`, `cStevie 0xffb88cff`,
+   `cPaul 0xff6eb3ff`), but three of the four panel LookAndFeels (`BootsyM3`,
+   `StevieM3`, `PaulM3`) all use the same amber `#FFB84D`, and `AnimalM3`
+   uses purple `#D0BCFF` — none of which match their own tab colour.
+   **Fix:** one accent colour per instrument, flowing from tab chip → title
+   underline → section headings → knob rings → primary action button.
+2. **A "visual only" ticker speed control.** Each instrument panel has a
+   `Speed` button cluster (`x2 / 1 / 1/2`) whose tooltip literally reads
+   *"(visual only)"*. It doesn't affect audio output — only the playhead
+   animation. For an audio plugin that's dead weight and a UI trap. **Fix:**
+   removed from every redesigned panel. (The `tickerSpeed` parameter can stay
+   in the APVTS for state compatibility, it just shouldn't have a UI.)
+3. **Unbalanced knob layouts.** The Leader panel arranges 5 knobs as 3 + 2
+   rows; Animal has 8 as 2 rows of 4 (good); Bootsy/Stevie/Paul have 9 as an
+   awkward 5 + 4. Each instrument panel also shares a single cramped "loop row"
+   with six unrelated things (loop start, loop end, lock, speed, gen, fill).
+   **Fix:**
+   - Leader: 5 knobs in one balanced row.
+   - Animal: 4 + 4 grouped into **GROOVE** and **DYNAMICS** sections.
+   - Bootsy / Stevie / Paul: 5 + 4 grouped into **GROOVE** and **EXPRESSION**
+     sections — same grid, same knob positions across all three panels.
+4. **No unified header.** The current editor just has a 44 px tab strip with
+   tiny power dots. There is no plugin identity, no transport state, nowhere
+   to show BPM or host-sync.
+   **Fix:** a 60 px header bar on every page with the `BRIDGE` wordmark,
+   BPM readout, play/stop/sync indicators, and the instrument tab chips
+   (keeping the existing power-toggle behaviour, just styled as chips with
+   a coloured dot + label and a filled active state).
+5. **No grouping, no section affordance.** The current panels drop all their
+   controls directly into the panel area with no visible cards, dividers, or
+   labels — everything looks like it's at the same level of importance.
+   **Fix:** every content area is a `#211E29` card with a `14 px` radius, a
+   soft drop shadow, a coloured title rule, an 11 px 700-weight letter-spaced
+   section label, and a grey helper subtitle. This gives the eye clear "zones"
+   to scan.
+6. **Loop + actions are crammed together.** The loop start/end/lock, the
+   (now removed) speed ticker, and the GEN / PERF / FILL buttons all
+   currently share a single horizontal row.
+   **Fix:** loop range is demoted to a compact pill shown in the top-right of
+   the grid card ("LOOP 1 ─── 16 🔒"), freeing the bottom of the panel for a
+   dedicated **STYLE** + **ACTIONS** column. Generate is promoted to a large
+   primary-colour button — it's the headline action of an AI generator.
 
 ## Design system at a glance
 
@@ -129,18 +76,24 @@ today:
 
 | Instrument | Accent | Hex | Used for |
 | --- | --- | --- | --- |
-| Leader (Band)  | warm gold   | `#D4A84B` | knobs, title rule, actions |
-| Drums (Animal) | coral       | `#E07A5A` | drum cells, knobs, GEN |
-| Bass (Bootsy)  | teal        | `#5CB8A8` | bass notes, knobs, GEN |
-| Keys (Stevie)  | violet      | `#B88CFF` | chord notes, knobs, GEN |
-| Guitar (Paul)  | sky blue    | `#6EB3FF` | guitar notes, knobs, GEN |
+| Leader   | warm gold   | `#D4A84B` | conductor knobs, title rule, style pill |
+| Animal   | coral       | `#E07A5A` | drum cells, groove knobs, GENERATE button |
+| Bootsy   | teal        | `#5CB8A8` | bass notes, knobs, GENERATE button |
+| Stevie   | violet      | `#B88CFF` | piano notes, knobs, GENERATE button |
+| Paul     | sky blue    | `#6EB3FF` | guitar notes, knobs, GENERATE button |
+
+Each panel also gets a subtle one-directional accent-tinted glow
+(`fill-opacity ≈ 0.16`) across the grid card so the instrument colour is
+visible even at a glance.
 
 ### Neutral palette
 
 ```
-app bg   #14121A
-card     #23202B → #1B1823 (gradient)
-stroke   #3A3548 / #2E2937
+app bg   #14121A   (existing MainPanel bg, retained)
+panel    #1A1820   (existing BridgeEditor bg, retained)
+card     #211E29
+card hi  #2A2632
+stroke   #3A3548
 text pri #EAE2D5
 text sec #B0A8C4
 text ter #6A6578
@@ -151,36 +104,84 @@ text ter #6A6578
 - 8 px baseline grid.
 - 24 px outer margin on every panel.
 - 14 px card radius, 10 px button radius, 6 px small-control radius.
-- One knob diameter per section (72 px on Leader; 58–64 px on instruments
-  to fit 8–9 knobs across the same row width).
-- `kKnobRowH = 86`, `kLoopRowH = 100` (matches `bridge::instrumentLayout::*`
-  from merged main).
+- 72 px knob diameter (was ~86 in Leader and ~64 in the instrument panels —
+  now one size everywhere).
+- 44 px standard button height, 52 px for the primary `GENERATE`.
 
 ### Type scale
 
-- Page title — 22 / 700 / +3 letter-spacing.
-- Section label — 11–13 / 700 / +2 letter-spacing, coloured with the
-  instrument accent.
-- Knob label — 10 / 0 letter-spacing, `#B0A8C4`.
-- Dropdown label — 12 / 400, same size as the dropdown text, baseline
-  aligned.
-- Helper / metadata — 9–11 / +1.5 letter-spacing, `#6A6578`.
+- Panel title — 26 / 700 / +1 letter-spacing.
+- Section label — 11 / 700 / +2 letter-spacing, coloured with the instrument
+  accent.
+- Knob label — 11 / 600 / 0 letter-spacing, `#B0A8C4`.
+- Helper / metadata — 9 / 400 / +1.5 letter-spacing, `#6A6578`.
+- Instrument name (in mixer row) — 16 / 700 / 0 letter-spacing.
+
+## Panel-by-panel notes
+
+### Leader (`01-leader-redesign.svg`)
+
+- **Header** — BRIDGE wordmark (with gold bar matching the active tab), BPM
+  `120`, play / stop, `HOST SYNC` indicator, and five tab chips. The active
+  chip is filled with its accent colour.
+- **Conductor card** — one balanced row of 5 gold knobs (Presence, Tight,
+  Unity, Breath, Spark). The style combo ("Soul Classic · Deep Pocket") lives
+  in the top-right of the same card instead of floating above.
+- **Band mixer** — one card per instrument, each with:
+  - a 4 px accent bar on the left edge,
+  - the instrument name + short subtitle ("Drums · 16 steps · 8 lanes",
+    "Bass · C Mixolydian · Oct 2", etc.),
+  - the existing `StripPreview` visualisation at 5x the current size (so you
+    can actually read the pattern),
+  - M / S pills,
+  - an `OPEN →` button to jump to that instrument's tab.
+
+### Animal (`02-animal-redesign.svg`)
+
+- **Drum grid card** — 8 lanes × 16 steps with lane labels + M / S buttons in
+  a fixed left gutter. The grid itself shades every 4-step block slightly
+  differently so beats are readable. Active hits use velocity-modulated alpha.
+  A playhead line runs the full height.
+- The loop range and lock button move out of the bottom row into a compact
+  pill in the card header.
+- **Groove card** — 4 knobs (Density / Swing / Humanize / Pocket) above
+  4 knobs (Velocity / Ghost / Complexity / Fill Rate). Dividing rule
+  between the two sub-sections.
+- **Style & actions card** — style selector up top, a large coral primary
+  `GENERATE` button, `PERFORM` (toggle, outlined) and `FILL ◉ HOLD` on the
+  row below. Helper text explains what each action does.
+
+### Bootsy / Stevie / Paul (`03`, `04`, `05`)
+
+Identical structural template — that's the point. The only differences are:
+
+- Accent colour (teal / violet / sky).
+- The sidebar next to the note grid: piano keyboard for Bootsy and Stevie,
+  fretboard with string labels for Paul.
+- Note-data shape: Bootsy's is a single rolling bass line, Stevie shows a
+  melody with a stacked chord voicing underneath, Paul shows riffs on the top
+  strings + chord hits on the bottom strings.
+- Style chip copy.
+
+Everything else — header, pitch row, grid card position, knob grid,
+action card — is placed on the same coordinates. Tabbing between these
+three instruments should feel like the same tool, not three different
+plugins.
 
 ## Out of scope / worth discussing separately
 
-- **Global Key / Root on Leader.** The mockup proposes `Style / Key / Root`
-  dropdowns on the Band card header as a new global control set for the
-  whole band. Today only `leaderStyle` exists in `apvtsMain`; a `leaderRoot`
-  and `leaderScale` would need to be added to wire this up.
-- **Two loop lock buttons.** The current code uses one `loopWidthLock` that
-  links Start and End. The mockup shows a separate lock next to each knob to
-  match the brief's "Loop Start lock button and End button like it currently
-  has" wording. This is a code change: either split into `loopStartLock` /
-  `loopEndLock` or re-interpret both UI buttons as the same underlying
-  parameter.
-- **Dynamic style button rows.** Bootsy/Stevie/Paul currently build a
-  `NUM_STYLES` style-button row at runtime. The mockup replaces it with a
-  single dropdown inside the bottom card — simpler, same data source.
-- **PERFORM on every instrument.** Animal has `perform`, the melodic engines
-  don't. The mockup shows PERF on every page for layout uniformity; the
-  button can be disabled on engines that don't implement it yet.
+- **`PERFORM` only exists on Animal.** Bootsy / Stevie / Paul don't have a
+  perform button in the current code, so I didn't invent one. If Perform is
+  intended to be a universal feature, all four panels should get it in the
+  same position.
+- **Dynamic style button rows.** The current Bootsy/Stevie/Paul code builds a
+  row of `NUM_STYLES` toggle buttons at runtime. I've mocked them as a 2 × 3
+  grid of chips with hand-picked names (FUNK / SOUL / ...); adjust to the real
+  style list per engine.
+- **Per-lane drum M/S currently lives on `apvtsAnimal`.** The mockup keeps it
+  exactly where it is conceptually (in the left gutter of the drum grid),
+  just bigger and more readable.
+- **Power toggles.** The existing `powerLeader / powerAnimal / ...` buttons
+  map to the small coloured dot at the left of each tab chip. Clicking the
+  dot still toggles power; clicking the label still switches tab. Same
+  behaviour, cleaner affordance.
