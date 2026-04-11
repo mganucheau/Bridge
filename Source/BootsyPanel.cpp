@@ -332,22 +332,32 @@ BootsyPanel::BootsyPanel (BridgeProcessor& p)
 {
     setLookAndFeel (&laf);
 
-    loopSectionLabel.setText ("Loop", juce::dontSendNotification);
-    loopSectionLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
-    loopSectionLabel.setColour (juce::Label::textColourId, BootsyColors::TextDim);
-    addAndMakeVisible (loopSectionLabel);
+    auto setupSectionLabel = [] (juce::Label& lab, const juce::String& text)
+    {
+        lab.setText (text, juce::dontSendNotification);
+        lab.setFont (juce::Font (juce::FontOptions().withHeight (11.0f).withStyle ("Semibold")));
+        lab.setColour (juce::Label::textColourId, BootsyColors::TextDim);
+        lab.setJustificationType (juce::Justification::centredLeft);
+    };
+    setupSectionLabel (grooveLabel,     "GROOVE");
+    setupSectionLabel (expressionLabel, "EXPRESSION");
+    setupSectionLabel (loopingLabel,    "LOOPING");
+    setupSectionLabel (actionsLabel,    "ACTIONS");
+    addAndMakeVisible (grooveLabel);
+    addAndMakeVisible (expressionLabel);
+    addAndMakeVisible (loopingLabel);
+    addAndMakeVisible (actionsLabel);
 
     addAndMakeVisible (knobLoopStart);
     addAndMakeVisible (knobLoopEnd);
 
     loopWidthLockButton.setClickingTogglesState (true);
-    loopWidthLockButton.setTooltip ("Lock loop width: moving Start or End keeps the same number of steps.");
-    loopWidthLockButton.setConnectedEdges (juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
-    {
-        juce::String lockUtf8 (juce::CharPointer_UTF8 ("🔒"));
-        loopWidthLockButton.setButtonText (lockUtf8);
-    }
-    loopWidthLockButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    loopWidthLockButton.setTooltip ("Sync: when on, moving Start also moves End by the same amount (and vice versa).");
+    loopWidthLockButton.setButtonText ("SYNC");
+    loopWidthLockButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff23202b));
+    loopWidthLockButton.setColour (juce::TextButton::buttonOnColourId, BootsyM3::primary.withAlpha (0.45f));
+    loopWidthLockButton.setColour (juce::TextButton::textColourOffId, BootsyColors::TextDim);
+    loopWidthLockButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white.withAlpha (0.95f));
     loopWidthLockAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
                               (proc.apvtsBootsy, "loopWidthLock", loopWidthLockButton);
     addAndMakeVisible (loopWidthLockButton);
@@ -411,12 +421,6 @@ BootsyPanel::BootsyPanel (BridgeProcessor& p)
     addAndMakeVisible (knobStaccato);
     addAndMakeVisible (knobFillRate);
 
-    tickerLabel.setText ("Speed", juce::dontSendNotification);
-    tickerLabel.setColour (juce::Label::textColourId, BootsyColors::TextDim);
-    tickerLabel.setFont (juce::Font (juce::FontOptions().withHeight (11.0f)));
-    tickerLabel.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (tickerLabel);
-
     styleLabel.setText ("Style", juce::dontSendNotification);
     styleLabel.setColour (juce::Label::textColourId, BootsyColors::TextDim);
     styleLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
@@ -442,23 +446,12 @@ BootsyPanel::BootsyPanel (BridgeProcessor& p)
     fillHoldListener = std::make_unique<FillHoldListener> (proc, fillButton);
     fillButton.addMouseListener (fillHoldListener.get(), false);
 
-    tickerFastButton.setTooltip ("Playhead moves 2x (visual only).");
-    tickerNormalButton.setTooltip ("Playhead matches transport.");
-    tickerSlowButton.setTooltip ("Playhead moves at half speed (visual only).");
-    tickerFastButton.onClick   = [this] { setTickerSpeedChoice (0); };
-    tickerNormalButton.onClick = [this] { setTickerSpeedChoice (1); };
-    tickerSlowButton.onClick   = [this] { setTickerSpeedChoice (2); };
-
     addAndMakeVisible (generateButton);
     addAndMakeVisible (fillButton);
-    addAndMakeVisible (tickerFastButton);
-    addAndMakeVisible (tickerNormalButton);
-    addAndMakeVisible (tickerSlowButton);
 
     knobLoopStart.slider.setRange (1, BootsyPreset::NUM_STEPS, 1);
     knobLoopEnd.slider.setRange (1, BootsyPreset::NUM_STEPS, 1);
 
-    updateTickerButtonStates();
     syncLockedWidthFromParams();
 
     stepTimer.startTimerHz (30);
@@ -556,7 +549,7 @@ void BootsyPanel::parameterChanged (const juce::String& parameterID, float newVa
     }
 
     if (parameterID == "tickerSpeed")
-        updateTickerButtonStates();
+        return;
 
     if (updatingLoopParams)
         return;
@@ -583,137 +576,179 @@ void BootsyPanel::parameterChanged (const juce::String& parameterID, float newVa
     triggerAsyncUpdate();
 }
 
-void BootsyPanel::setTickerSpeedChoice (int index)
-{
-    if (auto* p = proc.apvtsBootsy.getParameter ("tickerSpeed"))
-        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
-            c->setValueNotifyingHost (c->convertTo0to1 ((float) index));
-    updateTickerButtonStates();
-}
-
-void BootsyPanel::updateTickerButtonStates()
-{
-    int idx = 1;
-    if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsBootsy.getParameter ("tickerSpeed")))
-        idx = c->getIndex();
-
-    auto setOn = [] (juce::TextButton& b, bool on)
-    {
-        using namespace BootsyM3;
-        b.setColour (juce::TextButton::buttonColourId,
-                     on ? primary.withAlpha (0.35f) : juce::Colours::transparentBlack);
-    };
-
-    setOn (tickerFastButton,   idx == 0);
-    setOn (tickerNormalButton, idx == 1);
-    setOn (tickerSlowButton,   idx == 2);
-}
-
 void BootsyPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&)
 {
     proc.rebuildBootsyGridPreview();
     triggerAsyncUpdate();
 }
 
+namespace
+{
+    void layoutBootsyDropdownRow (juce::Rectangle<int> row,
+                                  juce::Label& rootLab, juce::ComboBox& rootBox,
+                                  juce::Label& scaleLab, juce::ComboBox& scaleBox,
+                                  juce::Label& octLab, juce::ComboBox& octBox,
+                                  juce::Label& styleLab, juce::ComboBox& styleBox)
+    {
+        const int h = bridge::instrumentLayout::kDropdownH;
+        const int labY = row.getCentreY() - (int) (h * 0.5f);
+
+        auto placeLabel = [&] (juce::Label& lab, int w)
+        {
+            lab.setBounds (row.removeFromLeft (w).withHeight (h).withY (labY));
+            row.removeFromLeft (4);
+        };
+        auto placeBox = [&] (juce::ComboBox& box, int w)
+        {
+            box.setBounds (row.removeFromLeft (w).withHeight (h).withY (labY));
+            row.removeFromLeft (14);
+        };
+
+        placeLabel (styleLab, 42);
+        placeBox   (styleBox, 164);
+
+        const int rightW = 360;
+        if (row.getWidth() > rightW)
+            row.removeFromLeft (row.getWidth() - rightW);
+
+        placeLabel (rootLab, 42);
+        placeBox   (rootBox, 60);
+        placeLabel (scaleLab, 46);
+        placeBox   (scaleBox, 120);
+        placeLabel (octLab, 34);
+        placeBox   (octBox, 56);
+    }
+}
+
 void BootsyPanel::resized()
 {
     using namespace bridge::instrumentLayout;
 
-    auto area = getLocalBounds().reduced (16);
-    area.removeFromTop (8);
+    auto outer = getLocalBounds().reduced (kPanelEdge, kPanelEdge);
 
-    const int bottomH = kKnobRowH + kGap + kDropdownRow + kGap + kLoopRowH;
-    auto bottom = area.removeFromBottom (bottomH);
+    // 1. Dropdown row
+    auto dropdownArea = outer.removeFromTop (kDropdownRowH);
+    layoutBootsyDropdownRow (dropdownArea,
+                             rootNoteLabel, rootNoteBox,
+                             scaleLabel, scaleBox,
+                             octaveLabel, octaveBox,
+                             styleLabel, styleBox);
+    outer.removeFromTop (kSectionGap);
 
-    auto gridRow = area;
-    constexpr int pianoW = 56;
-    pianoRoll.setBounds (gridRow.removeFromLeft (pianoW));
-    gridRow.removeFromLeft (6);
-    bassGrid.setBounds (gridRow);
-
-    bottom.removeFromTop (6);
-
+    // 2. Main area — piano roll + bass grid
+    auto mainArea = outer.removeFromTop (kMainAreaH);
     {
-        auto knobRow = bottom.removeFromTop (kKnobRowH);
-        const int gap = 6;
-        const int n = 9;
-        const int totalGaps = gap * (n - 1);
-        int kw = (knobRow.getWidth() - totalGaps) / n;
-        knobDensity.setBounds    (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobSwing.setBounds      (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobHumanize.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobPocket.setBounds     (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobVelocity.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobFillRate.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobComplexity.setBounds (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobGhost.setBounds      (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobStaccato.setBounds   (knobRow.removeFromLeft (knobRow.getWidth()));
+        constexpr int pianoW = 56;
+        auto gridRow = mainArea;
+        pianoRoll.setBounds (gridRow.removeFromLeft (pianoW));
+        gridRow.removeFromLeft (6);
+        bassGrid.setBounds (gridRow);
     }
+    outer.removeFromTop (kSectionGap);
 
-    bottom.removeFromTop (kGap);
+    // 3. Bottom: knobs card (left) + loop/actions card (right)
+    auto bottomArea = outer.removeFromTop (kBottomCardH);
+    auto loopCard   = bottomArea.removeFromRight (kLoopCardW);
+    bottomArea.removeFromRight (kCardGap);
+    auto knobsCard  = bottomArea;
 
+    // ── Knobs card: GROOVE row + EXPRESSION row ───────────────────────────
     {
-        auto row = bottom.removeFromTop (kDropdownRow);
-        const int dh = kDropdownH;
-        const int yPad = (kDropdownRow - dh) / 2;
-        auto placeCombo = [&] (juce::Label& lab, juce::ComboBox& box, int labW, int boxW)
+        auto inner = knobsCard.reduced (14, 12);
+
+        grooveLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+        const int halfH = (inner.getHeight() - kSectionHeaderH - 4 - 4) / 2;
+
+        auto groove = inner.removeFromTop (halfH);
         {
-            lab.setBounds (row.removeFromLeft (labW).withHeight (kDropdownRow).reduced (0, 10));
-            box.setBounds (row.removeFromLeft (boxW).withHeight (dh).translated (0, yPad));
-            row.removeFromLeft (10);
-        };
-        placeCombo (rootNoteLabel, rootNoteBox, 36, 56);
-        placeCombo (scaleLabel, scaleBox, 40, juce::jmin (120, juce::jmax (80, row.getWidth() / 6)));
-        placeCombo (octaveLabel, octaveBox, 48, 52);
-        placeCombo (styleLabel, styleBox, 40, juce::jmin (200, juce::jmax (120, row.getWidth() / 5)));
-    }
-
-    bottom.removeFromTop (kGap);
-
-    {
-        auto loopRow = bottom.removeFromTop (kLoopRowH);
-        loopSectionLabel.setBounds (loopRow.removeFromLeft (36).withHeight (14).translated (0, 4));
-
-        knobLoopStart.setBounds (loopRow.removeFromLeft (86));
-        loopRow.removeFromLeft (4);
-        loopWidthLockButton.setBounds (loopRow.removeFromLeft (30).withSizeKeepingCentre (26, 26));
-        loopRow.removeFromLeft (4);
-        knobLoopEnd.setBounds (loopRow.removeFromLeft (86));
-        loopRow.removeFromLeft (10);
-
-        const int speedBlockW = kSpeedBlockW;
-        auto speedBlock = loopRow.removeFromLeft (speedBlockW);
-        tickerLabel.setBounds (speedBlock.removeFromTop (14));
-        {
-            auto strip = speedBlock;
-            const int gapS = kSpeedBtnGap;
-            const int bw = (strip.getWidth() - gapS * 2) / 3;
-            const int bh = juce::jmin (bw, strip.getHeight());
-            const int x0 = strip.getX();
-            const int y0 = strip.getY() + (strip.getHeight() - bh) / 2;
-            tickerFastButton.setBounds   (x0, y0, bw, bh);
-            tickerNormalButton.setBounds (x0 + bw + gapS, y0, bw, bh);
-            tickerSlowButton.setBounds   (x0 + 2 * (bw + gapS), y0, bw, bh);
+            const int n = 5;
+            const int gap = 6;
+            const int kw = (groove.getWidth() - gap * (n - 1)) / n;
+            knobDensity.setBounds  (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobSwing.setBounds    (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobHumanize.setBounds (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobPocket.setBounds   (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobVelocity.setBounds (groove.removeFromLeft (kw));
         }
 
-        loopRow.removeFromLeft (kActionBtnGap);
+        inner.removeFromTop (4);
 
-        const int sq = kActionBtnSide;
-        const int gapA = kActionBtnGap;
-        const int rowTop = loopRow.getY();
-        const int yOff = (kLoopRowH - sq) / 2;
-        generateButton.setBounds (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
-        loopRow.removeFromLeft (gapA);
-        fillButton.setBounds     (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
-        loopRow.removeFromLeft (gapA);
-        performButton.setBounds  (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+        expressionLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        auto expression = inner.removeFromTop (halfH);
+        {
+            const int n = 5;
+            const int gap = 6;
+            const int kw = (expression.getWidth() - gap * (n - 1)) / n;
+            knobFillRate.setBounds   (expression.removeFromLeft (kw)); expression.removeFromLeft (gap);
+            knobComplexity.setBounds (expression.removeFromLeft (kw)); expression.removeFromLeft (gap);
+            knobGhost.setBounds      (expression.removeFromLeft (kw)); expression.removeFromLeft (gap);
+            knobStaccato.setBounds   (expression.removeFromLeft (kw));
+            // one blank slot on the right; keeps columns aligned with the 5-knob row above
+        }
+    }
+
+    // ── Loop/Actions card: LOOPING row + ACTIONS row ──────────────────────
+    {
+        auto inner = loopCard.reduced (14, 12);
+
+        loopingLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        const int loopH = 96;
+        auto loopRow = inner.removeFromTop (loopH);
+        {
+            const int knobW = (loopRow.getWidth() - kSyncBtnSide - 16) / 2;
+            knobLoopStart.setBounds (loopRow.removeFromLeft (knobW));
+            loopRow.removeFromLeft (8);
+            auto syncCell = loopRow.removeFromLeft (kSyncBtnSide);
+            loopWidthLockButton.setBounds (syncCell.withSizeKeepingCentre (kSyncBtnSide, kSyncBtnSide));
+            loopRow.removeFromLeft (8);
+            knobLoopEnd.setBounds (loopRow.removeFromLeft (knobW));
+        }
+
+        inner.removeFromTop (10);
+
+        actionsLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        auto actionsRow = inner.removeFromTop (kBigActionBtnH);
+        {
+            const int n = 3;
+            const int gap = 8;
+            const int bw = (actionsRow.getWidth() - gap * (n - 1)) / n;
+            generateButton.setBounds (actionsRow.removeFromLeft (bw)); actionsRow.removeFromLeft (gap);
+            fillButton.setBounds     (actionsRow.removeFromLeft (bw)); actionsRow.removeFromLeft (gap);
+            performButton.setBounds  (actionsRow.removeFromLeft (bw));
+        }
     }
 }
 
 void BootsyPanel::paint (juce::Graphics& g)
 {
     using namespace BootsyM3;
+    using namespace bridge::instrumentLayout;
     g.fillAll (surface);
+
+    auto full = getLocalBounds().reduced (kPanelEdge, kPanelEdge);
+    full.removeFromTop (kDropdownRowH + kSectionGap + kMainAreaH + kSectionGap);
+    auto bottom = full.removeFromTop (kBottomCardH);
+    auto loopCard  = bottom.removeFromRight (kLoopCardW);
+    bottom.removeFromRight (kCardGap);
+    auto knobsCard = bottom;
+
+    auto drawCard = [&] (juce::Rectangle<int> r)
+    {
+        auto rf = r.toFloat();
+        drawShadow (g, rf, (float) kCardRadius, 1);
+        fillSurface (g, rf, surfaceContainer, (float) kCardRadius);
+        g.setColour (outline.withAlpha (0.35f));
+        g.drawRoundedRectangle (rf.reduced (0.5f), (float) kCardRadius, 1.0f);
+    };
+    drawCard (knobsCard);
+    drawCard (loopCard);
 }
 
 void BootsyPanel::handleAsyncUpdate()

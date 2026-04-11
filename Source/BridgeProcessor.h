@@ -63,6 +63,9 @@ public:
     // UI tab: 0 Main, 1 Animal, 2 Bootsy, 3 Stevie, 4 Paul
     std::atomic<int> activeTab { 0 };
 
+    // Last BPM the processor saw from the host (or fell back to). Read by the header BPM display.
+    std::atomic<double> currentHostBpm { 120.0 };
+
     void triggerAnimalGenerate();
     void triggerAnimalFill (int fromStep = 12);
     void rebuildAnimalGridPreview();

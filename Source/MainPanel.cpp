@@ -1,4 +1,5 @@
 #include "MainPanel.h"
+#include "BridgeInstrumentStyles.h"
 #include "LeaderStylePresets.h"
 #include "MelodicGridLayout.h"
 #include "bootsy/BootsyStylePresets.h"
@@ -146,31 +147,70 @@ MainPanel::MainPanel (BridgeProcessor& p)
 {
     setLookAndFeel (&laf);
 
-    title.setText ("Leader", juce::dontSendNotification);
-    title.setFont (juce::Font (juce::FontOptions().withHeight (22.0f).withStyle ("Semibold")));
-    title.setColour (juce::Label::textColourId, AnimalColors::TextPrimary);
-    addAndMakeVisible (title);
-    addAndMakeVisible (bandControls);
+    auto setupSectionLabel = [] (juce::Label& lab, const juce::String& text)
+    {
+        lab.setText (text, juce::dontSendNotification);
+        lab.setFont (juce::Font (juce::FontOptions().withHeight (11.0f).withStyle ("Semibold")));
+        lab.setColour (juce::Label::textColourId, AnimalColors::TextDim);
+        lab.setJustificationType (juce::Justification::centredLeft);
+    };
+    setupSectionLabel (mixLabel,     "MIX");
+    setupSectionLabel (leaderLabel,  "LEADER");
+    setupSectionLabel (actionsLabel, "ACTIONS");
+    addAndMakeVisible (mixLabel);
+    addAndMakeVisible (leaderLabel);
+    addAndMakeVisible (actionsLabel);
+
     addAndMakeVisible (mixerArea);
 
     styleLabel.setText ("Style", juce::dontSendNotification);
     styleLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
     styleLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
     styleLabel.setJustificationType (juce::Justification::centredLeft);
-    bandControls.addAndMakeVisible (styleLabel);
+    addAndMakeVisible (styleLabel);
 
     for (int i = 0; i < NUM_LEADER_STYLES; ++i)
         styleBox.addItem (LEADER_STYLE_NAMES[i], i + 1);
     styleBox.setTooltip ("Arrangement preset: nudges all five leader controls.");
-    bandControls.addAndMakeVisible (styleBox);
+    addAndMakeVisible (styleBox);
     styleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (proc.apvtsMain, "leaderStyle", styleBox);
 
-    bandControls.addAndMakeVisible (knobPresence);
-    bandControls.addAndMakeVisible (knobTight);
-    bandControls.addAndMakeVisible (knobUnity);
-    bandControls.addAndMakeVisible (knobBreath);
-    bandControls.addAndMakeVisible (knobSpark);
+    addAndMakeVisible (knobPresence);
+    addAndMakeVisible (knobTight);
+    addAndMakeVisible (knobUnity);
+    addAndMakeVisible (knobBreath);
+    addAndMakeVisible (knobSpark);
+
+    // Loop-card contents: ENGAGE toggle (bound to leaderTabOn) + RESET button
+    engageButton.setClickingTogglesState (true);
+    engageButton.setTooltip ("Engage the Leader: when off, the mix knobs and arrangement preset are bypassed.");
+    engageButton.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xff23202b));
+    engageButton.setColour (juce::TextButton::buttonOnColourId, AnimalColors::Accent.withAlpha (0.55f));
+    engageButton.setColour (juce::TextButton::textColourOffId,  AnimalColors::TextDim);
+    engageButton.setColour (juce::TextButton::textColourOnId,   juce::Colours::white.withAlpha (0.95f));
+    engageAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (proc.apvtsMain, "leaderTabOn", engageButton);
+    addAndMakeVisible (engageButton);
+
+    resetButton.setTooltip ("Reset the Leader knobs and style to their defaults.");
+    resetButton.setColour (juce::TextButton::buttonColourId,  juce::Colour (0xff23202b));
+    resetButton.setColour (juce::TextButton::textColourOffId, AnimalColors::TextDim);
+    resetButton.onClick = [this]
+    {
+        auto resetFloatToDefault = [this] (const juce::String& id)
+        {
+            if (auto* p = proc.apvtsMain.getParameter (id))
+                p->setValueNotifyingHost (p->getDefaultValue());
+        };
+        resetFloatToDefault ("leaderPresence");
+        resetFloatToDefault ("leaderTight");
+        resetFloatToDefault ("leaderUnity");
+        resetFloatToDefault ("leaderBreath");
+        resetFloatToDefault ("leaderSpark");
+        resetFloatToDefault ("leaderStyle");
+    };
+    addAndMakeVisible (resetButton);
 
     setupRow (animal, "Drums", StripPreview::Kind::animal, "mainMuteAnimal", "mainSoloAnimal");
     setupRow (bootsy, "Bass", StripPreview::Kind::bootsy, "mainMuteBootsy", "mainSoloBootsy");
@@ -253,10 +293,22 @@ void MainPanel::applyLeaderEngaged()
 {
     const bool on = proc.apvtsMain.getRawParameterValue ("leaderTabOn") != nullptr
                         && proc.apvtsMain.getRawParameterValue ("leaderTabOn")->load() > 0.5f;
-    bandControls.setEnabled (on);
-    bandControls.setAlpha (on ? 1.0f : 0.42f);
+
+    const float alpha = on ? 1.0f : 0.42f;
+
+    knobPresence.setEnabled (on); knobPresence.setAlpha (alpha);
+    knobTight.setEnabled    (on); knobTight.setAlpha    (alpha);
+    knobUnity.setEnabled    (on); knobUnity.setAlpha    (alpha);
+    knobBreath.setEnabled   (on); knobBreath.setAlpha   (alpha);
+    knobSpark.setEnabled    (on); knobSpark.setAlpha    (alpha);
+
+    styleLabel.setAlpha (alpha);
+    styleBox.setEnabled (on);
+    styleBox.setAlpha   (alpha);
+
+    mixLabel.setAlpha (alpha);
     mixerArea.setEnabled (on);
-    mixerArea.setAlpha (on ? 1.0f : 0.42f);
+    mixerArea.setAlpha   (alpha);
 }
 
 void MainPanel::timerCallback()
@@ -271,77 +323,130 @@ void MainPanel::timerCallback()
 void MainPanel::paint (juce::Graphics& g)
 {
     using namespace AnimalM3;
-    g.fillAll (surfaceDim);
+    using namespace bridge::instrumentLayout;
+    g.fillAll (surface);
 
-    auto drawCard = [&] (juce::Component& c)
+    auto full = getLocalBounds().reduced (kPanelEdge, kPanelEdge);
+
+    // Main-area card (mixer) — painted behind mixerArea.
+    full.removeFromTop (kDropdownRowH + kSectionGap);
+    auto mainCard = full.removeFromTop (kMainAreaH);
+    full.removeFromTop (kSectionGap);
+    auto bottom = full.removeFromTop (kBottomCardH);
+    auto loopCard  = bottom.removeFromRight (kLoopCardW);
+    bottom.removeFromRight (kCardGap);
+    auto knobsCard = bottom;
+
+    auto drawCard = [&] (juce::Rectangle<int> r)
     {
-        auto rf = c.getBounds().toFloat().reduced (0.5f);
-        drawShadow (g, rf, cornerLarge, 1);
-        fillSurface (g, rf, surfaceContainer, cornerLarge);
+        auto rf = r.toFloat();
+        drawShadow (g, rf, (float) kCardRadius, 1);
+        fillSurface (g, rf, surfaceContainer, (float) kCardRadius);
         g.setColour (outline.withAlpha (0.35f));
-        g.drawRoundedRectangle (rf.reduced (0.5f), cornerLarge, 1.0f);
+        g.drawRoundedRectangle (rf.reduced (0.5f), (float) kCardRadius, 1.0f);
     };
-
-    drawCard (mixerArea);
-    drawCard (bandControls);
+    drawCard (mainCard);
+    drawCard (knobsCard);
+    drawCard (loopCard);
 }
 
 void MainPanel::resized()
 {
-    constexpr int edge = 24;
-    constexpr int bandH = 212;
-    auto r = getLocalBounds().reduced (edge);
-    title.setBounds (r.removeFromTop (28));
-    r.removeFromTop (12);
+    using namespace bridge::instrumentLayout;
 
-    auto bandR = r.removeFromBottom (bandH);
-    r.removeFromBottom (12);
-    mixerArea.setBounds (r);
-    bandControls.setBounds (bandR);
+    auto outer = getLocalBounds().reduced (kPanelEdge, kPanelEdge);
+
+    // 1. Dropdown row — only the Style picker for the Leader tab.
     {
-        auto b = bandControls.getLocalBounds().reduced (16, 14);
-        auto styleRow = b.removeFromTop (30);
-        styleLabel.setBounds (styleRow.removeFromLeft (48));
-        styleBox.setBounds (styleRow.removeFromLeft (juce::jmin (320, styleRow.getWidth())).reduced (0, 2));
+        auto row = outer.removeFromTop (kDropdownRowH);
+        const int h = kDropdownH;
+        const int labY = row.getCentreY() - (int) (h * 0.5f);
+        styleLabel.setBounds (row.removeFromLeft (48).withHeight (h).withY (labY));
+        row.removeFromLeft (4);
+        styleBox.setBounds   (row.removeFromLeft (220).withHeight (h).withY (labY));
+    }
+    outer.removeFromTop (kSectionGap);
 
-        b.removeFromTop (12);
-        const int knobH = 88;
-        auto row1 = b.removeFromTop (knobH);
-        const int gap = 8;
-        const int n1 = 3;
-        int kw = (row1.getWidth() - gap * (n1 - 1)) / n1;
-        knobPresence.setBounds (row1.removeFromLeft (kw));
-        row1.removeFromLeft (gap);
-        knobTight.setBounds (row1.removeFromLeft (kw));
-        row1.removeFromLeft (gap);
-        knobUnity.setBounds (row1.removeFromLeft (kw));
+    // 2. Main area — mixer card with four rows.
+    auto mainArea = outer.removeFromTop (kMainAreaH);
+    mixerArea.setBounds (mainArea);
+    outer.removeFromTop (kSectionGap);
 
-        b.removeFromTop (6);
-        auto row2 = b.removeFromTop (knobH);
-        const int n2 = 2;
-        int kw2 = (row2.getWidth() - gap) / n2;
-        knobBreath.setBounds (row2.removeFromLeft (kw2));
-        row2.removeFromLeft (gap);
-        knobSpark.setBounds (row2.removeFromLeft (kw2));
+    // 3. Bottom: knobs card (left) + loop/actions card (right).
+    auto bottomArea = outer.removeFromTop (kBottomCardH);
+    auto loopCard   = bottomArea.removeFromRight (kLoopCardW);
+    bottomArea.removeFromRight (kCardGap);
+    auto knobsCard  = bottomArea;
+
+    // ── Knobs card: MIX header + row of 5 Leader knobs ────────────────────
+    {
+        auto inner = knobsCard.reduced (14, 12);
+        mixLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        auto row = inner;
+        const int n = 5;
+        const int gap = 6;
+        const int kw = (row.getWidth() - gap * (n - 1)) / n;
+        knobPresence.setBounds (row.removeFromLeft (kw)); row.removeFromLeft (gap);
+        knobTight.setBounds    (row.removeFromLeft (kw)); row.removeFromLeft (gap);
+        knobUnity.setBounds    (row.removeFromLeft (kw)); row.removeFromLeft (gap);
+        knobBreath.setBounds   (row.removeFromLeft (kw)); row.removeFromLeft (gap);
+        knobSpark.setBounds    (row.removeFromLeft (kw));
     }
 
-    auto area = mixerArea.getLocalBounds();
-    const int rowH = 56;
-    const int gap = 8;
-    const int nameW = 64;
-    const int prevW = juce::jmax (160, area.getWidth() - nameW - 80);
-    const int msW = 28;
+    // ── Loop/Actions card: LEADER header + ENGAGE, ACTIONS header + RESET ─
+    {
+        auto inner = loopCard.reduced (14, 12);
+
+        leaderLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        // The ENGAGE toggle occupies the same vertical space as the loop row
+        // on the melodic tabs (96 px) so all four tabs share the same card
+        // geometry.
+        const int engageH = 96;
+        auto engageRow = inner.removeFromTop (engageH);
+        engageButton.setBounds (engageRow.reduced (8, 20));
+
+        inner.removeFromTop (10);
+
+        actionsLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        auto actionsRow = inner.removeFromTop (kBigActionBtnH);
+        resetButton.setBounds (actionsRow.reduced (8, 0));
+    }
+
+    // Mixer rows inside mixerArea.
+    auto area = mixerArea.getLocalBounds().reduced (14, 12);
+    const int nRows   = 4;
+    const int rowGap  = 8;
+    const int rowH    = juce::jmax (32, (area.getHeight() - rowGap * (nRows - 1)) / nRows);
+    const int nameW   = 72;
+    const int msW     = 28;
+    const int msGap   = 6;
+    const int msColW  = msW * 2 + msGap;
+    const int prevGap = 10;
 
     auto place = [&] (Row& row)
     {
         auto rowB = area.removeFromTop (rowH);
-        area.removeFromTop (gap);
+        area.removeFromTop (rowGap);
+
         auto rb = rowB;
         row.name.setBounds (rb.removeFromLeft (nameW));
-        row.preview->setBounds (rb.removeFromLeft (prevW).reduced (0, 4));
-        rb.removeFromLeft (6);
-        row.mute.setBounds (rb.removeFromLeft (msW).withHeight (22).translated (0, 10));
-        row.solo.setBounds (rb.removeFromLeft (msW).withHeight (22).translated (0, 10));
+        rb.removeFromLeft (prevGap);
+
+        auto msBlock = rb.removeFromRight (msColW);
+        rb.removeFromRight (prevGap);
+        row.preview->setBounds (rb.reduced (0, 4));
+
+        const int btnH = juce::jmin (22, msBlock.getHeight() - 8);
+        const int btnY = msBlock.getY() + (msBlock.getHeight() - btnH) / 2;
+        row.mute.setBounds (msBlock.removeFromLeft (msW).withY (btnY).withHeight (btnH));
+        msBlock.removeFromLeft (msGap);
+        row.solo.setBounds (msBlock.removeFromLeft (msW).withY (btnY).withHeight (btnH));
     };
 
     place (animal);

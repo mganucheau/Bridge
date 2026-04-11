@@ -71,11 +71,14 @@ private:
     static void setLoopIntParameter (juce::AudioProcessorValueTreeState& apvts,
                                      const juce::String& id, int value);
 
-    void updateTickerButtonStates();
-    void setTickerSpeedChoice (int index);
-
     BridgeProcessor& proc;
     PaulLookAndFeel laf;
+
+    // Section headers (GROOVE / EXPRESSION / LOOPING / ACTIONS)
+    juce::Label grooveLabel;
+    juce::Label expressionLabel;
+    juce::Label loopingLabel;
+    juce::Label actionsLabel;
 
     PaulPianoRollComponent pianoRoll;
     PaulBassGridComponent  bassGrid;
@@ -96,19 +99,13 @@ private:
     PaulLabelledKnob knobPocket, knobVelocity, knobComplexity;
     PaulLabelledKnob knobGhost, knobStaccato, knobFillRate;
 
-    juce::Label    loopSectionLabel;
     PaulLabelledKnob   knobLoopStart;
     PaulLabelledKnob   knobLoopEnd;
-    juce::TextButton loopWidthLockButton { "" };
+    juce::TextButton loopWidthLockButton { "SYNC" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopWidthLockAttach;
 
     bool updatingLoopParams = false;
     int  lockedLoopWidth    = PaulPreset::NUM_STEPS;
-
-    juce::Label    tickerLabel;
-    juce::TextButton tickerFastButton   { "x2" };
-    juce::TextButton tickerNormalButton { "1" };
-    juce::TextButton tickerSlowButton   { "1/2" };
 
     juce::Label    styleLabel;
     juce::ComboBox styleBox;

@@ -9,7 +9,8 @@
 #include "PaulPanel.h"
 
 class BridgeEditor : public juce::AudioProcessorEditor,
-                     private juce::ValueTree::Listener
+                     private juce::ValueTree::Listener,
+                     private juce::Timer
 {
 public:
     explicit BridgeEditor (BridgeProcessor&);
@@ -26,27 +27,28 @@ public:
 private:
     void showTab (int index);
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
+    void timerCallback() override;
     void updateTabStripFromParams();
+    void updateBpmDisplay();
 
     BridgeProcessor& proc;
 
-    juce::TextButton powerLeader { juce::CharPointer_UTF8 ("\u25cf") };
-    juce::TextButton powerAnimal { juce::CharPointer_UTF8 ("\u25cf") };
-    juce::TextButton powerBootsy { juce::CharPointer_UTF8 ("\u25cf") };
-    juce::TextButton powerStevie { juce::CharPointer_UTF8 ("\u25cf") };
-    juce::TextButton powerPaul   { juce::CharPointer_UTF8 ("\u25cf") };
+    // ── Header transport ───────────────────────────────────────────────────
+    juce::Label      logoLabel;
+    juce::Label      bpmValueLabel;
+    juce::Label      bpmUnitLabel;
+    juce::TextButton playButton  { juce::CharPointer_UTF8 ("\u25B6") };
+    juce::TextButton stopButton  { juce::CharPointer_UTF8 ("\u25A0") };
+    juce::TextButton hostSyncButton { "HOST SYNC" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hostSyncAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> transportAttach;
 
-    juce::TextButton tabMain   { "Leader" };
-    juce::TextButton tabAnimal { "Drums" };
-    juce::TextButton tabBootsy { "Bass" };
-    juce::TextButton tabStevie { "Keys" };
-    juce::TextButton tabPaul   { "Guitar" };
-
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerLeaderAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAnimalAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerBootsyAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerStevieAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerPaulAttach;
+    // ── Tab strip ──────────────────────────────────────────────────────────
+    juce::TextButton tabMain   { "LEADER" };
+    juce::TextButton tabAnimal { "ANIMAL" };
+    juce::TextButton tabBootsy { "BOOTSY" };
+    juce::TextButton tabStevie { "KEYS" };
+    juce::TextButton tabPaul   { "GUITAR" };
 
     MainPanel   mainPanel;
     AnimalPanel animalPanel;

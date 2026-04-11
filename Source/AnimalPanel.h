@@ -70,10 +70,15 @@ private:
     BridgeProcessor& proc;
     AnimalLookAndFeel laf;
 
-    juce::Label    loopSectionLabel;
+    // Section headers (GROOVE / EXPRESSION / LOOPING / ACTIONS)
+    juce::Label grooveLabel;
+    juce::Label expressionLabel;
+    juce::Label loopingLabel;
+    juce::Label actionsLabel;
+
     LabelledKnob   knobLoopStart;
     LabelledKnob   knobLoopEnd;
-    juce::TextButton loopWidthLockButton { "" };
+    juce::TextButton loopWidthLockButton { "SYNC" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopWidthLockAttach;
 
     bool updatingLoopParams = false;
@@ -84,11 +89,6 @@ private:
     LabelledKnob knobDensity, knobSwing, knobHumanize;
     LabelledKnob knobVelocity, knobFillRate, knobComplexity;
     LabelledKnob knobPocket, knobGhost;
-
-    juce::Label    tickerLabel;
-    juce::TextButton tickerFastButton   { "x2" };
-    juce::TextButton tickerNormalButton { "1" };
-    juce::TextButton tickerSlowButton   { "1/2" };
 
     juce::Label    styleLabel;
     juce::ComboBox styleBox;
@@ -122,9 +122,6 @@ private:
     void updateStepAnimation();
     int  lastAnimStep = -1;
     uint32_t performBlinkTick = 0;
-
-    void updateTickerButtonStates();
-    void setTickerSpeedChoice (int index);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AnimalPanel)
 };

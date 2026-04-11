@@ -71,11 +71,14 @@ private:
     static void setLoopIntParameter (juce::AudioProcessorValueTreeState& apvts,
                                      const juce::String& id, int value);
 
-    void updateTickerButtonStates();
-    void setTickerSpeedChoice (int index);
-
     BridgeProcessor& proc;
     StevieLookAndFeel laf;
+
+    // Section headers (GROOVE / EXPRESSION / LOOPING / ACTIONS)
+    juce::Label grooveLabel;
+    juce::Label expressionLabel;
+    juce::Label loopingLabel;
+    juce::Label actionsLabel;
 
     SteviePianoRollComponent pianoRoll;
     StevieBassGridComponent  bassGrid;
@@ -96,19 +99,13 @@ private:
     StevieLabelledKnob knobPocket, knobVelocity, knobComplexity;
     StevieLabelledKnob knobGhost, knobStaccato, knobFillRate;
 
-    juce::Label    loopSectionLabel;
     StevieLabelledKnob   knobLoopStart;
     StevieLabelledKnob   knobLoopEnd;
-    juce::TextButton loopWidthLockButton { "" };
+    juce::TextButton loopWidthLockButton { "SYNC" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopWidthLockAttach;
 
     bool updatingLoopParams = false;
     int  lockedLoopWidth    = SteviePreset::NUM_STEPS;
-
-    juce::Label    tickerLabel;
-    juce::TextButton tickerFastButton   { "x2" };
-    juce::TextButton tickerNormalButton { "1" };
-    juce::TextButton tickerSlowButton   { "1/2" };
 
     juce::Label    styleLabel;
     juce::ComboBox styleBox;

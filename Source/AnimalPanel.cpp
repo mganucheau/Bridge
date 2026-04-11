@@ -5,44 +5,33 @@
 
 namespace
 {
-bool drumMidiIsBlackKey (int midi)
-{
-    switch (midi % 12)
-    {
-        case 1: case 3: case 6: case 8: case 10: return true;
-        default: return false;
-    }
-}
+constexpr float kDrumGridMargin   = 12.0f;
+constexpr float kDrumGridHeaderH  = 22.0f;
+constexpr float kDrumLabelColW    = 60.0f;
+constexpr float kDrumMSColW       = 50.0f;
+constexpr float kDrumGapAfterMS   = 8.0f;
 
 void computeDrumGridGeometry (juce::Rectangle<float> fullBounds,
                               float& innerX, float& innerY, float& innerW, float& innerH,
                               float& gridTop, float& hBody,
                               float& originX, float& originY, float& cellSize,
-                              float& pianoX, float& msX, float& msW,
-                              float& leftBlockW)
+                              float& labelX, float& msX, float& leftBlockW)
 {
-    constexpr float margin  = 10.0f;
-    constexpr float headerH = 26.0f;
-    constexpr float pianoW  = 56.0f;
-    constexpr float gap1    = 6.0f;
-    constexpr float btnColW = 52.0f;
-    constexpr float gap2    = 8.0f;
-
-    auto inner = fullBounds.reduced (margin);
+    auto inner = fullBounds.reduced (kDrumGridMargin);
     innerX = inner.getX();
     innerY = inner.getY();
     innerW = inner.getWidth();
     innerH = inner.getHeight();
-    gridTop = innerY + headerH;
-    hBody = innerH - headerH;
-    leftBlockW = pianoW + gap1 + btnColW + gap2;
+    gridTop = innerY + kDrumGridHeaderH;
+    hBody = innerH - kDrumGridHeaderH;
+
+    leftBlockW = kDrumLabelColW + kDrumMSColW + kDrumGapAfterMS;
     const float gridInnerX = innerX + leftBlockW;
     const float gridInnerW = innerW - leftBlockW;
     bridge::computeSquareMelodicGrid (gridInnerX, gridInnerW, gridTop, hBody,
                                       NUM_STEPS, NUM_DRUMS, originX, originY, cellSize);
-    pianoX = innerX;
-    msX = innerX + pianoW + gap1;
-    msW = btnColW;
+    labelX = innerX;
+    msX    = innerX + kDrumLabelColW;
 }
 } // namespace
 
@@ -72,7 +61,8 @@ private:
 
 int DrumGridComponent::visualRowToDrum (int visualRow)
 {
-    return juce::jlimit (0, NUM_DRUMS - 1, NUM_DRUMS - 1 - visualRow);
+    // Kick at top: visual row index maps directly onto the drum index.
+    return juce::jlimit (0, NUM_DRUMS - 1, visualRow);
 }
 
 DrumGridComponent::DrumGridComponent (BridgeProcessor& p)
@@ -117,49 +107,33 @@ void DrumGridComponent::paint (juce::Graphics& g)
     float innerX = 0, innerY = 0, innerW = 0, innerH = 0;
     float gridTop = 0, hBody = 0;
     float originX = 0, originY = 0, cellSize = 0;
-    float pianoX = 0, msX = 0, msW = 0, leftBlockW = 0;
-    constexpr float headerH = 26.0f;
-    constexpr float pianoW  = 56.0f;
-    constexpr float gap1    = 6.0f;
-    constexpr float btnColW = 52.0f;
-    const float keyNotesHeaderW = pianoW + gap1 + btnColW;
+    float labelX = 0, msX = 0, leftBlockW = 0;
 
     computeDrumGridGeometry (full, innerX, innerY, innerW, innerH, gridTop, hBody,
-                             originX, originY, cellSize, pianoX, msX, msW, leftBlockW);
+                             originX, originY, cellSize, labelX, msX, leftBlockW);
 
     const float pad = 2.0f;
 
-    g.setColour (onSurfaceVariant);
-    g.setFont (juce::Font (juce::FontOptions().withHeight (11.0f)));
+    // Step numbers above the grid
+    g.setColour (onSurfaceVariant.withAlpha (0.85f));
+    g.setFont (juce::Font (juce::FontOptions().withHeight (10.0f)));
     for (int step = 0; step < NUM_STEPS; ++step)
     {
         float cx = originX + (float) step * cellSize;
         g.drawText (juce::String (step + 1),
-                    juce::Rectangle<float> (cx, innerY, cellSize, headerH - 2.0f),
+                    juce::Rectangle<float> (cx, innerY, cellSize, kDrumGridHeaderH - 2.0f),
                     juce::Justification::centred, false);
     }
 
-    g.setFont (juce::Font (juce::FontOptions().withHeight (12.0f).withStyle ("Semibold")));
-    g.drawText ("Key notes", juce::Rectangle<float> (innerX, innerY, keyNotesHeaderW, headerH - 2.0f),
-                juce::Justification::centred, false);
-
-    // Piano strip: one row per drum lane; row height matches grid cellSize
+    // Row labels (drum names)
+    g.setFont (juce::Font (juce::FontOptions().withHeight (11.0f).withStyle ("Semibold")));
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
         const int drum = visualRowToDrum (visualRow);
-        const int midi = DRUM_MIDI_NOTES[drum];
-        float cy = originY + (float) visualRow * cellSize;
-        auto row = juce::Rectangle<float> (pianoX, cy, pianoW, cellSize);
-        bool bk = drumMidiIsBlackKey (midi);
-        g.setColour (bk ? surfaceDim.withAlpha (0.88f) : surfaceContainerHighest.withAlpha (0.55f));
-        g.fillRect (row);
-        g.setColour (outlineVariant.withAlpha (0.28f));
-        g.drawHorizontalLine ((int) (cy + cellSize), row.getX() + 1.0f, row.getRight() - 1.0f);
-        g.setColour (onSurfaceVariant.withAlpha (0.88f));
-        g.setFont (juce::Font (juce::FontOptions().withHeight (9.0f)));
-        static const char* n12[] = { "C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B" };
-        juce::String label = n12[midi % 12] + juce::String (midi / 12 - 1);
-        g.drawText (label, row.reduced (2.0f, 0.0f), juce::Justification::centredRight, true);
+        const float cy = originY + (float) visualRow * cellSize;
+        auto labelRow = juce::Rectangle<float> (labelX, cy, kDrumLabelColW - 6.0f, cellSize);
+        g.setColour (AnimalColors::TextPrimary.withAlpha (0.92f));
+        g.drawText (DRUM_NAMES[drum], labelRow, juce::Justification::centredLeft, false);
     }
 
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
@@ -277,9 +251,9 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
     float innerX = 0, innerY = 0, innerW = 0, innerH = 0;
     float gridTop = 0, hBody = 0;
     float originX = 0, originY = 0, cellSize = 0;
-    float pianoX = 0, msX = 0, msW = 0, leftBlockW = 0;
+    float labelX = 0, msX = 0, leftBlockW = 0;
     computeDrumGridGeometry (full, innerX, innerY, innerW, innerH, gridTop, hBody,
-                             originX, originY, cellSize, pianoX, msX, msW, leftBlockW);
+                             originX, originY, cellSize, labelX, msX, leftBlockW);
 
     if (e.position.y < gridTop || e.position.x < originX) return;
 
@@ -299,16 +273,16 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
 
 void DrumGridComponent::resized()
 {
-    constexpr int buttonW = 22;
-    constexpr int buttonGap = 3;
+    constexpr int buttonW = 20;
+    constexpr int buttonGap = 4;
 
     auto full = getLocalBounds().toFloat();
     float innerX = 0, innerY = 0, innerW = 0, innerH = 0;
     float gridTop = 0, hBody = 0;
     float originX = 0, originY = 0, cellSize = 0;
-    float pianoX = 0, msX = 0, msW = 0, leftBlockW = 0;
+    float labelX = 0, msX = 0, leftBlockW = 0;
     computeDrumGridGeometry (full, innerX, innerY, innerW, innerH, gridTop, hBody,
-                             originX, originY, cellSize, pianoX, msX, msW, leftBlockW);
+                             originX, originY, cellSize, labelX, msX, leftBlockW);
 
     const int rowH = (int) juce::jmax (1.0f, cellSize);
 
@@ -316,8 +290,10 @@ void DrumGridComponent::resized()
     {
         const int drum = visualRowToDrum (visualRow);
         int y = (int) (originY + (float) visualRow * cellSize);
-        auto row = juce::Rectangle<int> ((int) msX, y, (int) msW, rowH);
-        auto controls = row.reduced (2, juce::jmax (0, (rowH - buttonW - buttonGap - buttonW) / 2));
+        auto row = juce::Rectangle<int> ((int) msX, y,
+                                         (int) kDrumMSColW, rowH);
+        const int yPad = juce::jmax (0, (rowH - buttonW) / 2);
+        auto controls = row.reduced (0, yPad);
         auto mute = controls.removeFromLeft (buttonW);
         controls.removeFromLeft (buttonGap);
         auto solo = controls.removeFromLeft (buttonW);
@@ -380,20 +356,32 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
 {
     setLookAndFeel (&laf);
 
-    loopSectionLabel.setText ("Loop", juce::dontSendNotification);
-    loopSectionLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
-    loopSectionLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
-    addAndMakeVisible (loopSectionLabel);
+    auto setupSectionLabel = [] (juce::Label& lab, const juce::String& text)
+    {
+        lab.setText (text, juce::dontSendNotification);
+        lab.setFont (juce::Font (juce::FontOptions().withHeight (11.0f).withStyle ("Semibold")));
+        lab.setColour (juce::Label::textColourId, AnimalColors::TextDim);
+        lab.setJustificationType (juce::Justification::centredLeft);
+    };
+    setupSectionLabel (grooveLabel,     "GROOVE");
+    setupSectionLabel (expressionLabel, "EXPRESSION");
+    setupSectionLabel (loopingLabel,    "LOOPING");
+    setupSectionLabel (actionsLabel,    "ACTIONS");
+    addAndMakeVisible (grooveLabel);
+    addAndMakeVisible (expressionLabel);
+    addAndMakeVisible (loopingLabel);
+    addAndMakeVisible (actionsLabel);
 
     addAndMakeVisible (knobLoopStart);
     addAndMakeVisible (knobLoopEnd);
 
     loopWidthLockButton.setClickingTogglesState (true);
-    loopWidthLockButton.setTooltip ("Lock loop width: moving Start or End keeps the same number of steps.");
-    loopWidthLockButton.setConnectedEdges (juce::Button::ConnectedOnLeft | juce::Button::ConnectedOnRight);
-    juce::String lockUtf8 (juce::CharPointer_UTF8 ("🔒"));
-    loopWidthLockButton.setButtonText (lockUtf8);
-    loopWidthLockButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    loopWidthLockButton.setTooltip ("Sync: when on, moving Start also moves End by the same amount (and vice versa).");
+    loopWidthLockButton.setButtonText ("SYNC");
+    loopWidthLockButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff23202b));
+    loopWidthLockButton.setColour (juce::TextButton::buttonOnColourId, AnimalColors::Accent.withAlpha (0.45f));
+    loopWidthLockButton.setColour (juce::TextButton::textColourOffId, AnimalColors::TextDim);
+    loopWidthLockButton.setColour (juce::TextButton::textColourOnId,  juce::Colours::white.withAlpha (0.95f));
     loopWidthLockAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
                               (proc.apvtsAnimal, "loopWidthLock", loopWidthLockButton);
     addAndMakeVisible (loopWidthLockButton);
@@ -455,12 +443,6 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
     addAndMakeVisible (knobPocket);
     addAndMakeVisible (knobGhost);
 
-    tickerLabel.setText ("Speed", juce::dontSendNotification);
-    tickerLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
-    tickerLabel.setFont (juce::Font (juce::FontOptions().withHeight (11.0f)));
-    tickerLabel.setJustificationType (juce::Justification::centredLeft);
-    addAndMakeVisible (tickerLabel);
-
     styleLabel.setText ("Style", juce::dontSendNotification);
     styleLabel.setColour (juce::Label::textColourId, AnimalColors::TextDim);
     styleLabel.setFont (juce::Font (juce::FontOptions().withHeight (12.0f)));
@@ -485,24 +467,10 @@ AnimalPanel::AnimalPanel (BridgeProcessor& p)
     fillHoldListener = std::make_unique<FillHoldListener> (proc, fillButton);
     fillButton.addMouseListener (fillHoldListener.get(), false);
 
-    tickerFastButton.setTooltip ("Playhead moves 2x (visual only).");
-    tickerNormalButton.setTooltip ("Playhead matches transport.");
-    tickerSlowButton.setTooltip ("Playhead moves at half speed (visual only).");
-    tickerFastButton.setClickingTogglesState (false);
-    tickerNormalButton.setClickingTogglesState (false);
-    tickerSlowButton.setClickingTogglesState (false);
-    tickerFastButton.onClick   = [this] { setTickerSpeedChoice (0); };
-    tickerNormalButton.onClick = [this] { setTickerSpeedChoice (1); };
-    tickerSlowButton.onClick   = [this] { setTickerSpeedChoice (2); };
-
     addAndMakeVisible (generateButton);
     addAndMakeVisible (performButton);
     addAndMakeVisible (fillButton);
-    addAndMakeVisible (tickerFastButton);
-    addAndMakeVisible (tickerNormalButton);
-    addAndMakeVisible (tickerSlowButton);
 
-    updateTickerButtonStates();
     syncLockedWidthFromParams();
 
     proc.rebuildAnimalGridPreview();
@@ -600,7 +568,7 @@ void AnimalPanel::parameterChanged (const juce::String& parameterID, float newVa
     }
 
     if (parameterID == "tickerSpeed")
-        updateTickerButtonStates();
+        return;
 
     if (updatingLoopParams)
         return;
@@ -627,131 +595,176 @@ void AnimalPanel::parameterChanged (const juce::String& parameterID, float newVa
     triggerAsyncUpdate();
 }
 
-void AnimalPanel::setTickerSpeedChoice (int index)
-{
-    if (auto* p = proc.apvtsAnimal.getParameter ("tickerSpeed"))
-        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
-            c->setValueNotifyingHost (c->convertTo0to1 ((float) index));
-    updateTickerButtonStates();
-}
-
-void AnimalPanel::updateTickerButtonStates()
-{
-    int idx = 1;
-    if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsAnimal.getParameter ("tickerSpeed")))
-        idx = c->getIndex();
-
-    auto setOn = [] (juce::TextButton& b, bool on)
-    {
-        using namespace AnimalM3;
-        b.setColour (juce::TextButton::buttonColourId,
-                     on ? primary.withAlpha (0.35f) : juce::Colours::transparentBlack);
-    };
-
-    setOn (tickerFastButton,   idx == 0);
-    setOn (tickerNormalButton, idx == 1);
-    setOn (tickerSlowButton,   idx == 2);
-}
-
 void AnimalPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&)
 {
     proc.rebuildAnimalGridPreview();
     triggerAsyncUpdate();
 }
 
+namespace
+{
+    void layoutDropdownRow (juce::Rectangle<int> row,
+                            juce::Label& rootLab, juce::ComboBox& rootBox,
+                            juce::Label& scaleLab, juce::ComboBox& scaleBox,
+                            juce::Label& octLab, juce::ComboBox& octBox,
+                            juce::Label& styleLab, juce::ComboBox& styleBox)
+    {
+        const int h = bridge::instrumentLayout::kDropdownH;
+        const int labY = row.getCentreY() - (int) (h * 0.5f);
+
+        auto placeLabel = [&] (juce::Label& lab, int w)
+        {
+            lab.setBounds (row.removeFromLeft (w).withHeight (h).withY (labY));
+            row.removeFromLeft (4);
+        };
+        auto placeBox = [&] (juce::ComboBox& box, int w)
+        {
+            box.setBounds (row.removeFromLeft (w).withHeight (h).withY (labY));
+            row.removeFromLeft (14);
+        };
+
+        placeLabel (styleLab, 42);
+        placeBox   (styleBox, 164);
+
+        // Push Root/Scale/Oct to the right side of the row
+        const int rightW = 360;
+        if (row.getWidth() > rightW)
+            row.removeFromLeft (row.getWidth() - rightW);
+
+        placeLabel (rootLab, 42);
+        placeBox   (rootBox, 60);
+        placeLabel (scaleLab, 46);
+        placeBox   (scaleBox, 120);
+        placeLabel (octLab, 34);
+        placeBox   (octBox, 56);
+    }
+}
+
 void AnimalPanel::resized()
 {
     using namespace bridge::instrumentLayout;
 
-    auto area = getLocalBounds().reduced (16);
-    area.removeFromTop (8);
+    auto outer = getLocalBounds().reduced (kPanelEdge, kPanelEdge);
 
-    const int bottomH = kKnobRowH + kGap + kDropdownRow + kGap + kLoopRowH;
-    auto bottom = area.removeFromBottom (bottomH);
-    drumGrid.setBounds (area);
+    // 1. Dropdown row
+    auto dropdownArea = outer.removeFromTop (kDropdownRowH);
+    layoutDropdownRow (dropdownArea,
+                       rootNoteLabel, rootNoteBox,
+                       scaleLabel, scaleBox,
+                       octaveLabel, octaveBox,
+                       styleLabel, styleBox);
+    outer.removeFromTop (kSectionGap);
 
-    bottom.removeFromTop (6);
+    // 2. Main area — drum grid
+    auto mainArea = outer.removeFromTop (kMainAreaH);
+    drumGrid.setBounds (mainArea);
+    outer.removeFromTop (kSectionGap);
 
+    // 3. Bottom: knobs card (left) + loop/actions card (right)
+    auto bottomArea = outer.removeFromTop (kBottomCardH);
+    auto loopCard   = bottomArea.removeFromRight (kLoopCardW);
+    bottomArea.removeFromRight (kCardGap);
+    auto knobsCard  = bottomArea;
+
+    // ── Knobs card: GROOVE row + EXPRESSION row ───────────────────────────
     {
-        auto knobRow = bottom.removeFromTop (kKnobRowH);
-        const int gap = 6;
-        const int n = 8;
-        const int totalGaps = gap * (n - 1);
-        int kw = (knobRow.getWidth() - totalGaps) / n;
-        knobDensity.setBounds    (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobSwing.setBounds      (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobHumanize.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobPocket.setBounds     (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobVelocity.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobFillRate.setBounds   (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobComplexity.setBounds (knobRow.removeFromLeft (kw)); knobRow.removeFromLeft (gap);
-        knobGhost.setBounds      (knobRow.removeFromLeft (knobRow.getWidth()));
-    }
+        auto inner = knobsCard.reduced (14, 12);
 
-    bottom.removeFromTop (kGap);
+        // GROOVE header + row of 5 knobs (Density/Swing/Humanize/Pocket/Velocity)
+        grooveLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+        const int halfH = (inner.getHeight() - kSectionHeaderH - 4 - 4) / 2;
 
-    {
-        auto row = bottom.removeFromTop (kDropdownRow);
-        const int dh = kDropdownH;
-        const int yPad = (kDropdownRow - dh) / 2;
-        auto placeCombo = [&] (juce::Label& lab, juce::ComboBox& box, int labW, int boxW)
+        auto groove = inner.removeFromTop (halfH);
         {
-            lab.setBounds (row.removeFromLeft (labW).withHeight (kDropdownRow).reduced (0, 10));
-            box.setBounds (row.removeFromLeft (boxW).withHeight (dh).translated (0, yPad));
-            row.removeFromLeft (10);
-        };
-        placeCombo (rootNoteLabel, rootNoteBox, 36, 56);
-        placeCombo (scaleLabel, scaleBox, 40, juce::jmin (120, juce::jmax (80, row.getWidth() / 6)));
-        placeCombo (octaveLabel, octaveBox, 48, 52);
-        placeCombo (styleLabel, styleBox, 40, juce::jmin (200, juce::jmax (120, row.getWidth() / 5)));
-    }
-
-    bottom.removeFromTop (kGap);
-
-    {
-        auto loopRow = bottom.removeFromTop (kLoopRowH);
-        loopSectionLabel.setBounds (loopRow.removeFromLeft (36).withHeight (14).translated (0, 4));
-
-        knobLoopStart.setBounds (loopRow.removeFromLeft (86));
-        loopRow.removeFromLeft (4);
-        loopWidthLockButton.setBounds (loopRow.removeFromLeft (30).withSizeKeepingCentre (26, 26));
-        loopRow.removeFromLeft (4);
-        knobLoopEnd.setBounds (loopRow.removeFromLeft (86));
-        loopRow.removeFromLeft (10);
-
-        const int speedBlockW = kSpeedBlockW;
-        auto speedBlock = loopRow.removeFromLeft (speedBlockW);
-        tickerLabel.setBounds (speedBlock.removeFromTop (14));
-        {
-            auto strip = speedBlock;
-            const int gapS = kSpeedBtnGap;
-            const int bw = (strip.getWidth() - gapS * 2) / 3;
-            const int bh = juce::jmin (bw, strip.getHeight());
-            const int x0 = strip.getX();
-            const int y0 = strip.getY() + (strip.getHeight() - bh) / 2;
-            tickerFastButton.setBounds   (x0, y0, bw, bh);
-            tickerNormalButton.setBounds (x0 + bw + gapS, y0, bw, bh);
-            tickerSlowButton.setBounds   (x0 + 2 * (bw + gapS), y0, bw, bh);
+            const int n = 5;
+            const int gap = 6;
+            const int kw = (groove.getWidth() - gap * (n - 1)) / n;
+            knobDensity.setBounds  (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobSwing.setBounds    (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobHumanize.setBounds (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobPocket.setBounds   (groove.removeFromLeft (kw)); groove.removeFromLeft (gap);
+            knobVelocity.setBounds (groove.removeFromLeft (kw));
         }
 
-        loopRow.removeFromLeft (kActionBtnGap);
+        inner.removeFromTop (4);
 
-        const int sq = kActionBtnSide;
-        const int gapA = kActionBtnGap;
-        const int rowTop = loopRow.getY();
-        const int yOff = (kLoopRowH - sq) / 2;
-        generateButton.setBounds (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
-        loopRow.removeFromLeft (gapA);
-        fillButton.setBounds     (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
-        loopRow.removeFromLeft (gapA);
-        performButton.setBounds  (loopRow.removeFromLeft (sq).withY (rowTop + yOff).withHeight (sq));
+        // EXPRESSION header + row of 3 knobs (Animal has no Staccato)
+        expressionLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        auto expression = inner.removeFromTop (halfH);
+        {
+            const int n = 5;
+            const int gap = 6;
+            const int kw = (expression.getWidth() - gap * (n - 1)) / n;
+            knobFillRate.setBounds   (expression.removeFromLeft (kw)); expression.removeFromLeft (gap);
+            knobComplexity.setBounds (expression.removeFromLeft (kw)); expression.removeFromLeft (gap);
+            knobGhost.setBounds      (expression.removeFromLeft (kw));
+            // remaining space left blank — Animal has no Staccato knob
+        }
+    }
+
+    // ── Loop/Actions card: LOOPING row + ACTIONS row ──────────────────────
+    {
+        auto inner = loopCard.reduced (14, 12);
+
+        loopingLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        const int loopH = 96;
+        auto loopRow = inner.removeFromTop (loopH);
+        {
+            const int knobW = (loopRow.getWidth() - kSyncBtnSide - 16) / 2;
+            knobLoopStart.setBounds (loopRow.removeFromLeft (knobW));
+            loopRow.removeFromLeft (8);
+            auto syncCell = loopRow.removeFromLeft (kSyncBtnSide);
+            loopWidthLockButton.setBounds (syncCell.withSizeKeepingCentre (kSyncBtnSide, kSyncBtnSide));
+            loopRow.removeFromLeft (8);
+            knobLoopEnd.setBounds (loopRow.removeFromLeft (knobW));
+        }
+
+        inner.removeFromTop (10);
+
+        actionsLabel.setBounds (inner.removeFromTop (kSectionHeaderH));
+        inner.removeFromTop (4);
+
+        auto actionsRow = inner.removeFromTop (kBigActionBtnH);
+        {
+            const int n = 3;
+            const int gap = 8;
+            const int bw = (actionsRow.getWidth() - gap * (n - 1)) / n;
+            generateButton.setBounds (actionsRow.removeFromLeft (bw)); actionsRow.removeFromLeft (gap);
+            fillButton.setBounds     (actionsRow.removeFromLeft (bw)); actionsRow.removeFromLeft (gap);
+            performButton.setBounds  (actionsRow.removeFromLeft (bw));
+        }
     }
 }
 
 void AnimalPanel::paint (juce::Graphics& g)
 {
     using namespace AnimalM3;
+    using namespace bridge::instrumentLayout;
     g.fillAll (surface);
+
+    // Paint backgrounds for the two bottom cards so they match the design system.
+    auto full = getLocalBounds().reduced (kPanelEdge, kPanelEdge);
+    full.removeFromTop (kDropdownRowH + kSectionGap + kMainAreaH + kSectionGap);
+    auto bottom = full.removeFromTop (kBottomCardH);
+    auto loopCard  = bottom.removeFromRight (kLoopCardW);
+    bottom.removeFromRight (kCardGap);
+    auto knobsCard = bottom;
+
+    auto drawCard = [&] (juce::Rectangle<int> r)
+    {
+        auto rf = r.toFloat();
+        drawShadow (g, rf, (float) kCardRadius, 1);
+        fillSurface (g, rf, surfaceContainer, (float) kCardRadius);
+        g.setColour (outline.withAlpha (0.35f));
+        g.drawRoundedRectangle (rf.reduced (0.5f), (float) kCardRadius, 1.0f);
+    };
+    drawCard (knobsCard);
+    drawCard (loopCard);
 }
 
 void AnimalPanel::handleAsyncUpdate()

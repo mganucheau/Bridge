@@ -140,6 +140,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderBreath",   "Breath",   0.f, 1.f, 0.35f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderSpark",    "Spark",    0.f, 1.f, 0.42f));
 
+    // Header transport controls
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("hostSync",        "Host Sync",         true));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("transportPlaying","Transport Playing", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("internalBpm",     "Internal BPM",
+                                                              juce::NormalisableRange<float> (40.0f, 240.0f, 0.1f),
+                                                              120.0f));
+
     return layout;
 }
 
@@ -844,6 +851,7 @@ void BridgeProcessor::processAnimalBlock (juce::AudioBuffer<float>& buffer, juce
 
     double bpm = pos.bpm > 1.0 ? pos.bpm : 120.0;
     animalLastBpm = bpm;
+    currentHostBpm.store (bpm);
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
     double samplesPerStep = samplesPerBeat / 4.0;

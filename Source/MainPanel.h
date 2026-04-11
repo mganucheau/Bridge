@@ -50,8 +50,11 @@ private:
 
     AnimalLookAndFeel laf;
 
-    juce::Label title;
-    juce::Component bandControls;
+    // Section headers
+    juce::Label mixLabel;
+    juce::Label leaderLabel;
+    juce::Label actionsLabel;
+
     juce::Label styleLabel;
     juce::ComboBox styleBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
@@ -63,6 +66,11 @@ private:
     LabelledKnob knobSpark;
 
     juce::Component mixerArea;
+
+    // Loop-card contents on the Leader tab: engage toggle + reset button
+    juce::TextButton engageButton { "ENGAGE" };
+    juce::TextButton resetButton  { "RESET" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> engageAttach;
 
     Row animal;
     Row bootsy;
