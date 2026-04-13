@@ -2,14 +2,14 @@
 #include "BridgeEditor.h"
 #include "BridgeInstrumentStyles.h"
 #include "LeaderStylePresets.h"
-#include "bootsy/BootsyStylePresets.h"
-#include "stevie/StevieStylePresets.h"
-#include "paul/PaulStylePresets.h"
+#include "bass/BassStylePresets.h"
+#include "piano/PianoStylePresets.h"
+#include "guitar/GuitarStylePresets.h"
 
 namespace
 {
-static constexpr const char* kAnimalStateId = "AnimalDrummer";
-static constexpr const char* kBootsyStateId = "Bootsy";
+static constexpr const char* kDrumsStateId = "DrumsDrummer";
+static constexpr const char* kBassStateId = "Bass";
 
 static int readMelodicStyleEngineIndex (juce::AudioProcessorValueTreeState& apvts)
 {
@@ -35,10 +35,11 @@ static float readMain01 (juce::AudioProcessorValueTreeState& m, const char* id, 
 struct LeaderEffective
 {
     float presence = 0.72f;
-    float tight = 0.38f;
-    float unity = 0.45f;
-    float breath = 0.35f;
-    float spark = 0.42f;
+    float density = 0.70f;
+    float swing = 0.0f;
+    float humanize = 0.20f;
+    float pocket = 0.50f;
+    float complexity = 0.50f;
 };
 
 static LeaderEffective getLeaderEffective (juce::AudioProcessorValueTreeState& m)
@@ -52,11 +53,12 @@ static LeaderEffective getLeaderEffective (juce::AudioProcessorValueTreeState& m
 
     auto j = [] (float x) { return juce::jlimit (0.f, 1.f, x); };
     LeaderEffective L;
-    L.presence = j (readMain01 (m, "leaderPresence", 0.72f) + bias.presence);
-    L.tight    = j (readMain01 (m, "leaderTight",    0.38f) + bias.tight);
-    L.unity    = j (readMain01 (m, "leaderUnity",    0.45f) + bias.unity);
-    L.breath   = j (readMain01 (m, "leaderBreath",   0.35f) + bias.breath);
-    L.spark    = j (readMain01 (m, "leaderSpark",    0.42f) + bias.spark);
+    L.presence = j (readMain01 (m, "presence", 0.72f) + bias.presence);
+    L.pocket   = j (readMain01 (m, "pocket",    0.50f) + bias.tight);
+    L.humanize = j (readMain01 (m, "humanize",  0.20f) + bias.unity);
+    L.swing    = j (readMain01 (m, "swing",     0.0f) + bias.breath);
+    L.complexity=j (readMain01 (m, "complexity",0.50f) + bias.spark);
+    L.density  = readMain01 (m, "density", 0.70f);
     return L;
 }
 
@@ -80,16 +82,16 @@ static void applyLeaderToMelodic (const LeaderEffective& L,
                                   float& ghostAmount,
                                   float& staccato)
 {
-    humanize *= (1.0f - 0.55f * L.tight);
-    swing    *= (1.0f - 0.30f * L.tight);
-    pocket    = juce::jmin (1.f, pocket + 0.36f * L.tight);
-    density  *= (1.0f - 0.48f * L.breath);
-    fillRate  = juce::jmin (1.f, fillRate + 0.38f * L.spark);
-    ghostAmount = juce::jmin (1.f, ghostAmount + 0.30f * L.spark);
-    complexity  = juce::jmin (1.f, complexity + 0.22f * L.spark);
-    staccato *= (1.0f - 0.18f * L.unity);
-    temperature = temperature * (1.0f - 0.42f * L.unity) + 1.0f * (0.42f * L.unity);
-    velocity  = juce::jmin (1.f, velocity * (0.90f + 0.12f * L.unity));
+    humanize *= (1.0f - 0.55f * L.pocket);
+    swing    *= (1.0f - 0.30f * L.pocket);
+    pocket    = juce::jmin (1.f, pocket + 0.36f * L.pocket);
+    density  *= (1.0f - 0.48f * L.swing);
+    fillRate  = juce::jmin (1.f, fillRate + 0.38f * L.complexity);
+    ghostAmount = juce::jmin (1.f, ghostAmount + 0.30f * L.complexity);
+    complexity  = juce::jmin (1.f, complexity + 0.22f * L.complexity);
+    staccato *= (1.0f - 0.18f * L.humanize);
+    temperature = temperature * (1.0f - 0.42f * L.humanize) + 1.0f * (0.42f * L.humanize);
+    velocity  = juce::jmin (1.f, velocity * (0.90f + 0.12f * L.humanize));
     velocity  = juce::jmin (1.f, velocity * (0.88f + 0.20f * L.presence));
     density   = juce::jmin (1.f, density * (0.86f + 0.20f * L.presence));
 }
@@ -103,8 +105,8 @@ static bool mainRowMidiOpen (juce::AudioProcessorValueTreeState& m,
     {
         return m.getRawParameterValue (id) != nullptr && m.getRawParameterValue (id)->load() > 0.5f;
     };
-    const bool anySolo = b ("mainSoloAnimal") || b ("mainSoloBootsy")
-                         || b ("mainSoloStevie") || b ("mainSoloPaul");
+    const bool anySolo = b ("mainSoloDrums") || b ("mainSoloBass")
+                         || b ("mainSoloPiano") || b ("mainSoloGuitar");
     if (anySolo)
         return b (soloId);
     return ! b (muteId);
@@ -115,30 +117,43 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
     layout.add (std::make_unique<juce::AudioParameterBool> ("leaderTabOn", "Leader tab", true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("animalOn",  "Drums on",  true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("bootsyOn",  "Bass on",  true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("stevieOn",  "Keys on",  true));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("paulOn",    "Guitar on",    true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("drumsOn",  "Drums on",  true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("bassOn",  "Bass on",  true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("pianoOn",  "Keys on",  true));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("guitarOn",    "Guitar on",    true));
 
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteAnimal", "Mute Drums", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloAnimal", "Solo Drums", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteBootsy", "Mute Bass", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloBootsy", "Solo Bass", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteStevie", "Mute Keys", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloStevie", "Solo Keys", false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMutePaul",   "Mute Guitar",   false));
-    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloPaul",   "Solo Guitar",   false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteDrums", "Mute Drums", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloDrums", "Solo Drums", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteBass", "Mute Bass", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloBass", "Solo Bass", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMutePiano", "Mute Keys", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloPiano", "Solo Keys", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainMuteGuitar",   "Mute Guitar",   false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("mainSoloGuitar",   "Solo Guitar",   false));
 
     juce::StringArray leaderStyleNames;
     for (int i = 0; i < NUM_LEADER_STYLES; ++i)
         leaderStyleNames.add (LEADER_STYLE_NAMES[i]);
     layout.add (std::make_unique<juce::AudioParameterChoice> ("leaderStyle", "Arrangement", leaderStyleNames, 0));
 
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderPresence", "Presence", 0.f, 1.f, 0.72f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderTight",    "Tight",    0.f, 1.f, 0.38f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderUnity",    "Unity",    0.f, 1.f, 0.45f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderBreath",   "Breath",   0.f, 1.f, 0.35f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("leaderSpark",    "Spark",    0.f, 1.f, 0.42f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("presence", "Presence", 0.f, 1.f, 0.72f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("density", "Density", 0.f, 1.f, 0.70f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("swing", "Swing", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize", "Humanize", 0.f, 1.f, 0.20f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("pocket", "Pocket", 0.f, 1.f, 0.50f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity", "Velocity", 0.f, 1.f, 0.85f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate", "Fill Rate", 0.f, 1.f, 0.15f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity", "Complexity", 0.f, 1.f, 0.50f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost", 0.f, 1.f, 0.70f));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart", "Loop Start", 1, 16, 1));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd", "Loop End", 1, 16, 16));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On", false));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("perform", "Perform", false));
+    layout.add (std::make_unique<juce::AudioParameterChoice>("tickerSpeed", "Speed", juce::StringArray { "x2", "1", "1/2" }, 1));
+    // Global tonality params
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("scale",       "Scale",       0, BassPreset::NUM_SCALES - 1, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("rootNote",    "Root Note",   0, 11, 0));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("octave",      "Octave",      1, 4, 3));
 
     // Header transport controls
     layout.add (std::make_unique<juce::AudioParameterBool>  ("hostSync",        "Host Sync",         true));
@@ -150,7 +165,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     return layout;
 }
 
-juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildAnimalLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
@@ -159,10 +174,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildAnimal
         styleNames.add (bridgeUnifiedStyleNames()[i]);
 
     layout.add (std::make_unique<juce::AudioParameterChoice> ("style", "Style", styleNames, 0));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("scale",       "Scale",
-                                                             0, BootsyPreset::NUM_SCALES - 1, 0));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("rootNote",    "Root Note",   0, 11, 0));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("octave",      "Octave",      1, 4, 2));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.7f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.2f));
@@ -171,9 +182,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildAnimal
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("pocket",      "Pocket",      0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("presence",    "Presence",    0.0f,  1.0f, 0.8f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.8f));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",  1,     NUM_STEPS, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",      1,     NUM_STEPS, NUM_STEPS));
-    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopWidthLock", "Loop Width Lock", false));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On", false));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("perform",     "Perform",     false));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Speed",
                                                               juce::StringArray { "x2", "1", "1/2" }, 1));
@@ -200,10 +213,6 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
         styleNames.add (bridgeUnifiedStyleNames()[i]);
     layout.add (std::make_unique<juce::AudioParameterChoice> ("style", "Style", styleNames, 0));
     layout.add (std::make_unique<juce::AudioParameterBool> ("perform", "Perform", false));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("scale",       "Scale",
-                                                             0, BootsyPreset::NUM_SCALES - 1, 0));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("rootNote",    "Root Note",   0, 11, 0));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("octave",      "Octave",      1, 4, 2));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("temperature", "Temperature", 0.01f, 2.0f, 1.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.70f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
@@ -214,14 +223,16 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.50f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.70f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("staccato",    "Staccato",    0.0f,  1.0f, 0.20f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("presence",    "Presence",    0.0f,  1.0f, 0.8f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.8f));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("patternLen",  "Pattern Len", 4,     16,   16));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("locked",      "Locked",      false));
     layout.add (std::make_unique<juce::AudioParameterInt> ("midiChannel",  "MIDI Channel", 1, 16, defaultMidiChannel));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("phraseBars", "Bar Grid",
                                                               juce::StringArray { "4 bars", "8 bars", "16 bars" }, 0));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",   1, BootsyPreset::NUM_STEPS, 1));
-    layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",     1, BootsyPreset::NUM_STEPS, BootsyPreset::NUM_STEPS));
-    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopWidthLock", "Loop Width Lock", false));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",   1, BassPreset::NUM_STEPS, 1));
+    layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",     1, BassPreset::NUM_STEPS, BassPreset::NUM_STEPS));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On", false));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Speed",
                                                               juce::StringArray { "x2", "1", "1/2" }, 1));
 
@@ -233,38 +244,38 @@ BridgeProcessor::BridgeProcessor()
                         .withInput  ("Input",  juce::AudioChannelSet::stereo(), false)
                         .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvtsMain   (*this, nullptr, "BridgeMain", buildMainLayout()),
-      apvtsAnimal (*this, nullptr, kAnimalStateId, buildAnimalLayout()),
-      apvtsBootsy (*this, nullptr, kBootsyStateId, makeMelodicLayout (1)),
-      apvtsStevie (*this, nullptr, "Stevie", makeMelodicLayout (2)),
-      apvtsPaul   (*this, nullptr, "Paul", makeMelodicLayout (3))
+      apvtsDrums (*this, nullptr, kDrumsStateId, buildDrumsLayout()),
+      apvtsBass (*this, nullptr, kBassStateId, makeMelodicLayout (1)),
+      apvtsPiano (*this, nullptr, "Piano", makeMelodicLayout (2)),
+      apvtsGuitar   (*this, nullptr, "Guitar", makeMelodicLayout (3))
 {
-    syncAnimalEngineFromAPVTS();
-    syncBootsyEngineFromAPVTS();
-    syncStevieEngineFromAPVTS();
-    syncPaulEngineFromAPVTS();
+    syncDrumsEngineFromAPVTS();
+    syncBassEngineFromAPVTS();
+    syncPianoEngineFromAPVTS();
+    syncGuitarEngineFromAPVTS();
 
     drumEngine.onPatternChanged = [this]
     {
         if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifyAnimalPatternChanged();
+            ed->notifyDrumsPatternChanged();
     };
 
     bassEngine.onPatternChanged = [this]
     {
         if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifyBootsyPatternChanged();
+            ed->notifyBassPatternChanged();
     };
 
     pianoEngine.onPatternChanged = [this]
     {
         if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifySteviePatternChanged();
+            ed->notifyPianoPatternChanged();
     };
 
     guitarEngine.onPatternChanged = [this]
     {
         if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifyPaulPatternChanged();
+            ed->notifyGuitarPatternChanged();
     };
 }
 
@@ -282,28 +293,28 @@ void BridgeProcessor::prepareToPlay (double sr, int spb)
 
     midiSampleClock = 0;
 
-    animalLastProcessedStep = -1;
-    animalPendingNoteOffs.clear();
+    drumsLastProcessedStep = -1;
+    drumsPendingNoteOffs.clear();
     drumEngine.generatePattern (false);
     drumEngine.setPlaybackSamplesPerStep (sampleRate * 60.0 / 120.0 / 4.0);
-    syncAnimalEngineFromAPVTS();
+    syncDrumsEngineFromAPVTS();
     drumEngine.rebuildGridPreview();
 
-    bootsyLastProcessedStep = -1;
-    bootsyPendingNoteOffs.clear();
-    syncBootsyEngineFromAPVTS();
+    bassLastProcessedStep = -1;
+    bassPendingNoteOffs.clear();
+    syncBassEngineFromAPVTS();
     bassEngine.generatePattern();
     bassEngine.rebuildGridPreview();
 
-    stevieLastProcessedStep = -1;
-    steviePendingNoteOffs.clear();
-    syncStevieEngineFromAPVTS();
+    pianoLastProcessedStep = -1;
+    pianoPendingNoteOffs.clear();
+    syncPianoEngineFromAPVTS();
     pianoEngine.generatePattern();
     pianoEngine.rebuildGridPreview();
 
-    paulLastProcessedStep = -1;
-    paulPendingNoteOffs.clear();
-    syncPaulEngineFromAPVTS();
+    guitarLastProcessedStep = -1;
+    guitarPendingNoteOffs.clear();
+    syncGuitarEngineFromAPVTS();
     guitarEngine.generatePattern();
     guitarEngine.rebuildGridPreview();
 }
@@ -315,52 +326,88 @@ const DrumPattern& BridgeProcessor::getPatternForGrid() const
     return drumEngine.getPatternForGrid();
 }
 
-void BridgeProcessor::getAnimalLoopBounds (int& loopStart, int& loopEnd) const
+void BridgeProcessor::getDrumsLoopBounds (int& loopStart, int& loopEnd) const
 {
-    loopStart = (int) *apvtsAnimal.getRawParameterValue ("loopStart");
-    loopEnd   = (int) *apvtsAnimal.getRawParameterValue ("loopEnd");
+    // Leader override check
+    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
+    {
+        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+    }
+    else
+    {
+        loopStart = (int) *apvtsDrums.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsDrums.getRawParameterValue ("loopEnd");
+    }
+
+    // Limit and swap
     loopStart = juce::jlimit (1, NUM_STEPS, loopStart);
     loopEnd   = juce::jlimit (1, NUM_STEPS, loopEnd);
     if (loopEnd < loopStart)
         std::swap (loopStart, loopEnd);
+    
+    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..NUM_STEPS
+    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsDrums.getRawParameterValue ("loopOn") <= 0.5f)
+    {
+        loopStart = 1;
+        loopEnd = NUM_STEPS;
+    }
 }
 
-void BridgeProcessor::getBootsyLoopBounds (int& loopStart, int& loopEnd) const
+void BridgeProcessor::getBassLoopBounds (int& loopStart, int& loopEnd) const
 {
-    loopStart = (int) *apvtsBootsy.getRawParameterValue ("loopStart");
-    loopEnd   = (int) *apvtsBootsy.getRawParameterValue ("loopEnd");
-    loopStart = juce::jlimit (1, BootsyPreset::NUM_STEPS, loopStart);
-    loopEnd   = juce::jlimit (1, BootsyPreset::NUM_STEPS, loopEnd);
+    // Leader override check
+    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
+    {
+        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+    }
+    else
+    {
+        loopStart = (int) *apvtsBass.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsBass.getRawParameterValue ("loopEnd");
+    }
+
+    // Limit and swap
+    loopStart = juce::jlimit (1, BassPreset::NUM_STEPS, loopStart);
+    loopEnd   = juce::jlimit (1, BassPreset::NUM_STEPS, loopEnd);
     if (loopEnd < loopStart)
         std::swap (loopStart, loopEnd);
+    
+    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..BassPreset::NUM_STEPS
+    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsBass.getRawParameterValue ("loopOn") <= 0.5f)
+    {
+        loopStart = 1;
+        loopEnd = BassPreset::NUM_STEPS;
+    }
 }
 
-void BridgeProcessor::syncAnimalEngineFromAPVTS()
+void BridgeProcessor::syncDrumsEngineFromAPVTS()
 {
-    if (auto* styleParam = dynamic_cast<juce::AudioParameterChoice*> (apvtsAnimal.getParameter ("style")))
+    if (auto* styleParam = dynamic_cast<juce::AudioParameterChoice*> (apvtsDrums.getParameter ("style")))
         drumEngine.setStyle (styleParam->getIndex());
     else
-        drumEngine.setStyle ((int) apvtsAnimal.getRawParameterValue ("style")->load());
+        drumEngine.setStyle ((int) apvtsDrums.getRawParameterValue ("style")->load());
 
     drumEngine.setTemperature (1.0f);
-    float density    = (float)*apvtsAnimal.getRawParameterValue ("density");
-    float swing      = (float)*apvtsAnimal.getRawParameterValue ("swing");
-    float humanize   = (float)*apvtsAnimal.getRawParameterValue ("humanize");
-    float velocity   = (float)*apvtsAnimal.getRawParameterValue ("velocity");
-    float fillRate   = (float)*apvtsAnimal.getRawParameterValue ("fillRate");
-    float complexity = (float)*apvtsAnimal.getRawParameterValue ("complexity");
-    float pocket     = (float)*apvtsAnimal.getRawParameterValue ("pocket");
-    float ghostAmt   = (float)*apvtsAnimal.getRawParameterValue ("ghostAmount");
+    float density    = (float)*apvtsDrums.getRawParameterValue ("density");
+    float swing      = (float)*apvtsDrums.getRawParameterValue ("swing");
+    float humanize   = (float)*apvtsDrums.getRawParameterValue ("humanize");
+    float velocity   = (float)*apvtsDrums.getRawParameterValue ("velocity");
+    float fillRate   = (float)*apvtsDrums.getRawParameterValue ("fillRate");
+    float complexity = (float)*apvtsDrums.getRawParameterValue ("complexity");
+    float pocket     = (float)*apvtsDrums.getRawParameterValue ("pocket");
+    float ghostAmt   = (float)*apvtsDrums.getRawParameterValue ("ghostAmount");
 
     const auto L = getLeaderEffective (apvtsMain);
-    humanize *= (1.0f - 0.55f * L.tight);
-    swing    *= (1.0f - 0.30f * L.tight);
-    pocket    = juce::jmin (1.f, pocket + 0.38f * L.tight);
-    density  *= (1.0f - 0.48f * L.breath);
-    fillRate  = juce::jmin (1.f, fillRate + 0.40f * L.spark);
-    ghostAmt  = juce::jmin (1.f, ghostAmt + 0.32f * L.spark);
-    complexity = juce::jmin (1.f, complexity + 0.22f * L.spark);
-    velocity  = juce::jmin (1.f, velocity * (0.90f + 0.14f * L.unity));
+    humanize *= (1.0f - 0.55f * L.pocket);
+    swing    *= (1.0f - 0.30f * L.pocket);
+    pocket    = juce::jmin (1.f, pocket + 0.38f * L.pocket);
+    density  *= (1.0f - 0.48f * L.swing);
+    fillRate  = juce::jmin (1.f, fillRate + 0.40f * L.complexity);
+    ghostAmt  = juce::jmin (1.f, ghostAmt + 0.32f * L.complexity);
+    complexity = juce::jmin (1.f, complexity + 0.22f * L.complexity);
+    velocity  = juce::jmin (1.f, velocity * (0.90f + 0.14f * L.humanize));
     velocity  = juce::jmin (1.f, velocity * (0.88f + 0.20f * L.presence));
     density   = juce::jmin (1.f, density * (0.86f + 0.20f * L.presence));
 
@@ -374,26 +421,26 @@ void BridgeProcessor::syncAnimalEngineFromAPVTS()
     drumEngine.setGhostAmount (ghostAmt);
     drumEngine.setPatternLen (NUM_STEPS);
 
-    animalPerformMode = ((bool) *apvtsAnimal.getRawParameterValue ("perform"));
-    drumEngine.setPerformBoost (animalPerformMode);
+    drumsPerformMode = ((bool) *apvtsDrums.getRawParameterValue ("perform"));
+    drumEngine.setPerformBoost (drumsPerformMode);
 
-    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsAnimal.getParameter ("tickerSpeed")))
-        animalTickerRate = animalTickerRateForChoiceIndex (tr->getIndex());
+    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsDrums.getParameter ("tickerSpeed")))
+        drumsTickerRate = drumsTickerRateForChoiceIndex (tr->getIndex());
     else
-        animalTickerRate = animalTickerRateForChoiceIndex ((int) *apvtsAnimal.getRawParameterValue ("tickerSpeed"));
+        drumsTickerRate = drumsTickerRateForChoiceIndex ((int) *apvtsDrums.getRawParameterValue ("tickerSpeed"));
 
     drumEngine.setPhraseBars (4);
 
-    animalAnySolo = false;
+    drumsAnySolo = false;
     for (int drum = 0; drum < NUM_DRUMS; ++drum)
     {
-        animalLaneMute[(size_t) drum] = ((bool) *apvtsAnimal.getRawParameterValue ("mute_" + juce::String (drum)));
-        animalLaneSolo[(size_t) drum] = ((bool) *apvtsAnimal.getRawParameterValue ("solo_" + juce::String (drum)));
-        animalAnySolo = animalAnySolo || animalLaneSolo[(size_t) drum];
+        drumsLaneMute[(size_t) drum] = ((bool) *apvtsDrums.getRawParameterValue ("mute_" + juce::String (drum)));
+        drumsLaneSolo[(size_t) drum] = ((bool) *apvtsDrums.getRawParameterValue ("solo_" + juce::String (drum)));
+        drumsAnySolo = drumsAnySolo || drumsLaneSolo[(size_t) drum];
     }
 }
 
-double BridgeProcessor::animalTickerRateForChoiceIndex (int choiceIndex)
+double BridgeProcessor::drumsTickerRateForChoiceIndex (int choiceIndex)
 {
     switch (juce::jlimit (0, 2, choiceIndex))
     {
@@ -403,7 +450,7 @@ double BridgeProcessor::animalTickerRateForChoiceIndex (int choiceIndex)
     }
 }
 
-double BridgeProcessor::bootsyTickerRateForChoiceIndex (int choiceIndex)
+double BridgeProcessor::bassTickerRateForChoiceIndex (int choiceIndex)
 {
     switch (juce::jlimit (0, 2, choiceIndex))
     {
@@ -413,30 +460,30 @@ double BridgeProcessor::bootsyTickerRateForChoiceIndex (int choiceIndex)
     }
 }
 
-bool BridgeProcessor::isAnimalLaneAudible (int drum) const
+bool BridgeProcessor::isDrumsLaneAudible (int drum) const
 {
     if (drum < 0 || drum >= NUM_DRUMS) return false;
-    return animalAnySolo ? animalLaneSolo[(size_t) drum]
-                         : ! animalLaneMute[(size_t) drum];
+    return drumsAnySolo ? drumsLaneSolo[(size_t) drum]
+                         : ! drumsLaneMute[(size_t) drum];
 }
 
-void BridgeProcessor::rebuildAnimalGridPreview()
+void BridgeProcessor::rebuildDrumsGridPreview()
 {
-    syncAnimalEngineFromAPVTS();
+    syncDrumsEngineFromAPVTS();
     drumEngine.rebuildGridPreview();
 }
 
-void BridgeProcessor::randomizeAnimalSettings()
+void BridgeProcessor::randomizeDrumsSettings()
 {
     juce::Random r;
 
-    if (auto* p = apvtsAnimal.getParameter ("style"))
+    if (auto* p = apvtsDrums.getParameter ("style"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) r.nextInt (NUM_STYLES)));
 
     auto randFloat = [&] (const char* id, float lo, float hi)
     {
-        if (auto* p = apvtsAnimal.getParameter (id))
+        if (auto* p = apvtsDrums.getParameter (id))
             if (auto* fp = dynamic_cast<juce::AudioParameterFloat*> (p))
                 fp->setValueNotifyingHost (fp->getNormalisableRange().convertTo0to1 (lo + (hi - lo) * r.nextFloat()));
     };
@@ -450,42 +497,42 @@ void BridgeProcessor::randomizeAnimalSettings()
     randFloat ("pocket",     0.15f, 0.95f);
     randFloat ("ghostAmount",0.15f, 0.95f);
 
-    if (auto* p = apvtsAnimal.getParameter ("tickerSpeed"))
+    if (auto* p = apvtsDrums.getParameter ("tickerSpeed"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) r.nextInt (3)));
 
     drumEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
 }
 
-void BridgeProcessor::triggerAnimalGenerate()
+void BridgeProcessor::triggerDrumsGenerate()
 {
-    randomizeAnimalSettings();
-    syncAnimalEngineFromAPVTS();
-    drumEngine.generatePattern (animalPerformMode);
+    randomizeDrumsSettings();
+    syncDrumsEngineFromAPVTS();
+    drumEngine.generatePattern (drumsPerformMode);
 }
 
-void BridgeProcessor::triggerAnimalFill (int fromStep)
+void BridgeProcessor::triggerDrumsFill (int fromStep)
 {
-    animalFillQueued   = true;
-    animalFillFromStep = fromStep;
+    drumsFillQueued   = true;
+    drumsFillFromStep = fromStep;
 }
 
-void BridgeProcessor::syncBootsyEngineFromAPVTS()
+void BridgeProcessor::syncBassEngineFromAPVTS()
 {
-    bassEngine.setStyle       (readMelodicStyleEngineIndex (apvtsBootsy));
-    bassEngine.setScale       ((int)  *apvtsBootsy.getRawParameterValue ("scale"));
-    bassEngine.setRootNote    ((int)  *apvtsBootsy.getRawParameterValue ("rootNote"));
-    bassEngine.setOctave      ((int)  *apvtsBootsy.getRawParameterValue ("octave"));
-    float temperature = (float)*apvtsBootsy.getRawParameterValue ("temperature");
-    float density     = (float)*apvtsBootsy.getRawParameterValue ("density");
-    float swing       = (float)*apvtsBootsy.getRawParameterValue ("swing");
-    float humanize    = (float)*apvtsBootsy.getRawParameterValue ("humanize");
-    float pocket      = (float)*apvtsBootsy.getRawParameterValue ("pocket");
-    float velocity    = (float)*apvtsBootsy.getRawParameterValue ("velocity");
-    float fillRate    = (float)*apvtsBootsy.getRawParameterValue ("fillRate");
-    float complexity  = (float)*apvtsBootsy.getRawParameterValue ("complexity");
-    float ghostAmount = (float)*apvtsBootsy.getRawParameterValue ("ghostAmount");
-    float staccato    = (float)*apvtsBootsy.getRawParameterValue ("staccato");
+    bassEngine.setStyle       (readMelodicStyleEngineIndex (apvtsBass));
+    bassEngine.setScale       ((int)  *apvtsMain.getRawParameterValue ("scale"));
+    bassEngine.setRootNote    ((int)  *apvtsMain.getRawParameterValue ("rootNote"));
+    bassEngine.setOctave      ((int)  *apvtsMain.getRawParameterValue ("octave"));
+    float temperature = (float)*apvtsBass.getRawParameterValue ("temperature");
+    float density     = (float)*apvtsBass.getRawParameterValue ("density");
+    float swing       = (float)*apvtsBass.getRawParameterValue ("swing");
+    float humanize    = (float)*apvtsBass.getRawParameterValue ("humanize");
+    float pocket      = (float)*apvtsBass.getRawParameterValue ("pocket");
+    float velocity    = (float)*apvtsBass.getRawParameterValue ("velocity");
+    float fillRate    = (float)*apvtsBass.getRawParameterValue ("fillRate");
+    float complexity  = (float)*apvtsBass.getRawParameterValue ("complexity");
+    float ghostAmount = (float)*apvtsBass.getRawParameterValue ("ghostAmount");
+    float staccato    = (float)*apvtsBass.getRawParameterValue ("staccato");
     applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
                           pocket, velocity, fillRate, complexity, ghostAmount, staccato);
     bassEngine.setTemperature (temperature);
@@ -498,44 +545,46 @@ void BridgeProcessor::syncBootsyEngineFromAPVTS()
     bassEngine.setComplexity  (complexity);
     bassEngine.setGhostAmount (ghostAmount);
     bassEngine.setStaccato    (staccato);
-    bassEngine.setPatternLen  (BootsyPreset::NUM_STEPS);
-    bassEngine.setLocked      ((bool) *apvtsBootsy.getRawParameterValue ("locked"));
+    bassEngine.setPatternLen  (BassPreset::NUM_STEPS);
+    bassEngine.setLocked      ((bool) *apvtsBass.getRawParameterValue ("locked"));
 
-    bootsyMidiChannel = juce::jlimit (1, 16, (int)*apvtsBootsy.getRawParameterValue ("midiChannel"));
+    bassPerformMode = ((bool) *apvtsBass.getRawParameterValue ("perform"));
 
-    const int phraseChoice = (int)*apvtsBootsy.getRawParameterValue ("phraseBars");
+    bassMidiChannel = juce::jlimit (1, 16, (int)*apvtsBass.getRawParameterValue ("midiChannel"));
+
+    const int phraseChoice = (int)*apvtsBass.getRawParameterValue ("phraseBars");
     bassEngine.setPhraseBars (phraseChoice == 0 ? 4 : (phraseChoice == 1 ? 8 : 16));
 
-    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsBootsy.getParameter ("tickerSpeed")))
-        bootsyTickerRate = bootsyTickerRateForChoiceIndex (tr->getIndex());
+    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsBass.getParameter ("tickerSpeed")))
+        bassTickerRate = bassTickerRateForChoiceIndex (tr->getIndex());
     else
-        bootsyTickerRate = bootsyTickerRateForChoiceIndex ((int) *apvtsBootsy.getRawParameterValue ("tickerSpeed"));
+        bassTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsBass.getRawParameterValue ("tickerSpeed"));
 }
 
-void BridgeProcessor::triggerBootsyGenerate()
+void BridgeProcessor::triggerBassGenerate()
 {
-    randomizeBootsySettings();
-    syncBootsyEngineFromAPVTS();
-    bassEngine.generatePattern();
+    randomizeBassSettings();
+    syncBassEngineFromAPVTS();
+    bassEngine.generatePattern (bassPerformMode);
 }
 
-void BridgeProcessor::applyBootsyStyleAndRegenerate (int styleIndex)
+void BridgeProcessor::applyBassStyleAndRegenerate (int styleIndex)
 {
     styleIndex = juce::jlimit (0, bridgeUnifiedStyleCount() - 1, styleIndex);
-    if (auto* p = apvtsBootsy.getParameter ("style"))
+    if (auto* p = apvtsBass.getParameter ("style"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
-    syncBootsyEngineFromAPVTS();
-    bassEngine.generatePattern();
+    syncBassEngineFromAPVTS();
+    bassEngine.generatePattern (bassPerformMode);
 }
 
-void BridgeProcessor::randomizeBootsySettings()
+void BridgeProcessor::randomizeBassSettings()
 {
     juce::Random r;
 
     auto randFloat = [&] (const char* id, float lo, float hi)
     {
-        if (auto* p = apvtsBootsy.getParameter (id))
+        if (auto* p = apvtsBass.getParameter (id))
             if (auto* fp = dynamic_cast<juce::AudioParameterFloat*> (p))
                 fp->setValueNotifyingHost (fp->getNormalisableRange().convertTo0to1 (lo + (hi - lo) * r.nextFloat()));
     };
@@ -550,63 +599,99 @@ void BridgeProcessor::randomizeBootsySettings()
     randFloat ("ghostAmount",0.35f, 1.0f);
     randFloat ("staccato",   0.05f, 0.55f);
 
-    if (auto* p = apvtsBootsy.getParameter ("tickerSpeed"))
+    if (auto* p = apvtsBass.getParameter ("tickerSpeed"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) r.nextInt (3)));
 
     bassEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
 }
 
-void BridgeProcessor::rebuildBootsyGridPreview()
+void BridgeProcessor::rebuildBassGridPreview()
 {
-    syncBootsyEngineFromAPVTS();
+    syncBassEngineFromAPVTS();
     bassEngine.rebuildGridPreview();
     if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-        ed->notifyBootsyPatternChanged();
+        ed->notifyBassPatternChanged();
 }
 
-void BridgeProcessor::triggerBootsyFill (int fromStep)
+void BridgeProcessor::triggerBassFill (int fromStep)
 {
-    bootsyFillQueued   = true;
-    bootsyFillFromStep = fromStep;
+    bassFillQueued   = true;
+    bassFillFromStep = fromStep;
 }
 
-void BridgeProcessor::getStevieLoopBounds (int& loopStart, int& loopEnd) const
+void BridgeProcessor::getPianoLoopBounds (int& loopStart, int& loopEnd) const
 {
-    loopStart = (int) *apvtsStevie.getRawParameterValue ("loopStart");
-    loopEnd   = (int) *apvtsStevie.getRawParameterValue ("loopEnd");
-    loopStart = juce::jlimit (1, SteviePreset::NUM_STEPS, loopStart);
-    loopEnd   = juce::jlimit (1, SteviePreset::NUM_STEPS, loopEnd);
+    // Leader override check
+    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
+    {
+        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+    }
+    else
+    {
+        loopStart = (int) *apvtsPiano.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsPiano.getRawParameterValue ("loopEnd");
+    }
+
+    // Limit and swap
+    loopStart = juce::jlimit (1, PianoPreset::NUM_STEPS, loopStart);
+    loopEnd   = juce::jlimit (1, PianoPreset::NUM_STEPS, loopEnd);
     if (loopEnd < loopStart)
         std::swap (loopStart, loopEnd);
+    
+    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..PianoPreset::NUM_STEPS
+    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsPiano.getRawParameterValue ("loopOn") <= 0.5f)
+    {
+        loopStart = 1;
+        loopEnd = PianoPreset::NUM_STEPS;
+    }
 }
 
-void BridgeProcessor::getPaulLoopBounds (int& loopStart, int& loopEnd) const
+void BridgeProcessor::getGuitarLoopBounds (int& loopStart, int& loopEnd) const
 {
-    loopStart = (int) *apvtsPaul.getRawParameterValue ("loopStart");
-    loopEnd   = (int) *apvtsPaul.getRawParameterValue ("loopEnd");
-    loopStart = juce::jlimit (1, PaulPreset::NUM_STEPS, loopStart);
-    loopEnd   = juce::jlimit (1, PaulPreset::NUM_STEPS, loopEnd);
+    // Leader override check
+    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
+    {
+        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+    }
+    else
+    {
+        loopStart = (int) *apvtsGuitar.getRawParameterValue ("loopStart");
+        loopEnd   = (int) *apvtsGuitar.getRawParameterValue ("loopEnd");
+    }
+
+    // Limit and swap
+    loopStart = juce::jlimit (1, GuitarPreset::NUM_STEPS, loopStart);
+    loopEnd   = juce::jlimit (1, GuitarPreset::NUM_STEPS, loopEnd);
     if (loopEnd < loopStart)
         std::swap (loopStart, loopEnd);
+    
+    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..GuitarPreset::NUM_STEPS
+    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsGuitar.getRawParameterValue ("loopOn") <= 0.5f)
+    {
+        loopStart = 1;
+        loopEnd = GuitarPreset::NUM_STEPS;
+    }
 }
 
-void BridgeProcessor::syncStevieEngineFromAPVTS()
+void BridgeProcessor::syncPianoEngineFromAPVTS()
 {
-    pianoEngine.setStyle       (readMelodicStyleEngineIndex (apvtsStevie));
-    pianoEngine.setScale       ((int)  *apvtsStevie.getRawParameterValue ("scale"));
-    pianoEngine.setRootNote    ((int)  *apvtsStevie.getRawParameterValue ("rootNote"));
-    pianoEngine.setOctave      ((int)  *apvtsStevie.getRawParameterValue ("octave"));
-    float temperature = (float)*apvtsStevie.getRawParameterValue ("temperature");
-    float density     = (float)*apvtsStevie.getRawParameterValue ("density");
-    float swing       = (float)*apvtsStevie.getRawParameterValue ("swing");
-    float humanize    = (float)*apvtsStevie.getRawParameterValue ("humanize");
-    float pocket      = (float)*apvtsStevie.getRawParameterValue ("pocket");
-    float velocity    = (float)*apvtsStevie.getRawParameterValue ("velocity");
-    float fillRate    = (float)*apvtsStevie.getRawParameterValue ("fillRate");
-    float complexity  = (float)*apvtsStevie.getRawParameterValue ("complexity");
-    float ghostAmount = (float)*apvtsStevie.getRawParameterValue ("ghostAmount");
-    float staccato    = (float)*apvtsStevie.getRawParameterValue ("staccato");
+    pianoEngine.setStyle       (readMelodicStyleEngineIndex (apvtsPiano));
+    pianoEngine.setScale       ((int)  *apvtsMain.getRawParameterValue ("scale"));
+    pianoEngine.setRootNote    ((int)  *apvtsMain.getRawParameterValue ("rootNote"));
+    pianoEngine.setOctave      ((int)  *apvtsMain.getRawParameterValue ("octave"));
+    float temperature = (float)*apvtsPiano.getRawParameterValue ("temperature");
+    float density     = (float)*apvtsPiano.getRawParameterValue ("density");
+    float swing       = (float)*apvtsPiano.getRawParameterValue ("swing");
+    float humanize    = (float)*apvtsPiano.getRawParameterValue ("humanize");
+    float pocket      = (float)*apvtsPiano.getRawParameterValue ("pocket");
+    float velocity    = (float)*apvtsPiano.getRawParameterValue ("velocity");
+    float fillRate    = (float)*apvtsPiano.getRawParameterValue ("fillRate");
+    float complexity  = (float)*apvtsPiano.getRawParameterValue ("complexity");
+    float ghostAmount = (float)*apvtsPiano.getRawParameterValue ("ghostAmount");
+    float staccato    = (float)*apvtsPiano.getRawParameterValue ("staccato");
     applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
                           pocket, velocity, fillRate, complexity, ghostAmount, staccato);
     pianoEngine.setTemperature (temperature);
@@ -619,36 +704,38 @@ void BridgeProcessor::syncStevieEngineFromAPVTS()
     pianoEngine.setComplexity  (complexity);
     pianoEngine.setGhostAmount (ghostAmount);
     pianoEngine.setStaccato    (staccato);
-    pianoEngine.setPatternLen  (SteviePreset::NUM_STEPS);
-    pianoEngine.setLocked      ((bool) *apvtsStevie.getRawParameterValue ("locked"));
+    pianoEngine.setPatternLen  (PianoPreset::NUM_STEPS);
+    pianoEngine.setLocked      ((bool) *apvtsPiano.getRawParameterValue ("locked"));
 
-    stevieMidiChannel = juce::jlimit (1, 16, (int)*apvtsStevie.getRawParameterValue ("midiChannel"));
+    pianoPerformMode = ((bool) *apvtsPiano.getRawParameterValue ("perform"));
 
-    const int phraseChoice = (int)*apvtsStevie.getRawParameterValue ("phraseBars");
+    pianoMidiChannel = juce::jlimit (1, 16, (int)*apvtsPiano.getRawParameterValue ("midiChannel"));
+
+    const int phraseChoice = (int)*apvtsPiano.getRawParameterValue ("phraseBars");
     pianoEngine.setPhraseBars (phraseChoice == 0 ? 4 : (phraseChoice == 1 ? 8 : 16));
 
-    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsStevie.getParameter ("tickerSpeed")))
-        stevieTickerRate = bootsyTickerRateForChoiceIndex (tr->getIndex());
+    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsPiano.getParameter ("tickerSpeed")))
+        pianoTickerRate = bassTickerRateForChoiceIndex (tr->getIndex());
     else
-        stevieTickerRate = bootsyTickerRateForChoiceIndex ((int) *apvtsStevie.getRawParameterValue ("tickerSpeed"));
+        pianoTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsPiano.getRawParameterValue ("tickerSpeed"));
 }
 
-void BridgeProcessor::syncPaulEngineFromAPVTS()
+void BridgeProcessor::syncGuitarEngineFromAPVTS()
 {
-    guitarEngine.setStyle       (readMelodicStyleEngineIndex (apvtsPaul));
-    guitarEngine.setScale       ((int)  *apvtsPaul.getRawParameterValue ("scale"));
-    guitarEngine.setRootNote    ((int)  *apvtsPaul.getRawParameterValue ("rootNote"));
-    guitarEngine.setOctave      ((int)  *apvtsPaul.getRawParameterValue ("octave"));
-    float temperature = (float)*apvtsPaul.getRawParameterValue ("temperature");
-    float density     = (float)*apvtsPaul.getRawParameterValue ("density");
-    float swing       = (float)*apvtsPaul.getRawParameterValue ("swing");
-    float humanize    = (float)*apvtsPaul.getRawParameterValue ("humanize");
-    float pocket      = (float)*apvtsPaul.getRawParameterValue ("pocket");
-    float velocity    = (float)*apvtsPaul.getRawParameterValue ("velocity");
-    float fillRate    = (float)*apvtsPaul.getRawParameterValue ("fillRate");
-    float complexity  = (float)*apvtsPaul.getRawParameterValue ("complexity");
-    float ghostAmount = (float)*apvtsPaul.getRawParameterValue ("ghostAmount");
-    float staccato    = (float)*apvtsPaul.getRawParameterValue ("staccato");
+    guitarEngine.setStyle       (readMelodicStyleEngineIndex (apvtsGuitar));
+    guitarEngine.setScale       ((int)  *apvtsMain.getRawParameterValue ("scale"));
+    guitarEngine.setRootNote    ((int)  *apvtsMain.getRawParameterValue ("rootNote"));
+    guitarEngine.setOctave      ((int)  *apvtsMain.getRawParameterValue ("octave"));
+    float temperature = (float)*apvtsGuitar.getRawParameterValue ("temperature");
+    float density     = (float)*apvtsGuitar.getRawParameterValue ("density");
+    float swing       = (float)*apvtsGuitar.getRawParameterValue ("swing");
+    float humanize    = (float)*apvtsGuitar.getRawParameterValue ("humanize");
+    float pocket      = (float)*apvtsGuitar.getRawParameterValue ("pocket");
+    float velocity    = (float)*apvtsGuitar.getRawParameterValue ("velocity");
+    float fillRate    = (float)*apvtsGuitar.getRawParameterValue ("fillRate");
+    float complexity  = (float)*apvtsGuitar.getRawParameterValue ("complexity");
+    float ghostAmount = (float)*apvtsGuitar.getRawParameterValue ("ghostAmount");
+    float staccato    = (float)*apvtsGuitar.getRawParameterValue ("staccato");
     applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
                           pocket, velocity, fillRate, complexity, ghostAmount, staccato);
     guitarEngine.setTemperature (temperature);
@@ -661,26 +748,28 @@ void BridgeProcessor::syncPaulEngineFromAPVTS()
     guitarEngine.setComplexity  (complexity);
     guitarEngine.setGhostAmount (ghostAmount);
     guitarEngine.setStaccato    (staccato);
-    guitarEngine.setPatternLen  (PaulPreset::NUM_STEPS);
-    guitarEngine.setLocked      ((bool) *apvtsPaul.getRawParameterValue ("locked"));
+    guitarEngine.setPatternLen  (GuitarPreset::NUM_STEPS);
+    guitarEngine.setLocked      ((bool) *apvtsGuitar.getRawParameterValue ("locked"));
 
-    paulMidiChannel = juce::jlimit (1, 16, (int)*apvtsPaul.getRawParameterValue ("midiChannel"));
+    guitarPerformMode = ((bool) *apvtsGuitar.getRawParameterValue ("perform"));
 
-    const int phraseChoice = (int)*apvtsPaul.getRawParameterValue ("phraseBars");
+    guitarMidiChannel = juce::jlimit (1, 16, (int)*apvtsGuitar.getRawParameterValue ("midiChannel"));
+
+    const int phraseChoice = (int)*apvtsGuitar.getRawParameterValue ("phraseBars");
     guitarEngine.setPhraseBars (phraseChoice == 0 ? 4 : (phraseChoice == 1 ? 8 : 16));
 
-    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsPaul.getParameter ("tickerSpeed")))
-        paulTickerRate = bootsyTickerRateForChoiceIndex (tr->getIndex());
+    if (auto* tr = dynamic_cast<juce::AudioParameterChoice*> (apvtsGuitar.getParameter ("tickerSpeed")))
+        guitarTickerRate = bassTickerRateForChoiceIndex (tr->getIndex());
     else
-        paulTickerRate = bootsyTickerRateForChoiceIndex ((int) *apvtsPaul.getRawParameterValue ("tickerSpeed"));
+        guitarTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsGuitar.getRawParameterValue ("tickerSpeed"));
 }
 
-void BridgeProcessor::randomizeStevieSettings()
+void BridgeProcessor::randomizePianoSettings()
 {
     juce::Random r;
     auto randFloat = [&] (const char* id, float lo, float hi)
     {
-        if (auto* p = apvtsStevie.getParameter (id))
+        if (auto* p = apvtsPiano.getParameter (id))
             if (auto* fp = dynamic_cast<juce::AudioParameterFloat*> (p))
                 fp->setValueNotifyingHost (fp->getNormalisableRange().convertTo0to1 (lo + (hi - lo) * r.nextFloat()));
     };
@@ -693,18 +782,18 @@ void BridgeProcessor::randomizeStevieSettings()
     randFloat ("complexity", 0.2f,  0.95f);
     randFloat ("ghostAmount",0.35f, 1.0f);
     randFloat ("staccato",   0.05f, 0.55f);
-    if (auto* p = apvtsStevie.getParameter ("tickerSpeed"))
+    if (auto* p = apvtsPiano.getParameter ("tickerSpeed"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) r.nextInt (3)));
     pianoEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
 }
 
-void BridgeProcessor::randomizePaulSettings()
+void BridgeProcessor::randomizeGuitarSettings()
 {
     juce::Random r;
     auto randFloat = [&] (const char* id, float lo, float hi)
     {
-        if (auto* p = apvtsPaul.getParameter (id))
+        if (auto* p = apvtsGuitar.getParameter (id))
             if (auto* fp = dynamic_cast<juce::AudioParameterFloat*> (p))
                 fp->setValueNotifyingHost (fp->getNormalisableRange().convertTo0to1 (lo + (hi - lo) * r.nextFloat()));
     };
@@ -717,72 +806,72 @@ void BridgeProcessor::randomizePaulSettings()
     randFloat ("complexity", 0.2f,  0.95f);
     randFloat ("ghostAmount",0.35f, 1.0f);
     randFloat ("staccato",   0.05f, 0.55f);
-    if (auto* p = apvtsPaul.getParameter ("tickerSpeed"))
+    if (auto* p = apvtsGuitar.getParameter ("tickerSpeed"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) r.nextInt (3)));
     guitarEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
 }
 
-void BridgeProcessor::triggerStevieGenerate()
+void BridgeProcessor::triggerPianoGenerate()
 {
-    randomizeStevieSettings();
-    syncStevieEngineFromAPVTS();
-    pianoEngine.generatePattern();
+    randomizePianoSettings();
+    syncPianoEngineFromAPVTS();
+    pianoEngine.generatePattern (pianoPerformMode);
 }
 
-void BridgeProcessor::applyStevieStyleAndRegenerate (int styleIndex)
+void BridgeProcessor::applyPianoStyleAndRegenerate (int styleIndex)
 {
     styleIndex = juce::jlimit (0, bridgeUnifiedStyleCount() - 1, styleIndex);
-    if (auto* p = apvtsStevie.getParameter ("style"))
+    if (auto* p = apvtsPiano.getParameter ("style"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
-    syncStevieEngineFromAPVTS();
-    pianoEngine.generatePattern();
+    syncPianoEngineFromAPVTS();
+    pianoEngine.generatePattern (pianoPerformMode);
 }
 
-void BridgeProcessor::rebuildStevieGridPreview()
+void BridgeProcessor::rebuildPianoGridPreview()
 {
-    syncStevieEngineFromAPVTS();
+    syncPianoEngineFromAPVTS();
     pianoEngine.rebuildGridPreview();
     if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-        ed->notifySteviePatternChanged();
+        ed->notifyPianoPatternChanged();
 }
 
-void BridgeProcessor::triggerStevieFill (int fromStep)
+void BridgeProcessor::triggerPianoFill (int fromStep)
 {
-    stevieFillQueued   = true;
-    stevieFillFromStep = fromStep;
+    pianoFillQueued   = true;
+    pianoFillFromStep = fromStep;
 }
 
-void BridgeProcessor::triggerPaulGenerate()
+void BridgeProcessor::triggerGuitarGenerate()
 {
-    randomizePaulSettings();
-    syncPaulEngineFromAPVTS();
-    guitarEngine.generatePattern();
+    randomizeGuitarSettings();
+    syncGuitarEngineFromAPVTS();
+    guitarEngine.generatePattern (guitarPerformMode);
 }
 
-void BridgeProcessor::applyPaulStyleAndRegenerate (int styleIndex)
+void BridgeProcessor::applyGuitarStyleAndRegenerate (int styleIndex)
 {
     styleIndex = juce::jlimit (0, bridgeUnifiedStyleCount() - 1, styleIndex);
-    if (auto* p = apvtsPaul.getParameter ("style"))
+    if (auto* p = apvtsGuitar.getParameter ("style"))
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
-    syncPaulEngineFromAPVTS();
-    guitarEngine.generatePattern();
+    syncGuitarEngineFromAPVTS();
+    guitarEngine.generatePattern (guitarPerformMode);
 }
 
-void BridgeProcessor::rebuildPaulGridPreview()
+void BridgeProcessor::rebuildGuitarGridPreview()
 {
-    syncPaulEngineFromAPVTS();
+    syncGuitarEngineFromAPVTS();
     guitarEngine.rebuildGridPreview();
     if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-        ed->notifyPaulPatternChanged();
+        ed->notifyGuitarPatternChanged();
 }
 
-void BridgeProcessor::triggerPaulFill (int fromStep)
+void BridgeProcessor::triggerGuitarFill (int fromStep)
 {
-    paulFillQueued   = true;
-    paulFillFromStep = fromStep;
+    guitarFillQueued   = true;
+    guitarFillFromStep = fromStep;
 }
 
 void BridgeProcessor::flushPendingNoteOffs (juce::Array<PendingOff>& pending, juce::MidiBuffer& midi)
@@ -795,10 +884,10 @@ void BridgeProcessor::flushPendingNoteOffs (juce::Array<PendingOff>& pending, ju
     }
 }
 
-void BridgeProcessor::scheduleAnimalNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
+void BridgeProcessor::scheduleDrumsNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
                                                    int sampleOffset, juce::MidiBuffer& midi)
 {
-    if (! mainRowMidiOpen (apvtsMain, "mainMuteAnimal", "mainSoloAnimal"))
+    if (! mainRowMidiOpen (apvtsMain, "mainMuteDrums", "mainSoloDrums"))
         return;
 
     DrumStep hits;
@@ -806,7 +895,7 @@ void BridgeProcessor::scheduleAnimalNotesForStep (int globalStep, int wrappedSte
 
     for (int drum = 0; drum < NUM_DRUMS; ++drum)
     {
-        if (! isAnimalLaneAudible (drum)) continue;
+        if (! isDrumsLaneAudible (drum)) continue;
         if (! hits[(size_t) drum].active) continue;
 
         int swingOff = drumEngine.getSwingOffset (wrappedStep, samplesPerStep);
@@ -821,36 +910,36 @@ void BridgeProcessor::scheduleAnimalNotesForStep (int globalStep, int wrappedSte
         midi.addEvent (juce::MidiMessage::noteOn  (midiChannel, midiNote, vel), finalOff);
 
         int64 offAt = midiSampleClock + finalOff + (int64)(sampleRate * 0.05);
-        animalPendingNoteOffs.add ({ midiChannel, midiNote, offAt });
+        drumsPendingNoteOffs.add ({ midiChannel, midiNote, offAt });
     }
 }
 
-void BridgeProcessor::sendAnimalNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
+void BridgeProcessor::sendDrumsNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
 {
-    for (int i = animalPendingNoteOffs.size() - 1; i >= 0; --i)
+    for (int i = drumsPendingNoteOffs.size() - 1; i >= 0; --i)
     {
-        auto& off = animalPendingNoteOffs.getReference (i);
+        auto& off = drumsPendingNoteOffs.getReference (i);
         if (off.atSample <= midiSampleClock + sampleOffset)
         {
             int relSample = (int)juce::jlimit (0LL, (int64)(samplesPerBlock - 1),
                                                off.atSample - midiSampleClock);
             midi.addEvent (juce::MidiMessage::noteOff (off.channel, off.note), relSample);
-            animalPendingNoteOffs.remove (i);
+            drumsPendingNoteOffs.remove (i);
         }
     }
 }
 
-void BridgeProcessor::processAnimalBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
+void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
                                           const juce::AudioPlayHead::CurrentPositionInfo& pos, int numSamples)
 {
     juce::ignoreUnused (buffer);
 
-    syncAnimalEngineFromAPVTS();
+    syncDrumsEngineFromAPVTS();
     if (! drumEngine.isPerformBoost())
         drumEngine.rebuildGridPreview();
 
     double bpm = pos.bpm > 1.0 ? pos.bpm : 120.0;
-    animalLastBpm = bpm;
+    drumsLastBpm = bpm;
     currentHostBpm.store (bpm);
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
@@ -866,7 +955,7 @@ void BridgeProcessor::processAnimalBlock (juce::AudioBuffer<float>& buffer, juce
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getAnimalLoopBounds (ls, le);
+    getDrumsLoopBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -882,28 +971,28 @@ void BridgeProcessor::processAnimalBlock (juce::AudioBuffer<float>& buffer, juce
         const int mod = loopLen > 0 ? ((globalStep - ls0) % loopLen + loopLen) % loopLen : 0;
         int wrappedStep = ls0 + mod;
 
-        const int v = (int) std::floor ((double) globalStep * animalTickerRate);
+        const int v = (int) std::floor ((double) globalStep * drumsTickerRate);
         const int visualWrapped = loopLen > 0
             ? (ls0 + ((v - ls0) % loopLen + loopLen) % loopLen)
             : ls0;
 
         int currRel = (globalStep - ls0) % loopLen;
         if (currRel < 0) currRel += loopLen;
-        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != animalLastProcessedStep);
+        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != drumsLastProcessedStep);
 
-        if (isFirstStepOfLoop && globalStep != animalLastProcessedStep)
+        if (isFirstStepOfLoop && globalStep != drumsLastProcessedStep)
         {
-            if (animalPerformMode)
+            if (drumsPerformMode)
             {
-                syncAnimalEngineFromAPVTS();
+                syncDrumsEngineFromAPVTS();
                 drumEngine.generatePattern (true);
             }
 
-            if (animalFillQueued)
+            if (drumsFillQueued)
             {
-                const int fillStart = juce::jlimit (ls0, le0, animalFillFromStep);
+                const int fillStart = juce::jlimit (ls0, le0, drumsFillFromStep);
                 drumEngine.generateFill (fillStart);
-                animalFillQueued = false;
+                drumsFillQueued = false;
             }
             else if (drumEngine.shouldTriggerFill())
             {
@@ -911,20 +1000,20 @@ void BridgeProcessor::processAnimalBlock (juce::AudioBuffer<float>& buffer, juce
             }
         }
 
-        animalCurrentStep.store (wrappedStep);
-        animalCurrentVisualStep.store (visualWrapped);
-        animalLastProcessedStep = globalStep;
+        drumsCurrentStep.store (wrappedStep);
+        drumsCurrentVisualStep.store (visualWrapped);
+        drumsLastProcessedStep = globalStep;
 
-        scheduleAnimalNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
+        scheduleDrumsNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
     }
 
-    sendAnimalNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
+    sendDrumsNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
 }
 
-void BridgeProcessor::scheduleBootsyNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
+void BridgeProcessor::scheduleBassNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
                                                    int sampleOffset, juce::MidiBuffer& midi)
 {
-    if (! mainRowMidiOpen (apvtsMain, "mainMuteBootsy", "mainSoloBootsy"))
+    if (! mainRowMidiOpen (apvtsMain, "mainMuteBass", "mainSoloBass"))
         return;
 
     const BassHit& hit  = bassEngine.getStep (wrappedStep);
@@ -938,38 +1027,38 @@ void BridgeProcessor::scheduleBootsyNotesForStep (int /*globalStep*/, int wrappe
     uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hit.velocity * g + 0.5f));
     int   note   = juce::jlimit (0, 127, hit.midiNote);
 
-    midi.addEvent (juce::MidiMessage::noteOn (bootsyMidiChannel, note, vel), finalOff);
+    midi.addEvent (juce::MidiMessage::noteOn (bassMidiChannel, note, vel), finalOff);
 
     int durSamples = bassEngine.calcNoteDuration (hit, samplesPerStep);
     int64 offAt    = midiSampleClock + finalOff + durSamples;
-    bootsyPendingNoteOffs.add ({ bootsyMidiChannel, note, offAt });
+    bassPendingNoteOffs.add ({ bassMidiChannel, note, offAt });
 }
 
-void BridgeProcessor::sendBootsyNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
+void BridgeProcessor::sendBassNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
 {
-    for (int i = bootsyPendingNoteOffs.size() - 1; i >= 0; --i)
+    for (int i = bassPendingNoteOffs.size() - 1; i >= 0; --i)
     {
-        auto& off = bootsyPendingNoteOffs.getReference (i);
+        auto& off = bassPendingNoteOffs.getReference (i);
         if (off.atSample <= midiSampleClock + sampleOffset)
         {
             int relSample = (int)juce::jlimit (0LL, (int64)(samplesPerBlock - 1),
                                                off.atSample - midiSampleClock);
             midi.addEvent (juce::MidiMessage::noteOff (off.channel, off.note), relSample);
-            bootsyPendingNoteOffs.remove (i);
+            bassPendingNoteOffs.remove (i);
         }
     }
 }
 
-void BridgeProcessor::processBootsyBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
+void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
                                           const juce::AudioPlayHead::CurrentPositionInfo& pos, int numSamples)
 {
     juce::ignoreUnused (buffer);
 
-    syncBootsyEngineFromAPVTS();
+    syncBassEngineFromAPVTS();
     bassEngine.rebuildGridPreview();
 
     double bpm = pos.bpm > 1.0 ? pos.bpm : 120.0;
-    bootsyLastBpm = bpm;
+    bassLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
     double samplesPerStep = samplesPerBeat / 4.0;
@@ -983,7 +1072,7 @@ void BridgeProcessor::processBootsyBlock (juce::AudioBuffer<float>& buffer, juce
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getBootsyLoopBounds (ls, le);
+    getBassLoopBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -999,22 +1088,28 @@ void BridgeProcessor::processBootsyBlock (juce::AudioBuffer<float>& buffer, juce
         const int mod = loopLen > 0 ? ((globalStep - ls0) % loopLen + loopLen) % loopLen : 0;
         int wrappedStep = ls0 + mod;
 
-        const int v = (int)std::floor ((double) globalStep * bootsyTickerRate);
+        const int v = (int)std::floor ((double) globalStep * bassTickerRate);
         const int visualWrapped = loopLen > 0
             ? (ls0 + ((v - ls0) % loopLen + loopLen) % loopLen)
             : ls0;
 
         int currRel = (globalStep - ls0) % loopLen;
         if (currRel < 0) currRel += loopLen;
-        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != bootsyLastProcessedStep);
+        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != bassLastProcessedStep);
 
-        if (isFirstStepOfLoop && globalStep != bootsyLastProcessedStep)
+        if (isFirstStepOfLoop && globalStep != bassLastProcessedStep)
         {
-            if (bootsyFillQueued)
+            if (bassPerformMode)
             {
-                const int fillStart = juce::jlimit (ls0, le0, bootsyFillFromStep);
+                syncBassEngineFromAPVTS();
+                bassEngine.generatePattern (true);
+            }
+
+            if (bassFillQueued)
+            {
+                const int fillStart = juce::jlimit (ls0, le0, bassFillFromStep);
                 bassEngine.generateFill (fillStart);
-                bootsyFillQueued = false;
+                bassFillQueued = false;
             }
             else if (bassEngine.shouldTriggerFill())
             {
@@ -1022,20 +1117,20 @@ void BridgeProcessor::processBootsyBlock (juce::AudioBuffer<float>& buffer, juce
             }
         }
 
-        bootsyCurrentStep.store (wrappedStep);
-        bootsyCurrentVisualStep.store (visualWrapped);
-        bootsyLastProcessedStep = globalStep;
+        bassCurrentStep.store (wrappedStep);
+        bassCurrentVisualStep.store (visualWrapped);
+        bassLastProcessedStep = globalStep;
 
-        scheduleBootsyNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
+        scheduleBassNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
     }
 
-    sendBootsyNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
+    sendBassNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
 }
 
-void BridgeProcessor::scheduleStevieNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
+void BridgeProcessor::schedulePianoNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
                                                   int sampleOffset, juce::MidiBuffer& midi)
 {
-    if (! mainRowMidiOpen (apvtsMain, "mainMuteStevie", "mainSoloStevie"))
+    if (! mainRowMidiOpen (apvtsMain, "mainMutePiano", "mainSoloPiano"))
         return;
 
     const PianoHit& hit = pianoEngine.getStep (wrappedStep);
@@ -1049,38 +1144,38 @@ void BridgeProcessor::scheduleStevieNotesForStep (int /*globalStep*/, int wrappe
     uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hit.velocity * g + 0.5f));
     int   note = juce::jlimit (0, 127, hit.midiNote);
 
-    midi.addEvent (juce::MidiMessage::noteOn (stevieMidiChannel, note, vel), finalOff);
+    midi.addEvent (juce::MidiMessage::noteOn (pianoMidiChannel, note, vel), finalOff);
 
     int durSamples = pianoEngine.calcNoteDuration (hit, samplesPerStep);
     int64 offAt    = midiSampleClock + finalOff + durSamples;
-    steviePendingNoteOffs.add ({ stevieMidiChannel, note, offAt });
+    pianoPendingNoteOffs.add ({ pianoMidiChannel, note, offAt });
 }
 
-void BridgeProcessor::sendStevieNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
+void BridgeProcessor::sendPianoNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
 {
-    for (int i = steviePendingNoteOffs.size() - 1; i >= 0; --i)
+    for (int i = pianoPendingNoteOffs.size() - 1; i >= 0; --i)
     {
-        auto& off = steviePendingNoteOffs.getReference (i);
+        auto& off = pianoPendingNoteOffs.getReference (i);
         if (off.atSample <= midiSampleClock + sampleOffset)
         {
             int relSample = (int)juce::jlimit (0LL, (int64)(samplesPerBlock - 1),
                                                off.atSample - midiSampleClock);
             midi.addEvent (juce::MidiMessage::noteOff (off.channel, off.note), relSample);
-            steviePendingNoteOffs.remove (i);
+            pianoPendingNoteOffs.remove (i);
         }
     }
 }
 
-void BridgeProcessor::processStevieBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
+void BridgeProcessor::processPianoBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
                                           const juce::AudioPlayHead::CurrentPositionInfo& pos, int numSamples)
 {
     juce::ignoreUnused (buffer);
 
-    syncStevieEngineFromAPVTS();
+    syncPianoEngineFromAPVTS();
     pianoEngine.rebuildGridPreview();
 
     double bpm = pos.bpm > 1.0 ? pos.bpm : 120.0;
-    stevieLastBpm = bpm;
+    pianoLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
     double samplesPerStep = samplesPerBeat / 4.0;
@@ -1094,7 +1189,7 @@ void BridgeProcessor::processStevieBlock (juce::AudioBuffer<float>& buffer, juce
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getStevieLoopBounds (ls, le);
+    getPianoLoopBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -1110,22 +1205,28 @@ void BridgeProcessor::processStevieBlock (juce::AudioBuffer<float>& buffer, juce
         const int mod = loopLen > 0 ? ((globalStep - ls0) % loopLen + loopLen) % loopLen : 0;
         int wrappedStep = ls0 + mod;
 
-        const int v = (int)std::floor ((double) globalStep * stevieTickerRate);
+        const int v = (int)std::floor ((double) globalStep * pianoTickerRate);
         const int visualWrapped = loopLen > 0
             ? (ls0 + ((v - ls0) % loopLen + loopLen) % loopLen)
             : ls0;
 
         int currRel = (globalStep - ls0) % loopLen;
         if (currRel < 0) currRel += loopLen;
-        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != stevieLastProcessedStep);
+        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != pianoLastProcessedStep);
 
-        if (isFirstStepOfLoop && globalStep != stevieLastProcessedStep)
+        if (isFirstStepOfLoop && globalStep != pianoLastProcessedStep)
         {
-            if (stevieFillQueued)
+            if (pianoPerformMode)
             {
-                const int fillStart = juce::jlimit (ls0, le0, stevieFillFromStep);
+                syncPianoEngineFromAPVTS();
+                pianoEngine.generatePattern (true);
+            }
+
+            if (pianoFillQueued)
+            {
+                const int fillStart = juce::jlimit (ls0, le0, pianoFillFromStep);
                 pianoEngine.generateFill (fillStart);
-                stevieFillQueued = false;
+                pianoFillQueued = false;
             }
             else if (pianoEngine.shouldTriggerFill())
             {
@@ -1133,20 +1234,20 @@ void BridgeProcessor::processStevieBlock (juce::AudioBuffer<float>& buffer, juce
             }
         }
 
-        stevieCurrentStep.store (wrappedStep);
-        stevieCurrentVisualStep.store (visualWrapped);
-        stevieLastProcessedStep = globalStep;
+        pianoCurrentStep.store (wrappedStep);
+        pianoCurrentVisualStep.store (visualWrapped);
+        pianoLastProcessedStep = globalStep;
 
-        scheduleStevieNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
+        schedulePianoNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
     }
 
-    sendStevieNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
+    sendPianoNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
 }
 
-void BridgeProcessor::schedulePaulNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
+void BridgeProcessor::scheduleGuitarNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
                                                 int sampleOffset, juce::MidiBuffer& midi)
 {
-    if (! mainRowMidiOpen (apvtsMain, "mainMutePaul", "mainSoloPaul"))
+    if (! mainRowMidiOpen (apvtsMain, "mainMuteGuitar", "mainSoloGuitar"))
         return;
 
     const GuitarHit& hit = guitarEngine.getStep (wrappedStep);
@@ -1160,38 +1261,38 @@ void BridgeProcessor::schedulePaulNotesForStep (int /*globalStep*/, int wrappedS
     uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hit.velocity * g + 0.5f));
     int   note = juce::jlimit (0, 127, hit.midiNote);
 
-    midi.addEvent (juce::MidiMessage::noteOn (paulMidiChannel, note, vel), finalOff);
+    midi.addEvent (juce::MidiMessage::noteOn (guitarMidiChannel, note, vel), finalOff);
 
     int durSamples = guitarEngine.calcNoteDuration (hit, samplesPerStep);
     int64 offAt    = midiSampleClock + finalOff + durSamples;
-    paulPendingNoteOffs.add ({ paulMidiChannel, note, offAt });
+    guitarPendingNoteOffs.add ({ guitarMidiChannel, note, offAt });
 }
 
-void BridgeProcessor::sendPaulNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
+void BridgeProcessor::sendGuitarNoteOffs (juce::MidiBuffer& midi, int sampleOffset)
 {
-    for (int i = paulPendingNoteOffs.size() - 1; i >= 0; --i)
+    for (int i = guitarPendingNoteOffs.size() - 1; i >= 0; --i)
     {
-        auto& off = paulPendingNoteOffs.getReference (i);
+        auto& off = guitarPendingNoteOffs.getReference (i);
         if (off.atSample <= midiSampleClock + sampleOffset)
         {
             int relSample = (int)juce::jlimit (0LL, (int64)(samplesPerBlock - 1),
                                                off.atSample - midiSampleClock);
             midi.addEvent (juce::MidiMessage::noteOff (off.channel, off.note), relSample);
-            paulPendingNoteOffs.remove (i);
+            guitarPendingNoteOffs.remove (i);
         }
     }
 }
 
-void BridgeProcessor::processPaulBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
+void BridgeProcessor::processGuitarBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages,
                                         const juce::AudioPlayHead::CurrentPositionInfo& pos, int numSamples)
 {
     juce::ignoreUnused (buffer);
 
-    syncPaulEngineFromAPVTS();
+    syncGuitarEngineFromAPVTS();
     guitarEngine.rebuildGridPreview();
 
     double bpm = pos.bpm > 1.0 ? pos.bpm : 120.0;
-    paulLastBpm = bpm;
+    guitarLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
     double samplesPerStep = samplesPerBeat / 4.0;
@@ -1205,7 +1306,7 @@ void BridgeProcessor::processPaulBlock (juce::AudioBuffer<float>& buffer, juce::
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getPaulLoopBounds (ls, le);
+    getGuitarLoopBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -1221,22 +1322,28 @@ void BridgeProcessor::processPaulBlock (juce::AudioBuffer<float>& buffer, juce::
         const int mod = loopLen > 0 ? ((globalStep - ls0) % loopLen + loopLen) % loopLen : 0;
         int wrappedStep = ls0 + mod;
 
-        const int v = (int)std::floor ((double) globalStep * paulTickerRate);
+        const int v = (int)std::floor ((double) globalStep * guitarTickerRate);
         const int visualWrapped = loopLen > 0
             ? (ls0 + ((v - ls0) % loopLen + loopLen) % loopLen)
             : ls0;
 
         int currRel = (globalStep - ls0) % loopLen;
         if (currRel < 0) currRel += loopLen;
-        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != paulLastProcessedStep);
+        const bool isFirstStepOfLoop = (currRel == 0) && (globalStep != guitarLastProcessedStep);
 
-        if (isFirstStepOfLoop && globalStep != paulLastProcessedStep)
+        if (isFirstStepOfLoop && globalStep != guitarLastProcessedStep)
         {
-            if (paulFillQueued)
+            if (guitarPerformMode)
             {
-                const int fillStart = juce::jlimit (ls0, le0, paulFillFromStep);
+                syncGuitarEngineFromAPVTS();
+                guitarEngine.generatePattern (true);
+            }
+
+            if (guitarFillQueued)
+            {
+                const int fillStart = juce::jlimit (ls0, le0, guitarFillFromStep);
                 guitarEngine.generateFill (fillStart);
-                paulFillQueued = false;
+                guitarFillQueued = false;
             }
             else if (guitarEngine.shouldTriggerFill())
             {
@@ -1244,14 +1351,14 @@ void BridgeProcessor::processPaulBlock (juce::AudioBuffer<float>& buffer, juce::
             }
         }
 
-        paulCurrentStep.store (wrappedStep);
-        paulCurrentVisualStep.store (visualWrapped);
-        paulLastProcessedStep = globalStep;
+        guitarCurrentStep.store (wrappedStep);
+        guitarCurrentVisualStep.store (visualWrapped);
+        guitarLastProcessedStep = globalStep;
 
-        schedulePaulNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
+        scheduleGuitarNotesForStep (globalStep, wrappedStep, samplesPerStep, sampleOffset, midiMessages);
     }
 
-    sendPaulNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
+    sendGuitarNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
 }
 
 void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
@@ -1268,34 +1375,34 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
         return true;
     };
 
-    const bool animalOn = mainEngineOn ("animalOn");
-    const bool bootsyOn = mainEngineOn ("bootsyOn");
-    const bool stevieOn = mainEngineOn ("stevieOn");
-    const bool paulOn   = mainEngineOn ("paulOn");
+    const bool drumsOn = mainEngineOn ("drumsOn");
+    const bool bassOn = mainEngineOn ("bassOn");
+    const bool pianoOn = mainEngineOn ("pianoOn");
+    const bool guitarOn   = mainEngineOn ("guitarOn");
 
-    if (! animalOn)
+    if (! drumsOn)
     {
-        flushPendingNoteOffs (animalPendingNoteOffs, midiMessages);
-        animalCurrentStep.store (-1);
-        animalCurrentVisualStep.store (-1);
+        flushPendingNoteOffs (drumsPendingNoteOffs, midiMessages);
+        drumsCurrentStep.store (-1);
+        drumsCurrentVisualStep.store (-1);
     }
-    if (! bootsyOn)
+    if (! bassOn)
     {
-        flushPendingNoteOffs (bootsyPendingNoteOffs, midiMessages);
-        bootsyCurrentStep.store (-1);
-        bootsyCurrentVisualStep.store (-1);
+        flushPendingNoteOffs (bassPendingNoteOffs, midiMessages);
+        bassCurrentStep.store (-1);
+        bassCurrentVisualStep.store (-1);
     }
-    if (! stevieOn)
+    if (! pianoOn)
     {
-        flushPendingNoteOffs (steviePendingNoteOffs, midiMessages);
-        stevieCurrentStep.store (-1);
-        stevieCurrentVisualStep.store (-1);
+        flushPendingNoteOffs (pianoPendingNoteOffs, midiMessages);
+        pianoCurrentStep.store (-1);
+        pianoCurrentVisualStep.store (-1);
     }
-    if (! paulOn)
+    if (! guitarOn)
     {
-        flushPendingNoteOffs (paulPendingNoteOffs, midiMessages);
-        paulCurrentStep.store (-1);
-        paulCurrentVisualStep.store (-1);
+        flushPendingNoteOffs (guitarPendingNoteOffs, midiMessages);
+        guitarCurrentStep.store (-1);
+        guitarCurrentVisualStep.store (-1);
     }
 
     auto* playhead = getPlayHead();
@@ -1306,30 +1413,30 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     if (! transportRunning)
     {
-        flushPendingNoteOffs (animalPendingNoteOffs, midiMessages);
-        flushPendingNoteOffs (bootsyPendingNoteOffs, midiMessages);
-        flushPendingNoteOffs (steviePendingNoteOffs, midiMessages);
-        flushPendingNoteOffs (paulPendingNoteOffs, midiMessages);
-        animalCurrentStep.store (-1);
-        animalCurrentVisualStep.store (-1);
-        bootsyCurrentStep.store (-1);
-        bootsyCurrentVisualStep.store (-1);
-        stevieCurrentStep.store (-1);
-        stevieCurrentVisualStep.store (-1);
-        paulCurrentStep.store (-1);
-        paulCurrentVisualStep.store (-1);
+        flushPendingNoteOffs (drumsPendingNoteOffs, midiMessages);
+        flushPendingNoteOffs (bassPendingNoteOffs, midiMessages);
+        flushPendingNoteOffs (pianoPendingNoteOffs, midiMessages);
+        flushPendingNoteOffs (guitarPendingNoteOffs, midiMessages);
+        drumsCurrentStep.store (-1);
+        drumsCurrentVisualStep.store (-1);
+        bassCurrentStep.store (-1);
+        bassCurrentVisualStep.store (-1);
+        pianoCurrentStep.store (-1);
+        pianoCurrentVisualStep.store (-1);
+        guitarCurrentStep.store (-1);
+        guitarCurrentVisualStep.store (-1);
         midiSampleClock += numSamples;
         return;
     }
 
-    if (animalOn)
-        processAnimalBlock (buffer, midiMessages, pos, numSamples);
-    if (bootsyOn)
-        processBootsyBlock (buffer, midiMessages, pos, numSamples);
-    if (stevieOn)
-        processStevieBlock (buffer, midiMessages, pos, numSamples);
-    if (paulOn)
-        processPaulBlock (buffer, midiMessages, pos, numSamples);
+    if (drumsOn)
+        processDrumsBlock (buffer, midiMessages, pos, numSamples);
+    if (bassOn)
+        processBassBlock (buffer, midiMessages, pos, numSamples);
+    if (pianoOn)
+        processPianoBlock (buffer, midiMessages, pos, numSamples);
+    if (guitarOn)
+        processGuitarBlock (buffer, midiMessages, pos, numSamples);
 
     midiSampleClock += numSamples;
 }
@@ -1340,13 +1447,13 @@ void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
     root.setAttribute ("bridgeVersion", 4);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
-    if (auto xmlA = apvtsAnimal.copyState().createXml())
+    if (auto xmlA = apvtsDrums.copyState().createXml())
         root.addChildElement (xmlA.release());
-    if (auto xmlB = apvtsBootsy.copyState().createXml())
+    if (auto xmlB = apvtsBass.copyState().createXml())
         root.addChildElement (xmlB.release());
-    if (auto xmlS = apvtsStevie.copyState().createXml())
+    if (auto xmlS = apvtsPiano.copyState().createXml())
         root.addChildElement (xmlS.release());
-    if (auto xmlP = apvtsPaul.copyState().createXml())
+    if (auto xmlP = apvtsGuitar.copyState().createXml())
         root.addChildElement (xmlP.release());
     root.setAttribute ("activeTab", activeTab.load());
     copyXmlToBinary (root, data);
@@ -1361,7 +1468,7 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
             const int bridgeVersion = xml->getIntAttribute ("bridgeVersion", 1);
             int tab = xml->getIntAttribute ("activeTab", 0);
             if (bridgeVersion < 2)
-                tab = (tab == 0) ? 1 : 2; // legacy: 0 animal, 1 bootsy
+                tab = (tab == 0) ? 1 : 2; // legacy: 0 drums, 1 bass
             else
                 tab = juce::jlimit (0, 4, tab);
             activeTab.store (tab);
@@ -1370,14 +1477,14 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
             {
                 if (child->hasTagName (apvtsMain.state.getType()))
                     apvtsMain.replaceState (juce::ValueTree::fromXml (*child));
-                else if (child->hasTagName (apvtsAnimal.state.getType()))
-                    apvtsAnimal.replaceState (juce::ValueTree::fromXml (*child));
-                else if (child->hasTagName (apvtsBootsy.state.getType()))
-                    apvtsBootsy.replaceState (juce::ValueTree::fromXml (*child));
-                else if (child->hasTagName (apvtsStevie.state.getType()))
-                    apvtsStevie.replaceState (juce::ValueTree::fromXml (*child));
-                else if (child->hasTagName (apvtsPaul.state.getType()))
-                    apvtsPaul.replaceState (juce::ValueTree::fromXml (*child));
+                else if (child->hasTagName (apvtsDrums.state.getType()))
+                    apvtsDrums.replaceState (juce::ValueTree::fromXml (*child));
+                else if (child->hasTagName (apvtsBass.state.getType()))
+                    apvtsBass.replaceState (juce::ValueTree::fromXml (*child));
+                else if (child->hasTagName (apvtsPiano.state.getType()))
+                    apvtsPiano.replaceState (juce::ValueTree::fromXml (*child));
+                else if (child->hasTagName (apvtsGuitar.state.getType()))
+                    apvtsGuitar.replaceState (juce::ValueTree::fromXml (*child));
             }
         }
     }

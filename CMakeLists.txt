@@ -42,15 +42,19 @@ target_include_directories(Bridge PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 target_sources(Bridge PRIVATE
     Source/BridgeProcessor.cpp
     Source/BridgeEditor.cpp
+    Source/BridgeBottomHalf.cpp
+    Source/BridgeLoopRangeStrip.cpp
+    Source/BridgeSettingsDialog.cpp
+    Source/BridgeLookAndFeel.cpp
     Source/MainPanel.cpp
-    Source/AnimalPanel.cpp
-    Source/BootsyPanel.cpp
-    Source/SteviePanel.cpp
-    Source/PaulPanel.cpp
-    Source/animal/DrumEngine.cpp
-    Source/bootsy/BassEngine.cpp
-    Source/stevie/PianoEngine.cpp
-    Source/paul/GuitarEngine.cpp
+    Source/DrumsPanel.cpp
+    Source/BassPanel.cpp
+    Source/PianoPanel.cpp
+    Source/GuitarPanel.cpp
+    Source/drums/DrumEngine.cpp
+    Source/bass/BassEngine.cpp
+    Source/piano/PianoEngine.cpp
+    Source/guitar/GuitarEngine.cpp
 )
 
 target_compile_definitions(Bridge

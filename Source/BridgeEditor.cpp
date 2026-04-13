@@ -1,9 +1,10 @@
 #include "BridgeEditor.h"
 #include "BridgeInstrumentStyles.h"
-#include "animal/AnimalLookAndFeel.h"
-#include "bootsy/BootsyLookAndFeel.h"
-#include "stevie/StevieLookAndFeel.h"
-#include "paul/PaulLookAndFeel.h"
+#include "BridgeSettingsDialog.h"
+#include "drums/DrumsLookAndFeel.h"
+#include "bass/BassLookAndFeel.h"
+#include "piano/PianoLookAndFeel.h"
+#include "guitar/GuitarLookAndFeel.h"
 
 namespace
 {
@@ -14,16 +15,23 @@ static bool paramOn (juce::AudioProcessorValueTreeState& ap, const char* id)
     return true;
 }
 
+/** Shared outline + base fill colours for header transport shape buttons. */
+static void setupTransportBtn (juce::ShapeButton& b)
+{
+    b.setColours (juce::Colour (0xffeae2d5), juce::Colour (0xfff0ebe4), juce::Colour (0xffd8d0c8));
+    b.setOutline (juce::Colour (0xff9e99a8), 1.0f);
+}
+
 // Instrument accent colours — pulled from each panel's M3 palette.
 inline juce::Colour accentForTab (int tab)
 {
     switch (tab)
     {
         case 0: return juce::Colour (0xffd4a84b); // Leader gold
-        case 1: return juce::Colour (0xffe07a5a); // Animal coral
-        case 2: return juce::Colour (0xff5cb8a8); // Bootsy teal
-        case 3: return juce::Colour (0xffb88cff); // Stevie violet
-        case 4: return juce::Colour (0xff6eb3ff); // Paul sky blue
+        case 1: return juce::Colour (0xffe07a5a); // Drums coral
+        case 2: return juce::Colour (0xff5cb8a8); // Bass teal
+        case 3: return juce::Colour (0xffb88cff); // Piano violet
+        case 4: return juce::Colour (0xff6eb3ff); // Guitar sky blue
         default: return juce::Colour (0xffeae2d5);
     }
 }
@@ -33,10 +41,10 @@ BridgeEditor::BridgeEditor (BridgeProcessor& p)
     : AudioProcessorEditor (&p),
       proc (p),
       mainPanel (p),
-      animalPanel (p),
-      bootsyPanel (p),
-      steviePanel (p),
-      paulPanel (p)
+      drumsPanel (p),
+      bassPanel (p),
+      pianoPanel (p),
+      guitarPanel (p)
 {
     using namespace bridge::instrumentLayout;
     setSize (kWindowW, kWindowH);
@@ -51,9 +59,20 @@ BridgeEditor::BridgeEditor (BridgeProcessor& p)
 
     // ── BPM display ────────────────────────────────────────────────────────
     bpmValueLabel.setText ("120", juce::dontSendNotification);
-    bpmValueLabel.setFont (juce::Font (juce::FontOptions().withHeight (20.0f).withStyle ("Semibold")));
+    bpmValueLabel.setFont (juce::Font (juce::FontOptions().withHeight (16.0f).withStyle ("Semibold")));
     bpmValueLabel.setColour (juce::Label::textColourId, juce::Colour (0xffeae2d5));
     bpmValueLabel.setJustificationType (juce::Justification::centredRight);
+    bpmValueLabel.setEditable (true, false, false);
+    bpmValueLabel.onTextChange = [this]
+    {
+        if (proc.apvtsMain.getRawParameterValue ("internalBpm") != nullptr)
+        {
+            auto newVal = bpmValueLabel.getText().getFloatValue();
+            newVal = juce::jlimit (40.0f, 240.0f, newVal);
+            proc.apvtsMain.getParameter ("internalBpm")->setValueNotifyingHost (
+                proc.apvtsMain.getParameter ("internalBpm")->getNormalisableRange().convertTo0to1 (newVal));
+        }
+    };
     addAndMakeVisible (bpmValueLabel);
 
     bpmUnitLabel.setText ("BPM", juce::dontSendNotification);
@@ -62,22 +81,45 @@ BridgeEditor::BridgeEditor (BridgeProcessor& p)
     bpmUnitLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (bpmUnitLabel);
 
-    // ── Play / Stop ────────────────────────────────────────────────────────
-    auto setupTransportBtn = [] (juce::TextButton& b)
+    // ── Settings (Gear) Button ─────────────────────────────────────────────
+    juce::Path gearPath;
+    gearPath.addStar (juce::Point<float> (0.0f, 0.0f), 8, 4.0f, 6.0f, 0.0f);
+    gearPath.addEllipse (-2.0f, -2.0f, 4.0f, 4.0f); // Make it a gear
+    gearPath.setUsingNonZeroWinding (false);
+    gearButton.setShape (gearPath, false, true, false);
+    gearButton.setOnColours (juce::Colour (0xffeae2d5), juce::Colour (0xffeae2d5), juce::Colour (0xffeae2d5));
+    gearButton.setOutline (juce::Colour (0xff9e99a8), 1.5f);
+    gearButton.onClick = [this]
     {
-        b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff23202b));
-        b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a3548));
-        b.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffeae2d5));
-        b.setColour (juce::TextButton::textColourOnId,  juce::Colour (0xff6ee7a0));
-        b.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        auto* content = new BridgeSettingsDialog();
+        content->setSize (520, 440);
+        juce::DialogWindow::LaunchOptions o;
+        o.content.setOwned (content);
+        o.dialogTitle                   = "Settings";
+        o.dialogBackgroundColour        = juce::Colour (0xff14121a);
+        o.useNativeTitleBar             = true;
+        o.resizable                     = false;
+        o.useBottomRightCornerResizer   = false;
+        o.launchAsync();
     };
+    addAndMakeVisible (gearButton);
 
+    
+    // ── Play / Stop (square buttons, icon scaled to fit) ───────────────────
+    juce::Path playPath;
+    playPath.addTriangle (2.0f, 1.0f, 12.0f, 8.0f, 2.0f, 15.0f);
+    playButton.setShape (playPath, true, true, false);
     playButton.setClickingTogglesState (true);
+    playButton.shouldUseOnColours (true);
+    playButton.setOnColours (juce::Colour (0xff6ee7a0), juce::Colour (0xff8ef0b0), juce::Colour (0xff5bc080));
     setupTransportBtn (playButton);
     transportAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
-                         (proc.apvtsMain, "transportPlaying", playButton);
+        (proc.apvtsMain, "transportPlaying", playButton);
     addAndMakeVisible (playButton);
 
+    juce::Path stopPath;
+    stopPath.addRectangle (3.0f, 3.0f, 10.0f, 10.0f);
+    stopButton.setShape (stopPath, true, true, false);
     stopButton.setClickingTogglesState (false);
     setupTransportBtn (stopButton);
     stopButton.onClick = [this]
@@ -98,7 +140,7 @@ BridgeEditor::BridgeEditor (BridgeProcessor& p)
     addAndMakeVisible (hostSyncButton);
 
     // ── Tab chips ──────────────────────────────────────────────────────────
-    juce::TextButton* tabs[] = { &tabMain, &tabAnimal, &tabBootsy, &tabStevie, &tabPaul };
+    juce::TextButton* tabs[] = { &tabMain, &tabDrums, &tabBass, &tabPiano, &tabGuitar };
     for (auto* t : tabs)
     {
         t->setClickingTogglesState (true);
@@ -109,26 +151,36 @@ BridgeEditor::BridgeEditor (BridgeProcessor& p)
     }
 
     tabMain.onClick   = [this] { proc.activeTab.store (0); showTab (0); };
-    tabAnimal.onClick = [this] { proc.activeTab.store (1); showTab (1); };
-    tabBootsy.onClick = [this] { proc.activeTab.store (2); showTab (2); };
-    tabStevie.onClick = [this] { proc.activeTab.store (3); showTab (3); };
-    tabPaul.onClick   = [this] { proc.activeTab.store (4); showTab (4); };
+    tabDrums.onClick = [this] { proc.activeTab.store (1); showTab (1); };
+    tabBass.onClick = [this] { proc.activeTab.store (2); showTab (2); };
+    tabPiano.onClick = [this] { proc.activeTab.store (3); showTab (3); };
+    tabGuitar.onClick   = [this] { proc.activeTab.store (4); showTab (4); };
+
+    mainPanel.onOpenTab = [this](int tabIndex)
+    {
+        if (tabIndex == 1) { tabDrums.setToggleState (true, juce::sendNotification); }
+        else if (tabIndex == 2) { tabBass.setToggleState (true, juce::sendNotification); }
+        else if (tabIndex == 3) { tabPiano.setToggleState (true, juce::sendNotification); }
+        else if (tabIndex == 4) { tabGuitar.setToggleState (true, juce::sendNotification); }
+    };
 
     addChildComponent (mainPanel);
-    addChildComponent (animalPanel);
-    addChildComponent (bootsyPanel);
-    addChildComponent (steviePanel);
-    addChildComponent (paulPanel);
+    addChildComponent (drumsPanel);
+    addChildComponent (bassPanel);
+    addChildComponent (pianoPanel);
+    addChildComponent (guitarPanel);
 
     proc.apvtsMain.state.addListener (this);
 
     const int t = juce::jlimit (0, 4, proc.activeTab.load());
     tabMain.setToggleState   (t == 0, juce::dontSendNotification);
-    tabAnimal.setToggleState (t == 1, juce::dontSendNotification);
-    tabBootsy.setToggleState (t == 2, juce::dontSendNotification);
-    tabStevie.setToggleState (t == 3, juce::dontSendNotification);
-    tabPaul.setToggleState   (t == 4, juce::dontSendNotification);
+    tabDrums.setToggleState (t == 1, juce::dontSendNotification);
+    tabBass.setToggleState (t == 2, juce::dontSendNotification);
+    tabPiano.setToggleState (t == 3, juce::dontSendNotification);
+    tabGuitar.setToggleState   (t == 4, juce::dontSendNotification);
     showTab (t);
+
+    setWantsKeyboardFocus (true);
 
     startTimerHz (4);
 }
@@ -139,6 +191,19 @@ BridgeEditor::~BridgeEditor()
     proc.apvtsMain.state.removeListener (this);
 }
 
+bool BridgeEditor::keyPressed (const juce::KeyPress& key)
+{
+    if (key.getKeyCode() == juce::KeyPress::spaceKey)
+    {
+        if (auto* pr = proc.apvtsMain.getParameter ("transportPlaying"))
+        {
+            pr->setValueNotifyingHost (pr->getValue() > 0.5f ? 0.0f : 1.0f);
+        }
+        return true;
+    }
+    return false;
+}
+
 void BridgeEditor::timerCallback()
 {
     updateBpmDisplay();
@@ -146,6 +211,9 @@ void BridgeEditor::timerCallback()
 
 void BridgeEditor::updateBpmDisplay()
 {
+    if (bpmValueLabel.isBeingEdited())
+        return;
+
     const bool hostOn = paramOn (proc.apvtsMain, "hostSync");
     float bpm = 120.0f;
     if (hostOn)
@@ -173,8 +241,8 @@ void BridgeEditor::updateTabStripFromParams()
     const juce::Colour chipTxDim (0xff9e99a8);
     const juce::Colour chipTxOn  (0xffeae2d5);
 
-    juce::TextButton* tabs[] = { &tabMain, &tabAnimal, &tabBootsy, &tabStevie, &tabPaul };
-    const char* ids[] = { "leaderTabOn", "animalOn", "bootsyOn", "stevieOn", "paulOn" };
+    juce::TextButton* tabs[] = { &tabMain, &tabDrums, &tabBass, &tabPiano, &tabGuitar };
+    const char* ids[] = { "leaderTabOn", "drumsOn", "bassOn", "pianoOn", "guitarOn" };
 
     for (int i = 0; i < 5; ++i)
     {
@@ -214,7 +282,7 @@ void BridgeEditor::paint (juce::Graphics& g)
     const int active = juce::jlimit (0, 4, proc.activeTab.load());
     auto accent = accentForTab (active);
 
-    juce::TextButton* tabs[] = { &tabMain, &tabAnimal, &tabBootsy, &tabStevie, &tabPaul };
+    juce::TextButton* tabs[] = { &tabMain, &tabDrums, &tabBass, &tabPiano, &tabGuitar };
     for (int i = 0; i < 5; ++i)
     {
         auto b = tabs[i]->getBounds().toFloat();
@@ -237,50 +305,52 @@ void BridgeEditor::resized()
 
     // ── Header bar ─────────────────────────────────────────────────────────
     auto header = r.removeFromTop (kHeaderH).reduced (14, 14);
+    const int tabH = kHeaderControlH;
+    const int tabW = 60;
+    const int tabGap = 6;
+    const int tabsTotalW = tabW * 5 + tabGap * 4;
+    const int sq = tabH;
 
-    // Left cluster: BRIDGE logo
-    logoLabel.setBounds (header.removeFromLeft (96));
-    header.removeFromLeft (8);
+    auto h = header;
 
-    // Transport cluster: BPM | Play | Stop | HOST SYNC
-    auto transport = header.removeFromLeft (300);
+    gearButton.setBounds (h.removeFromRight (sq).withSizeKeepingCentre (sq, sq));
+    h.removeFromRight (8);
+
+    auto tabArea = h.removeFromRight (tabsTotalW);
+    juce::TextButton* tabs[] = { &tabMain, &tabDrums, &tabBass, &tabPiano, &tabGuitar };
+    for (int i = 0; i < 5; ++i)
     {
-        auto bpmBox = transport.removeFromLeft (74);
-        bpmValueLabel.setBounds (bpmBox.removeFromLeft (44));
-        bpmBox.removeFromLeft (3);
-        bpmUnitLabel.setBounds (bpmBox);
-        transport.removeFromLeft (10);
-
-        const int playSide = 38;
-        playButton.setBounds (transport.removeFromLeft (playSide).withSizeKeepingCentre (playSide, playSide));
-        transport.removeFromLeft (6);
-        stopButton.setBounds (transport.removeFromLeft (playSide).withSizeKeepingCentre (playSide, playSide));
-        transport.removeFromLeft (10);
-
-        hostSyncButton.setBounds (transport.removeFromLeft (96).withSizeKeepingCentre (96, 32));
+        if (i > 0)
+            tabArea.removeFromLeft (tabGap);
+        tabs[i]->setBounds (tabArea.removeFromLeft (tabW).withSizeKeepingCentre (tabW, tabH));
     }
 
-    // Right cluster: tab strip (LEADER / ANIMAL / BOOTSY / KEYS / GUITAR)
-    auto tabStrip = header;
-    const int tabCount = 5;
-    const int tabGap   = 6;
-    const int totalGap = tabGap * (tabCount - 1);
-    const int tabW     = (tabStrip.getWidth() - totalGap) / tabCount;
+    logoLabel.setBounds (h.removeFromLeft (96));
+    h.removeFromLeft (8);
 
-    juce::TextButton* tabs[] = { &tabMain, &tabAnimal, &tabBootsy, &tabStevie, &tabPaul };
-    for (int i = 0; i < tabCount; ++i)
+    auto transport = h.removeFromLeft (300);
+    const int ty = transport.getY() + (transport.getHeight() - tabH) / 2;
     {
-        tabs[i]->setBounds (tabStrip.removeFromLeft (tabW).withSizeKeepingCentre (tabW, 32));
-        if (i < tabCount - 1)
-            tabStrip.removeFromLeft (tabGap);
+        auto tb = transport;
+        bpmValueLabel.setBounds (tb.removeFromLeft (40).withY (ty).withHeight (tabH));
+        tb.removeFromLeft (4);
+        bpmUnitLabel.setBounds (tb.removeFromLeft (28).withY (ty).withHeight (tabH));
+        tb.removeFromLeft (10);
+
+        playButton.setBounds (tb.removeFromLeft (sq + 4).withSizeKeepingCentre (sq, sq));
+        tb.removeFromLeft (6);
+        stopButton.setBounds (tb.removeFromLeft (sq + 4).withSizeKeepingCentre (sq, sq));
+        tb.removeFromLeft (10);
+
+        hostSyncButton.setBounds (tb.removeFromLeft (96).withY (ty).withHeight (tabH));
     }
 
     // ── Panel area (everything below the header) ───────────────────────────
     mainPanel.setBounds   (r);
-    animalPanel.setBounds (r);
-    bootsyPanel.setBounds (r);
-    steviePanel.setBounds (r);
-    paulPanel.setBounds   (r);
+    drumsPanel.setBounds (r);
+    bassPanel.setBounds (r);
+    pianoPanel.setBounds (r);
+    guitarPanel.setBounds   (r);
 
     updateTabStripFromParams();
 }
@@ -288,37 +358,37 @@ void BridgeEditor::resized()
 void BridgeEditor::showTab (int index)
 {
     mainPanel.setVisible   (index == 0);
-    animalPanel.setVisible (index == 1);
-    bootsyPanel.setVisible (index == 2);
-    steviePanel.setVisible (index == 3);
-    paulPanel.setVisible   (index == 4);
+    drumsPanel.setVisible (index == 1);
+    bassPanel.setVisible (index == 2);
+    pianoPanel.setVisible (index == 3);
+    guitarPanel.setVisible   (index == 4);
 
     if (index == 0)        mainPanel.toFront (true);
-    else if (index == 1)   animalPanel.toFront (true);
-    else if (index == 2)   bootsyPanel.toFront (true);
-    else if (index == 3)   steviePanel.toFront (true);
-    else                   paulPanel.toFront (true);
+    else if (index == 1)   drumsPanel.toFront (true);
+    else if (index == 2)   bassPanel.toFront (true);
+    else if (index == 3)   pianoPanel.toFront (true);
+    else                   guitarPanel.toFront (true);
 
     updateTabStripFromParams();
     repaint();
 }
 
-void BridgeEditor::notifyAnimalPatternChanged()
+void BridgeEditor::notifyDrumsPatternChanged()
 {
-    animalPanel.triggerAsyncUpdate();
+    drumsPanel.triggerAsyncUpdate();
 }
 
-void BridgeEditor::notifyBootsyPatternChanged()
+void BridgeEditor::notifyBassPatternChanged()
 {
-    bootsyPanel.triggerAsyncUpdate();
+    bassPanel.triggerAsyncUpdate();
 }
 
-void BridgeEditor::notifySteviePatternChanged()
+void BridgeEditor::notifyPianoPatternChanged()
 {
-    steviePanel.triggerAsyncUpdate();
+    pianoPanel.triggerAsyncUpdate();
 }
 
-void BridgeEditor::notifyPaulPatternChanged()
+void BridgeEditor::notifyGuitarPatternChanged()
 {
-    paulPanel.triggerAsyncUpdate();
+    guitarPanel.triggerAsyncUpdate();
 }

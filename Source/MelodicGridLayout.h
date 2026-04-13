@@ -1,12 +1,12 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "bootsy/BassEngine.h"
-#include "bootsy/BootsyStylePresets.h"
-#include "stevie/PianoEngine.h"
-#include "stevie/StevieStylePresets.h"
-#include "paul/GuitarEngine.h"
-#include "paul/PaulStylePresets.h"
+#include "bass/BassEngine.h"
+#include "bass/BassStylePresets.h"
+#include "piano/PianoEngine.h"
+#include "piano/PianoStylePresets.h"
+#include "guitar/GuitarEngine.h"
+#include "guitar/GuitarStylePresets.h"
 
 // Shared melodic grid logic: one octave (12 pitch rows) and square cell layout.
 
@@ -19,7 +19,7 @@ inline void setOneOctaveMelodicRange (const BassEngine& engine, int& minMidi, in
 {
     int pMin = 127, pMax = 0;
     const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < BootsyPreset::NUM_STEPS; ++s)
+    for (int s = 0; s < BassPreset::NUM_STEPS; ++s)
     {
         const auto& h = pat[(size_t) s];
         if (! h.active) continue;
@@ -43,7 +43,7 @@ inline void setOneOctaveMelodicRange (const PianoEngine& engine, int& minMidi, i
 {
     int pMin = 127, pMax = 0;
     const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < SteviePreset::NUM_STEPS; ++s)
+    for (int s = 0; s < PianoPreset::NUM_STEPS; ++s)
     {
         const auto& h = pat[(size_t) s];
         if (! h.active) continue;
@@ -67,7 +67,7 @@ inline void setOneOctaveMelodicRange (const GuitarEngine& engine, int& minMidi, 
 {
     int pMin = 127, pMax = 0;
     const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < PaulPreset::NUM_STEPS; ++s)
+    for (int s = 0; s < GuitarPreset::NUM_STEPS; ++s)
     {
         const auto& h = pat[(size_t) s];
         if (! h.active) continue;

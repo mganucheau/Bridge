@@ -88,26 +88,26 @@
       <circle cx="11" cy="16" r="3" fill="#D4A84B"/>
       <text x="20" y="20" fill="#F4D896">LEADER</text>
     </g>
-    <!-- Animal -->
+    <!-- Drums -->
     <g transform="translate(703,0)">
       <rect x="0" y="0" width="58" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
       <circle cx="11" cy="16" r="3" fill="#E07A5A"/>
-      <text x="20" y="20" fill="#B0A8C4">ANIMAL</text>
+      <text x="20" y="20" fill="#B0A8C4">DRUMS</text>
     </g>
     <g transform="translate(764,0)">
       <rect x="0" y="0" width="58" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
       <circle cx="11" cy="16" r="3" fill="#5CB8A8"/>
-      <text x="20" y="20" fill="#B0A8C4">BOOTSY</text>
+      <text x="20" y="20" fill="#B0A8C4">BASS</text>
     </g>
     <g transform="translate(825,0)">
       <rect x="0" y="0" width="56" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
       <circle cx="11" cy="16" r="3" fill="#B88CFF"/>
-      <text x="20" y="20" fill="#B0A8C4">STEVIE</text>
+      <text x="20" y="20" fill="#B0A8C4">PIANO</text>
     </g>
     <g transform="translate(884,0)">
       <rect x="0" y="0" width="56" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/>
       <circle cx="11" cy="16" r="3" fill="#6EB3FF"/>
-      <text x="22" y="20" fill="#B0A8C4">PAUL</text>
+      <text x="22" y="20" fill="#B0A8C4">GUITAR</text>
     </g>
   </g>
 
@@ -174,13 +174,13 @@
     </g>
 
     <!-- Row template (per instrument) used 4x -->
-    <!-- ANIMAL -->
+    <!-- DRUMS -->
     <g transform="translate(0,24)">
       <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
       <rect x="0" y="0" width="4" height="86" fill="#E07A5A" rx="2"/>
       <g transform="translate(20,0)">
         <circle cx="14" cy="43" r="5" fill="#E07A5A"/>
-        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Animal</text>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Drums</text>
         <text x="30" y="54" fill="#6A6578" font-size="10">Drums · 16 steps · 8 lanes</text>
       </g>
       <!-- pattern preview (drum grid) -->
@@ -243,13 +243,13 @@
       </g>
     </g>
 
-    <!-- BOOTSY -->
+    <!-- BASS -->
     <g transform="translate(0,118)">
       <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
       <rect x="0" y="0" width="4" height="86" fill="#5CB8A8" rx="2"/>
       <g transform="translate(20,0)">
         <circle cx="14" cy="43" r="5" fill="#5CB8A8"/>
-        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Bootsy</text>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Bass</text>
         <text x="30" y="54" fill="#6A6578" font-size="10">Bass · C Mixolydian · Oct 2</text>
       </g>
       <g transform="translate(200,18)">
@@ -285,13 +285,13 @@
       </g>
     </g>
 
-    <!-- STEVIE -->
+    <!-- PIANO -->
     <g transform="translate(0,212)">
       <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
       <rect x="0" y="0" width="4" height="86" fill="#B88CFF" rx="2"/>
       <g transform="translate(20,0)">
         <circle cx="14" cy="43" r="5" fill="#B88CFF"/>
-        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Stevie</text>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Piano</text>
         <text x="30" y="54" fill="#6A6578" font-size="10">Piano · C Major · Oct 4</text>
       </g>
       <g transform="translate(200,18)">
@@ -331,13 +331,13 @@
       </g>
     </g>
 
-    <!-- PAUL -->
+    <!-- GUITAR -->
     <g transform="translate(0,306)">
       <rect x="0" y="0" width="912" height="86" rx="12" fill="#211E29" stroke="#2E2937"/>
       <rect x="0" y="0" width="4" height="86" fill="#6EB3FF" rx="2"/>
       <g transform="translate(20,0)">
         <circle cx="14" cy="43" r="5" fill="#6EB3FF"/>
-        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Paul</text>
+        <text x="30" y="38" fill="#EAE2D5" font-size="16" font-weight="700">Guitar</text>
         <text x="30" y="54" fill="#6A6578" font-size="10">Guitar · C Major · Oct 3</text>
       </g>
       <g transform="translate(200,18)">

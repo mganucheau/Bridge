@@ -1,8 +1,8 @@
 #include <JuceHeader.h>
-#include "animal/AnimalStylePresets.h"
-#include "bootsy/BootsyStylePresets.h"
-#include "paul/PaulStylePresets.h"
-#include "stevie/StevieStylePresets.h"
+#include "drums/DrumsStylePresets.h"
+#include "bass/BassStylePresets.h"
+#include "guitar/GuitarStylePresets.h"
+#include "piano/PianoStylePresets.h"
 
 struct StepGridConsistencyTest : public juce::UnitTest
 {
@@ -15,9 +15,9 @@ struct StepGridConsistencyTest : public juce::UnitTest
     {
         beginTest ("16 steps across engines");
         expectEquals (NUM_STEPS, 16);
-        expectEquals (BootsyPreset::NUM_STEPS, NUM_STEPS);
-        expectEquals (SteviePreset::NUM_STEPS, NUM_STEPS);
-        expectEquals (PaulPreset::NUM_STEPS, NUM_STEPS);
+        expectEquals (BassPreset::NUM_STEPS, NUM_STEPS);
+        expectEquals (PianoPreset::NUM_STEPS, NUM_STEPS);
+        expectEquals (GuitarPreset::NUM_STEPS, NUM_STEPS);
     }
 };
 

@@ -2,11 +2,14 @@
 
 #include <JuceHeader.h>
 #include "BridgeProcessor.h"
-#include "AnimalPanel.h"
+#include "BridgeBottomHalf.h"
+#include "BridgeLookAndFeel.h"
+#include "BridgeInstrumentUI.h"
 
 class MainPanel : public juce::Component,
                   private juce::Timer,
-                  private juce::ValueTree::Listener
+                  private juce::ValueTree::Listener,
+                  private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     explicit MainPanel (BridgeProcessor&);
@@ -14,15 +17,18 @@ public:
     void paint (juce::Graphics&) override;
     void resized() override;
 
+    std::function<void(int)> onOpenTab;
+
 private:
     void timerCallback() override;
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
     void syncSoloButtonColours();
-    void applyLeaderEngaged();
+    void applyLeaderPageState();
 
     struct StripPreview : public juce::Component
     {
-        enum class Kind { animal, bootsy, stevie, paul };
+        enum class Kind { drums, bass, piano, guitar };
         StripPreview (BridgeProcessor& p, Kind k) : proc (p), kind (k) {}
         void paint (juce::Graphics& g) override;
 
@@ -38,6 +44,7 @@ private:
         juce::TextButton solo { "S" };
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttach;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttach;
+        juce::Rectangle<int> bounds;
     };
 
     void setupRow (Row& row,
@@ -47,35 +54,34 @@ private:
                    const char* soloId);
 
     BridgeProcessor& proc;
+    BridgeLookAndFeel laf;
 
-    AnimalLookAndFeel laf;
-
-    // Section headers
-    juce::Label mixLabel;
-    juce::Label leaderLabel;
-    juce::Label actionsLabel;
-
-    juce::Label styleLabel;
+    // Header tonality
+    juce::Label  styleLabel;
     juce::ComboBox styleBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
+    
+    juce::Label  rootLabel;
+    juce::ComboBox rootBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> rootAttach;
+    
+    juce::Label  scaleLabel;
+    juce::ComboBox scaleBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> scaleAttach;
+    
+    juce::Label  octaveLabel;
+    juce::ComboBox octaveBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> octaveAttach;
 
-    LabelledKnob knobPresence;
-    LabelledKnob knobTight;
-    LabelledKnob knobUnity;
-    LabelledKnob knobBreath;
-    LabelledKnob knobSpark;
+    PagePowerButton pagePower { bridge::colors::accentLeader };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttach;
 
-    juce::Component mixerArea;
+    Row drumsRow;
+    Row bassRow;
+    Row pianoRow;
+    Row guitarRow;
 
-    // Loop-card contents on the Leader tab: engage toggle + reset button
-    juce::TextButton engageButton { "ENGAGE" };
-    juce::TextButton resetButton  { "RESET" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> engageAttach;
-
-    Row animal;
-    Row bootsy;
-    Row stevie;
-    Row paul;
+    BridgeBottomHalf bottomHalf;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainPanel)
 };

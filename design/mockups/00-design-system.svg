@@ -57,42 +57,42 @@
         <text x="16" y="84" fill="#6A6578" font-size="9">#D4A84B</text>
         <text x="16" y="96" fill="#6A6578" font-size="9">Warm gold · ensemble tone</text>
       </g>
-      <!-- ANIMAL -->
+      <!-- DRUMS -->
       <g transform="translate(230,28)">
         <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
         <rect x="0" y="0" width="184" height="46" rx="12" fill="#E07A5A"/>
         <rect x="0" y="34" width="184" height="12" fill="#E07A5A"/>
-        <text x="16" y="28" fill="#260A02" font-size="16" font-weight="800" letter-spacing="2">ANIMAL</text>
+        <text x="16" y="28" fill="#260A02" font-size="16" font-weight="800" letter-spacing="2">DRUMS</text>
         <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">DRUMS</text>
         <text x="16" y="84" fill="#6A6578" font-size="9">#E07A5A</text>
         <text x="16" y="96" fill="#6A6578" font-size="9">Coral · skin &amp; snare</text>
       </g>
-      <!-- BOOTSY -->
+      <!-- BASS -->
       <g transform="translate(430,28)">
         <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
         <rect x="0" y="0" width="184" height="46" rx="12" fill="#5CB8A8"/>
         <rect x="0" y="34" width="184" height="12" fill="#5CB8A8"/>
-        <text x="16" y="28" fill="#042018" font-size="16" font-weight="800" letter-spacing="2">BOOTSY</text>
+        <text x="16" y="28" fill="#042018" font-size="16" font-weight="800" letter-spacing="2">BASS</text>
         <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">BASS</text>
         <text x="16" y="84" fill="#6A6578" font-size="9">#5CB8A8</text>
         <text x="16" y="96" fill="#6A6578" font-size="9">Teal · sub &amp; slap</text>
       </g>
-      <!-- STEVIE -->
+      <!-- PIANO -->
       <g transform="translate(630,28)">
         <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
         <rect x="0" y="0" width="184" height="46" rx="12" fill="#B88CFF"/>
         <rect x="0" y="34" width="184" height="12" fill="#B88CFF"/>
-        <text x="16" y="28" fill="#190A2E" font-size="16" font-weight="800" letter-spacing="2">STEVIE</text>
+        <text x="16" y="28" fill="#190A2E" font-size="16" font-weight="800" letter-spacing="2">PIANO</text>
         <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">PIANO</text>
         <text x="16" y="84" fill="#6A6578" font-size="9">#B88CFF</text>
         <text x="16" y="96" fill="#6A6578" font-size="9">Violet · keys &amp; chords</text>
       </g>
-      <!-- PAUL -->
+      <!-- GUITAR -->
       <g transform="translate(830,28)">
         <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
         <rect x="0" y="0" width="184" height="46" rx="12" fill="#6EB3FF"/>
         <rect x="0" y="34" width="184" height="12" fill="#6EB3FF"/>
-        <text x="16" y="28" fill="#021226" font-size="16" font-weight="800" letter-spacing="2">PAUL</text>
+        <text x="16" y="28" fill="#021226" font-size="16" font-weight="800" letter-spacing="2">GUITAR</text>
         <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">GUITAR</text>
         <text x="16" y="84" fill="#6A6578" font-size="9">#6EB3FF</text>
         <text x="16" y="96" fill="#6A6578" font-size="9">Sky · jangle &amp; wah</text>
@@ -252,9 +252,9 @@
         <g transform="translate(0,134)">
           <rect width="264" height="44" rx="10" fill="#211E29" stroke="#2E2937"/>
           <g transform="translate(14,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#D4A84B"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">LEADER</text></g>
-          <g transform="translate(76,7)"><rect width="58" height="30" rx="6" fill="#E07A5A" fill-opacity="0.22" stroke="#E07A5A"/><circle cx="11" cy="15" r="3" fill="#E07A5A"/><text x="20" y="19" fill="#F2B8A1" font-size="10" font-weight="600">ANIMAL</text></g>
-          <g transform="translate(138,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#5CB8A8"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">BOOTSY</text></g>
-          <g transform="translate(200,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#B88CFF"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">STEVIE</text></g>
+          <g transform="translate(76,7)"><rect width="58" height="30" rx="6" fill="#E07A5A" fill-opacity="0.22" stroke="#E07A5A"/><circle cx="11" cy="15" r="3" fill="#E07A5A"/><text x="20" y="19" fill="#F2B8A1" font-size="10" font-weight="600">DRUMS</text></g>
+          <g transform="translate(138,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#5CB8A8"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">BASS</text></g>
+          <g transform="translate(200,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#B88CFF"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">PIANO</text></g>
         </g>
       </g>
     </g>

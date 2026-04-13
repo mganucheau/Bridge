@@ -1,0 +1,138 @@
+#pragma once
+
+#include <JuceHeader.h>
+#include "DrumsStylePresets.h"
+#include <array>
+#include <random>
+#include <functional>
+
+struct DrumHit
+{
+    bool  active    = false;
+    uint8 velocity  = 100;
+    int   timeShift = 0;   // in samples, for humanization
+};
+
+using DrumStep   = std::array<DrumHit, NUM_DRUMS>;
+using DrumPattern = std::array<DrumStep, NUM_STEPS>;
+
+// ─────────────────────────────────────────────────────────────────────────────
+class DrumEngine
+{
+public:
+    DrumEngine();
+
+    // ── Generation ─────────────────────────────────────────────────────────
+    void generatePattern (bool seamlessPerform = false);
+    void generateFill (int fromStep = 12);  // from step 12 = last 4 steps
+
+    // ── Pattern access ─────────────────────────────────────────────────────
+    const DrumStep& getStep (int step) const
+    {
+        return pattern[(size_t) juce::jlimit (0, NUM_STEPS - 1, step)];
+    }
+    const DrumPattern& getPattern()       const { return pattern; }
+    const DrumPattern& getPatternForGrid() const { return gridPreview; }
+
+    void rebuildGridPreview();
+
+    // ── Parameters (0.0–1.0 unless noted) ─────────────────────────────────
+    void setStyle      (int s)   { style      = jlimit(0, NUM_STYLES - 1, s); }
+    void setTemperature(float t) { temperature = jlimit(0.01f, 2.0f,  t); }
+    void setDensity    (float d) { density     = jlimit(0.0f,  1.0f,  d); }
+    void setSwing      (float s) { swing       = jlimit(0.0f,  1.0f,  s); }
+    void setHumanize   (float h) { humanize    = jlimit(0.0f,  1.0f,  h); }
+    void setVelocity   (float v) { velocityMul = jlimit(0.0f,  1.0f,  v); }
+    void setFillRate   (float f) { fillRate    = jlimit(0.0f,  1.0f,  f); }
+    void setComplexity (float c) { complexity  = jlimit(0.0f,  1.0f,  c); }
+    void setPocket     (float p) { pocket      = jlimit(0.0f,  1.0f,  p); }
+    void setGhostAmount(float g) { ghostAmount = jlimit(0.0f,  1.0f,  g); }
+    void setPatternLen (int   l) { patternLen  = jlimit(1, NUM_STEPS, l); }
+    void setSeed       (uint32 s){ seed        = s; rng.seed(seed); }
+    void setPhraseBars (int bars) { phraseBars = jlimit (1, 64, bars); }
+    void setPerformBoost (bool on) { performBoost = on; }
+    bool  isPerformBoost() const { return performBoost; }
+
+    int   getStyle()       const { return style; }
+    float getTemperature() const { return temperature; }
+    float getDensity()     const { return density; }
+    float getSwing()       const { return swing; }
+    float getHumanize()    const { return humanize; }
+    float getVelocity()    const { return velocityMul; }
+    float getFillRate()    const { return fillRate; }
+    float getComplexity()  const { return complexity; }
+    float getPocket()      const { return pocket; }
+    float getGhostAmount() const { return ghostAmount; }
+    int   getPatternLen()  const { return patternLen; }
+    uint32 getSeed()       const { return seed; }
+    int   getPhraseBars()  const { return phraseBars; }
+
+    // Returns sample offset for a given step, applying swing to off-beats
+    int getSwingOffset (int step, double samplesPerStep) const;
+
+    // Live playback: recomputes hits from current style/density/etc. so knob changes
+    // affect MIDI immediately. When fillHoldActive, adds a live fill layer (hold Fill).
+    void evaluateStepForPlayback (int globalStep, int wrappedStep, DrumStep& out,
+                                  double samplesPerStep);
+
+    void setFillHoldActive (bool on) { fillHoldActive = on; }
+
+    // 16th-note duration in samples — used for humanize amount after generate & for live hits.
+    void setPlaybackSamplesPerStep (double s) { playbackSamplesPerStep = juce::jmax (1.0, s); }
+
+    // Called each bar — may auto-trigger a fill based on fillRate
+    bool shouldTriggerFill();
+
+    // Register callback so editor can repaint when pattern changes
+    std::function<void()> onPatternChanged;
+
+private:
+    DrumPattern pattern;
+    DrumPattern gridPreview {};
+    std::mt19937 rng;
+
+    int   style       = 0;
+    bool  performBoost = false;
+    float temperature = 1.0f;
+    float density     = 0.7f;
+    float swing       = 0.0f;
+    float humanize    = 0.2f;
+    float velocityMul = 0.85f;
+    float fillRate    = 0.15f;
+    float complexity  = 0.5f;
+    float pocket      = 0.5f;
+    float ghostAmount = 0.5f;
+    int   patternLen  = NUM_STEPS;
+    uint32 seed       = 42;
+
+    int   barCount    = 0;
+    int   phraseBars  = 4; // UI "bar grid": 4/8/16 bars per phrase
+
+    // After generateFill(), play written hits for the fill tail until the last step of that run
+    bool fillTailPlayback = false;
+    int  fillTailFromStep = 12;
+
+    bool fillHoldActive = false;
+
+    float sampleProb  (float baseProbability) const;
+    uint8 sampleVelocity (int step, int drum, bool ghost) const;
+    void  applyHumanize  (double samplesPerStep);
+    float complexityMod  (int step, int drum) const;
+
+    static float pseudoRandom01 (uint32_t salt);
+    bool         rollHitFromProbability (float prob, uint32_t salt) const;
+    uint8        sampleVelocityDeterministic (int step, int drum, bool ghost, uint32_t salt) const;
+
+    float        neutralProbability (int step, int drum) const;
+    float        blendedStyleBase (int step, int drum) const;
+    float        effectiveSwingAmount() const;
+    float        grooveMicroOffset (int step, int drum, uint32_t salt, double samplesPerStep) const;
+
+    void         generateFillDefault (int fromStep);
+    void         generateFillFunk (int fromStep);
+    void         generateFillDnB (int fromStep);
+    void         generateFillJazz (int fromStep);
+    void         generateFillLatin (int fromStep);
+
+    double playbackSamplesPerStep = 5512.0; // ~120 BPM 16th @ 44.1 kHz until host calls setPlaybackSamplesPerStep
+};
