@@ -51,10 +51,10 @@ MainPanel::MainPanel (BridgeProcessor& p)
     setupCombo (octaveLabel, octaveBox, "OCT", proc.apvtsMain, "octave");
     for (int i = 1; i <= 4; ++i) octaveBox.addItem (juce::String (i), i);
 
-    setupRow (drumsRow,  "DRUMS",  StripPreview::Kind::drums,  "mainMuteDrums",  "mainSoloDrums");
-    setupRow (bassRow,   "BASS",   StripPreview::Kind::bass,   "mainMuteBass",   "mainSoloBass");
-    setupRow (pianoRow,  "PIANO",  StripPreview::Kind::piano,  "mainMutePiano",  "mainSoloPiano");
-    setupRow (guitarRow, "GUITAR", StripPreview::Kind::guitar, "mainMuteGuitar", "mainSoloGuitar");
+    setupRow (drumsRow,  "DRUMS",  StripPreview::Kind::drums,  "mainMuteDrums",  "mainSoloDrums",  bridge::colors::accentDrums);
+    setupRow (bassRow,   "BASS",   StripPreview::Kind::bass,   "mainMuteBass",   "mainSoloBass",   bridge::colors::accentBass);
+    setupRow (pianoRow,  "PIANO",  StripPreview::Kind::piano,  "mainMutePiano",  "mainSoloPiano",  bridge::colors::accentPiano);
+    setupRow (guitarRow, "GUITAR", StripPreview::Kind::guitar, "mainMuteGuitar", "mainSoloGuitar", bridge::colors::accentGuitar);
 
     addAndMakeVisible (bottomHalf);
     addAndMakeVisible (pagePower);
@@ -121,12 +121,15 @@ void MainPanel::setupRow (Row& row,
                           const juce::String& rowName,
                           StripPreview::Kind previewKind,
                           const char* muteId,
-                          const char* soloId)
+                          const char* soloId,
+                          juce::Colour accent)
 {
+    row.accent = accent;
+
     row.name.setText (rowName, juce::dontSendNotification);
-    row.name.setFont (juce::Font (juce::FontOptions().withHeight(12.0f).withStyle("Bold")));
-    row.name.setColour (juce::Label::textColourId, bridge::colors::textPrimary);
-    row.name.setJustificationType (juce::Justification::centredTop);
+    row.name.setFont (juce::Font (juce::FontOptions().withHeight(11.0f).withStyle("Bold")));
+    row.name.setColour (juce::Label::textColourId, accent.withAlpha (0.85f));
+    row.name.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (row.name);
 
     row.preview = std::make_unique<StripPreview> (proc, previewKind);
@@ -142,8 +145,13 @@ void MainPanel::setupRow (Row& row,
 
     setupToggle (row.mute);
     setupToggle (row.solo);
-    row.mute.setTooltip("Mute Track");
-    row.solo.setTooltip("Solo Track");
+
+    // Mute-on: red tint (universal danger indicator)
+    row.mute.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xFF7A2828).withAlpha (0.65f));
+    row.mute.setColour (juce::TextButton::textColourOnId,   juce::Colour (0xFFFF8080));
+
+    row.mute.setTooltip ("Mute Track");
+    row.solo.setTooltip ("Solo Track");
     addAndMakeVisible (row.mute);
     addAndMakeVisible (row.solo);
 
@@ -207,19 +215,26 @@ void MainPanel::resized()
 
     auto layoutLane = [&] (Row& row, juce::Rectangle<int> b) {
         row.bounds = b;
-        
-        auto leftCol = b.removeFromLeft(90);
-        row.name.setBounds(leftCol.removeFromTop(20));
-        leftCol.removeFromTop(4);
-        
-        auto btnsRow = leftCol.removeFromTop(18);
-        row.mute.setBounds(btnsRow.removeFromLeft(20));
-        btnsRow.removeFromLeft(4);
-        row.solo.setBounds(btnsRow.removeFromLeft(20));
-        
-        btnsRow.removeFromLeft (10);
-        b.removeFromLeft (8);
-        row.preview->setBounds(b);
+
+        // 4 px reserved for the accent stripe drawn in paint()
+        b.removeFromLeft (4);
+        auto leftCol = b.removeFromLeft (88);
+
+        // Vertically centre name + buttons within the lane
+        const int totalCtrlH = 13 + 4 + 20;
+        const int ctrlY = leftCol.getY() + (leftCol.getHeight() - totalCtrlH) / 2;
+        auto ctrl = leftCol.withY (ctrlY).withHeight (totalCtrlH);
+
+        row.name.setBounds (ctrl.removeFromTop (13));
+        ctrl.removeFromTop (4);
+
+        auto btnsRow = ctrl.removeFromTop (20);
+        row.mute.setBounds (btnsRow.removeFromLeft (28).withHeight (20));
+        btnsRow.removeFromLeft (5);
+        row.solo.setBounds (btnsRow.removeFromLeft (28).withHeight (20));
+
+        b.removeFromLeft (6);
+        row.preview->setBounds (b);
     };
 
     layoutLane (drumsRow, mixArea.removeFromTop (laneH));
@@ -238,19 +253,42 @@ void MainPanel::paint (juce::Graphics& g)
     using namespace bridge::instrumentLayout;
     g.fillAll (bridge::colors::background);
 
-    auto shell = bridge::panelLayout::splitInstrumentContent(getLocalBounds().reduced(16), 42);
-    
-    auto drawCard = [&] (juce::Rectangle<int> r)
+    const auto inner = getLocalBounds().reduced (16);
+    auto shell = bridge::panelLayout::splitInstrumentContent (inner, 42);
+
+    // "HARMONY" section label in the dropdown row area
     {
-        auto rf = r.toFloat();
+        auto harmonyLabelArea = inner.withHeight (12);
+        g.setFont (juce::Font (juce::FontOptions().withHeight (9.0f).withStyle ("Bold")));
+        g.setColour (bridge::colors::textDim);
+        g.drawText ("HARMONY", harmonyLabelArea.withTrimmedLeft (2),
+                    juce::Justification::centredLeft, false);
+    }
+
+    // Main card
+    {
+        auto rf = shell.mainCard.toFloat();
         g.setColour (bridge::colors::cardSurface);
         g.fillRoundedRectangle (rf, (float) kCardRadius);
         g.setColour (bridge::colors::cardOutline.withAlpha (0.35f));
         g.drawRoundedRectangle (rf.reduced (0.5f), (float) kCardRadius, 1.0f);
-    };
-    drawCard (shell.mainCard);
+    }
 
-    // Subtle separators between leader lanes (in the gap between strips)
+    // Per-instrument accent stripes (3 px, left edge of each lane)
+    auto drawAccentStripe = [&] (const Row& row)
+    {
+        if (row.bounds.isEmpty()) return;
+        // Stripe sits at the left edge of the lane, inset slightly from top/bottom
+        auto stripe = row.bounds.withWidth (3).toFloat().reduced (0.0f, 3.0f);
+        g.setColour (row.accent.withAlpha (0.75f));
+        g.fillRoundedRectangle (stripe, 1.5f);
+    };
+    drawAccentStripe (drumsRow);
+    drawAccentStripe (bassRow);
+    drawAccentStripe (pianoRow);
+    drawAccentStripe (guitarRow);
+
+    // Subtle lane separators
     {
         auto mixAreaP = shell.mainCard.reduced (10, 10);
         mixAreaP.removeFromTop (16);
@@ -267,21 +305,25 @@ void MainPanel::paint (juce::Graphics& g)
         }
     }
 
-    // Draw 1..16 grid headers
-    g.setColour (bridge::colors::textDim);
-    g.setFont (10.0f);
-    auto mixArea = shell.mainCard.reduced (10, 10);
-    auto headerBox = mixArea.removeFromTop (16);
-    headerBox.removeFromLeft (98); // offset to match start of preview grids
-    const float headerW = (float) headerBox.getWidth();
-    const float cellW = headerW / 16.0f;
-    const float x0 = (float) headerBox.getX();
-    for (int i = 0; i < 16; ++i)
+    // Step numbers 1–16; beat positions (1, 5, 9, 13) rendered brighter
     {
-        const int x = juce::roundToInt (x0 + (float) i * cellW);
-        g.drawText (juce::String (i + 1),
-                    x, headerBox.getY(), juce::roundToInt (cellW), headerBox.getHeight(),
-                    juce::Justification::centred, false);
+        auto mixArea = shell.mainCard.reduced (10, 10);
+        auto headerBox = mixArea.removeFromTop (16);
+        headerBox.removeFromLeft (98); // align with preview strip start
+        const float headerW = (float) headerBox.getWidth();
+        const float cellW   = headerW / 16.0f;
+        const float x0      = (float) headerBox.getX();
+
+        g.setFont (juce::Font (juce::FontOptions().withHeight (9.5f).withStyle ("SemiBold")));
+        for (int i = 0; i < 16; ++i)
+        {
+            const bool isBeat = (i % 4 == 0);
+            g.setColour (isBeat ? bridge::colors::textSecondary : bridge::colors::textDim);
+            const int x = juce::roundToInt (x0 + (float) i * cellW);
+            g.drawText (juce::String (i + 1),
+                        x, headerBox.getY(), juce::roundToInt (cellW), headerBox.getHeight(),
+                        juce::Justification::centred, false);
+        }
     }
 }
 

@@ -35,6 +35,7 @@ public:
 private:
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     juce::AudioProcessorValueTreeState& apvts;
+    juce::Colour groupAccentColour;
 
     // GROOVE
     juce::Label grooveLabel;

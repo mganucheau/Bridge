@@ -45,13 +45,15 @@ private:
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttach;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttach;
         juce::Rectangle<int> bounds;
+        juce::Colour accent;
     };
 
     void setupRow (Row& row,
                    const juce::String& rowName,
                    StripPreview::Kind previewKind,
                    const char* muteId,
-                   const char* soloId);
+                   const char* soloId,
+                   juce::Colour accent);
 
     BridgeProcessor& proc;
     BridgeLookAndFeel laf;

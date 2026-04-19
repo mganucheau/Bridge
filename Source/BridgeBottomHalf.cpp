@@ -36,6 +36,7 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& apvtsToU
                                     std::function<void()> onGenerate,
                                     std::function<void(bool)> onFillHold)
     : apvts (apvtsToUse),
+      groupAccentColour (groupAccent),
       knobDensity ("density", "DENSITY", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
       knobSwing ("swing", "SWING", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
       knobHumanize ("humanize", "HUMANIZE", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
@@ -53,15 +54,15 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& apvtsToU
 
     auto setupHeader = [&] (juce::Label& l, const juce::String& text) {
         l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::Font (juce::FontOptions().withHeight (11.0f).withStyle ("Semibold")));
-        l.setColour (juce::Label::textColourId, bridge::colors::textDim);
+        l.setFont (juce::Font (juce::FontOptions().withHeight (10.0f).withStyle ("Bold")));
+        l.setColour (juce::Label::textColourId, bridge::colors::textSecondary);
         addAndMakeVisible (l);
     };
 
-    setupHeader (grooveLabel, "I  GROOVE");
-    setupHeader (expressionLabel, "I  EXPRESSION");
-    setupHeader (loopingLabel, "I  LOOPING");
-    setupHeader (actionsLabel, "I  ACTIONS");
+    setupHeader (grooveLabel, "GROOVE");
+    setupHeader (expressionLabel, "EXPRESSION");
+    setupHeader (loopingLabel, "LOOPING");
+    setupHeader (actionsLabel, "ACTIONS");
 
     // Add knobs to view
     addAndMakeVisible (knobDensity);
@@ -104,15 +105,20 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& apvtsToU
     fillButton.addMouseListener (&fillListener, false);
     performButton.setClickingTogglesState (true);
     
-    // Style actions like pads
-    auto setupAction = [&] (juce::TextButton& btn) {
+    // Secondary action pads (Fill / JAM)
+    auto setupSecondaryAction = [&] (juce::TextButton& btn) {
         btn.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack);
         btn.setColour (juce::TextButton::textColourOffId, bridge::colors::textDim);
-        addAndMakeVisible(btn);
+        addAndMakeVisible (btn);
     };
-    setupAction (generateButton);
-    setupAction (fillButton);
-    setupAction (performButton);
+    setupSecondaryAction (fillButton);
+    setupSecondaryAction (performButton);
+
+    // GENERATE: primary gold CTA — visually distinct from secondary pads
+    generateButton.setColour (juce::TextButton::buttonColourId, groupAccent.withAlpha (0.18f));
+    generateButton.setColour (juce::TextButton::textColourOffId, groupAccent);
+    generateButton.getProperties().set ("fontHeight", 11.5f);
+    addAndMakeVisible (generateButton);
     
     performButton.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack);
     performButton.setColour (juce::TextButton::buttonOnColourId, groupAccent.withAlpha (0.4f));
@@ -139,25 +145,39 @@ void BridgeBottomHalf::parameterChanged (const juce::String& parameterID, float 
 void BridgeBottomHalf::paint (juce::Graphics& g)
 {
     using namespace bridge::colors;
-    
-    auto bounds = getLocalBounds();
-    auto shell = bridge::panelLayout::splitInstrumentContent (bounds, 0); // No top trim inside the component itself
 
-    // Draw generic cards
+    auto bounds = getLocalBounds();
+    auto shell = bridge::panelLayout::splitInstrumentContent (bounds, 0);
+
+    // Draw cards
     auto drawCard = [&] (juce::Rectangle<int> r) {
         g.setColour (cardSurface);
         g.fillRoundedRectangle (r.toFloat(), bridge::instrumentLayout::kCardRadius);
         g.setColour (cardOutline.withAlpha (0.35f));
-        g.drawRoundedRectangle (r.toFloat().reduced(0.5f), bridge::instrumentLayout::kCardRadius, 1.0f);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), bridge::instrumentLayout::kCardRadius, 1.0f);
     };
-
     drawCard (shell.knobsCard);
     drawCard (shell.loopActionsCard);
-    
-    // Subtle separator line in Knobs Card
-    g.setColour (cardOutline.withAlpha(0.6f));
-    auto sep = shell.knobsCard.withTrimmedLeft(16).withTrimmedRight(16);
-    g.fillRect (sep.getX(), sep.getCentreY(), sep.getWidth(), 1);
+
+    // Separator between GROOVE and EXPRESSION
+    g.setColour (cardOutline.withAlpha (0.7f));
+    {
+        auto sep = shell.knobsCard.withTrimmedLeft (16).withTrimmedRight (16);
+        g.fillRect (sep.getX(), sep.getCentreY(), sep.getWidth(), 1);
+    }
+
+    // Small accent pip (2.5×10 px) to the left of each section header label
+    auto drawPip = [&] (const juce::Label& lbl) {
+        const auto lb = lbl.getBounds();
+        const float pipH = juce::jmin (10.0f, (float) lb.getHeight());
+        const float pipY = (float) lb.getY() + ((float) lb.getHeight() - pipH) * 0.5f;
+        g.setColour (groupAccentColour.withAlpha (0.7f));
+        g.fillRoundedRectangle ((float) lb.getX() - 7.0f, pipY, 2.5f, pipH, 1.0f);
+    };
+    drawPip (grooveLabel);
+    drawPip (expressionLabel);
+    drawPip (loopingLabel);
+    drawPip (actionsLabel);
 }
 
 void BridgeBottomHalf::resized()
