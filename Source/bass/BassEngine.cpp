@@ -3,6 +3,30 @@
 
 using namespace BassPreset;
 
+namespace
+{
+static float melodicPreviewDet01 (uint32_t seed, int step, uint32_t tag)
+{
+    uint32_t x = seed ^ (uint32_t) step * 2654435761u ^ tag * 1597334677u;
+    x ^= x >> 16;
+    x *= 2246822519u;
+    x ^= x >> 13;
+    x *= 3266489917u;
+    x ^= x >> 16;
+    return (x & 0xffffffu) / (float) 0x1000000;
+}
+
+static uint32_t melodicPreviewParamSalt (float density, float swing, float humanize, float pocket,
+                                         float velocityMul, float fillRate, float complexity,
+                                         float ghostAmount, float temperature, float staccato)
+{
+    auto q = [] (float v) -> uint32_t { return (uint32_t) juce::roundToInt (v * 16384.0f); };
+    return q (density) ^ (q (swing) << 1) ^ (q (humanize) << 2) ^ (q (pocket) << 3)
+           ^ (q (velocityMul) << 4) ^ (q (fillRate) << 5) ^ (q (complexity) << 6)
+           ^ (q (ghostAmount) << 7) ^ (q (temperature) << 8) ^ (q (staccato) << 9);
+}
+} // namespace
+
 BassEngine::BassEngine()
     : rng (std::random_device{}())
 {
@@ -136,11 +160,54 @@ void BassEngine::generatePattern (bool seamlessPerform)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// rebuildGridPreview — pattern shown in UI; optional live fill-hold layer (Drums-style)
+// rebuildGridPreview — pattern shown in UI; live density preview + fill-hold (Drums-style)
 // ─────────────────────────────────────────────────────────────────────────────
 void BassEngine::rebuildGridPreview()
 {
     displayPattern = pattern;
+
+    const uint32_t ps = melodicPreviewParamSalt (density, swing, humanize, pocket, velocityMul,
+                                                 fillRate, complexity, ghostAmount, temperature, staccato);
+
+    auto cMod = [this] (int step)
+    {
+        if (complexity < 0.5f)
+            return 0.0f;
+        float extra = (complexity - 0.5f) * 0.35f;
+        const bool offBeat = (step % 2 != 0);
+        return extra * (offBeat ? 1.5f : 0.5f);
+    };
+
+    for (int s = 0; s < patternLen; ++s)
+    {
+        BassHit& out = displayPattern[(size_t) s];
+        const BassHit& src = pattern[(size_t) s];
+
+        if (src.active)
+        {
+            const int vel = juce::roundToInt ((float) src.velocity * velocityMul);
+            out.velocity = (uint8) juce::jlimit (1, 127, vel);
+            continue;
+        }
+
+        float probBase = BASS_NOTE_PROBS[style][s];
+        float prob = probBase + cMod (s);
+        prob *= density * 1.4f;
+        prob = jlimit (0.0f, 1.0f, prob);
+        const float thresh = std::pow (prob, 1.0f / temperature);
+        if (melodicPreviewDet01 (seed, s, ps ^ 0x10000u) >= thresh)
+            continue;
+
+        const int deg = BASS_PREFERRED_DEGREE[style][s];
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][s] * ghostAmount);
+        const bool ghost = melodicPreviewDet01 (seed, s, ps ^ 0x20000u ^ (uint32_t) s * 13u) < ghostT;
+
+        out.active = true;
+        out.degree = deg;
+        out.midiNote = degreeToMidiNote (deg, -1);
+        out.velocity = sampleVelocity (s, ghost, (s % 4 == 0));
+        out.isGhost = ghost;
+    }
 
     if (! fillHoldActive)
         return;
@@ -150,20 +217,27 @@ void BassEngine::rebuildGridPreview()
         float base = BASS_NOTE_PROBS[style][s];
         float prob = (0.12f + 0.55f * base) * density * (0.45f + 0.55f * fillRate);
         prob = jlimit (0.0f, 1.0f, prob);
-        if (! sampleProb (prob))
+        const float thresh = std::pow (prob, 1.0f / temperature);
+        if (melodicPreviewDet01 (seed, s, ps ^ 0x30000u ^ (uint32_t) s * 17u) >= thresh)
             continue;
 
         BassHit& h = displayPattern[(size_t) s];
-        int      deg = BASS_PREFERRED_DEGREE[style][s];
-        bool     ghost = sampleProb (BASS_GHOST_TENDENCY[style][s] * ghostAmount);
+        const int deg = BASS_PREFERRED_DEGREE[style][s];
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][s] * ghostAmount);
+        const bool ghost = melodicPreviewDet01 (seed, s, ps ^ 0x40000u ^ (uint32_t) s * 31u) < ghostT;
 
-        if (! h.active)
+        if (! pattern[(size_t) s].active)
         {
-            h.active    = true;
-            h.degree    = deg;
-            h.midiNote  = degreeToMidiNote (deg, -1);
-            h.velocity  = sampleVelocity (s, ghost, (s % 4 == 0));
-            h.isGhost   = ghost;
+            if (! h.active)
+            {
+                h.active = true;
+                h.degree = deg;
+                h.midiNote = degreeToMidiNote (deg, -1);
+                h.velocity = sampleVelocity (s, ghost, (s % 4 == 0));
+                h.isGhost = ghost;
+            }
+            else if (h.velocity < 110)
+                h.velocity = (uint8) jmin (127, (int) h.velocity + 28);
         }
         else if (h.velocity < 110)
         {

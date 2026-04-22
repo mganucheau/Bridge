@@ -2,7 +2,6 @@
 #include "BridgeProcessor.h"
 #include "BridgeInstrumentStripStyle.h"
 #include "BridgeInstrumentStyles.h"
-#include "BridgePanelLayout.h"
 #include "bass/BassStylePresets.h"
 #include "piano/PianoStylePresets.h"
 #include "guitar/GuitarStylePresets.h"
@@ -199,7 +198,7 @@ void InstrumentControlBar::resized()
     constexpr int kMsGap = 6;
     constexpr int kPadX = 16;
 
-    const int comboH = bridge::panelLayout::kInstrumentComboH;
+    const int comboH = bridge::instrumentLayout::kInstrumentComboH;
     const int comboY = (getHeight() - comboH) / 2;
     const int labelH = getHeight();
     const int msY = (getHeight() - kMsSide) / 2;

@@ -82,8 +82,6 @@ private:
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffbf5af2), PianoPreset::NUM_STEPS };
-    bool updatingLoopParams = false;
-    
 
     
 

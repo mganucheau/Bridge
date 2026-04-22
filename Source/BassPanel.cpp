@@ -78,7 +78,14 @@ void BassPianoRollComponent::paint (juce::Graphics& g)
     float rowH = full.getHeight() / (float) nRows;
     
     const juce::String names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-    
+
+    const int scaleIdx = proc.apvtsMain.getRawParameterValue ("scale") != nullptr
+                             ? (int) proc.apvtsMain.getRawParameterValue ("scale")->load()
+                             : 0;
+    const int rootPc = proc.apvtsMain.getRawParameterValue ("rootNote") != nullptr
+                           ? (int) proc.apvtsMain.getRawParameterValue ("rootNote")->load()
+                           : 0;
+
     // Draw keys
     for (int m = high; m >= low; --m)
     {
@@ -87,13 +94,18 @@ void BassPianoRollComponent::paint (juce::Graphics& g)
         auto row = juce::Rectangle<float> (full.getX(), y, full.getWidth(), rowH);
 
         bool bk = isBlackKey (m);
-        g.setColour (bk ? bridge::hig::systemBackground : bridge::hig::secondaryLabel);
+        const bool inScale = bridge::pitchClassInPresetScale (scaleIdx, rootPc, m % 12);
+        juce::Colour fill = bk ? bridge::hig::systemBackground : bridge::hig::secondaryLabel;
+        if (! inScale)
+            fill = fill.interpolatedWith (bridge::hig::tertiaryGroupedBackground, 0.55f);
+        g.setColour (fill);
         g.fillRect (row.reduced(0, 0.5f));
 
         g.setColour (bridge::hig::separatorOpaque.withAlpha (0.55f));
         g.drawHorizontalLine ((int)(y + rowH), full.getX(), full.getRight());
 
-        g.setColour (bk ? bridge::hig::tertiaryLabel : bridge::hig::secondaryLabel);
+        g.setColour ((bk ? bridge::hig::tertiaryLabel : bridge::hig::secondaryLabel)
+                         .interpolatedWith (bridge::hig::quaternaryLabel, inScale ? 0.0f : 0.65f));
         g.setFont (bridge::hig::uiFont (10.0f));
         g.drawText (names[m % 12] + juce::String (m / 12 - 1),
                     row.reduced(2.0f, 0.0f).removeFromRight(full.getWidth() * 0.7f),
@@ -331,6 +343,11 @@ BassPanel::BassPanel (BridgeProcessor& p)
     proc.apvtsBass.addParameterListener ("style", this);
     proc.apvtsBass.state.addListener (this);
     proc.apvtsMain.addParameterListener ("bassOn", this);
+    proc.apvtsMain.addParameterListener ("scale", this);
+    proc.apvtsMain.addParameterListener ("rootNote", this);
+    for (const char* id : { "density", "swing", "humanize", "pocket", "velocity", "fillRate", "complexity",
+                            "ghostAmount", "presence", "temperature", "staccato", "intensity" })
+        proc.apvtsBass.addParameterListener (id, this);
 
     addAndMakeVisible (pianoRoll);
     addAndMakeVisible (grid);
@@ -356,9 +373,17 @@ BassPanel::BassPanel (BridgeProcessor& p)
 BassPanel::~BassPanel()
 {
     proc.apvtsMain.removeParameterListener ("bassOn", this);
+    proc.apvtsMain.removeParameterListener ("scale", this);
+    proc.apvtsMain.removeParameterListener ("rootNote", this);
     proc.apvtsMain.removeParameterListener ("loopStart", this);
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
     proc.apvtsMain.removeParameterListener ("playbackLoopOn", this);
+    proc.apvtsBass.removeParameterListener ("tickerSpeed", this);
+    proc.apvtsBass.removeParameterListener ("style", this);
+    for (const char* id : { "density", "swing", "humanize", "pocket", "velocity", "fillRate", "complexity",
+                            "ghostAmount", "presence", "temperature", "staccato", "intensity" })
+        proc.apvtsBass.removeParameterListener (id, this);
+    proc.apvtsBass.state.removeListener (this);
 }
 
 void BassPanel::setLoopIntParameter (juce::AudioProcessorValueTreeState& apvts,
@@ -455,6 +480,7 @@ void BassPanel::parameterChanged (const juce::String& parameterID, float newValu
     {
         loopStrip.repaint();
         grid.repaint();
+        pianoRoll.repaint();
     }
     proc.rebuildBassGridPreview();
     triggerAsyncUpdate();

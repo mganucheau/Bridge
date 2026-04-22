@@ -82,8 +82,6 @@ private:
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xff0a84ff), GuitarPreset::NUM_STEPS };
-    bool updatingLoopParams = false;
-    
 
     
 

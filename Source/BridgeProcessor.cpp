@@ -112,6 +112,60 @@ static bool mainRowMidiOpen (juce::AudioProcessorValueTreeState& m,
         return b (soloId);
     return ! b (muteId);
 }
+
+/** Mirrors JUCE's deprecated AudioPlayHead::getCurrentPosition using getPosition(). */
+static bool tryGetTransportPosition (juce::AudioPlayHead* playhead,
+                                      juce::AudioPlayHead::CurrentPositionInfo& result)
+{
+    if (playhead == nullptr)
+        return false;
+
+    if (const auto pos = playhead->getPosition())
+    {
+        result.resetToDefault();
+
+        if (const auto sig = pos->getTimeSignature())
+        {
+            result.timeSigNumerator   = sig->numerator;
+            result.timeSigDenominator = sig->denominator;
+        }
+
+        if (const auto loop = pos->getLoopPoints())
+        {
+            result.ppqLoopStart = loop->ppqStart;
+            result.ppqLoopEnd   = loop->ppqEnd;
+        }
+
+        if (const auto frame = pos->getFrameRate())
+            result.frameRate = *frame;
+
+        if (const auto timeInSeconds = pos->getTimeInSeconds())
+            result.timeInSeconds = *timeInSeconds;
+
+        if (const auto lastBarStartPpq = pos->getPpqPositionOfLastBarStart())
+            result.ppqPositionOfLastBarStart = *lastBarStartPpq;
+
+        if (const auto ppqPosition = pos->getPpqPosition())
+            result.ppqPosition = *ppqPosition;
+
+        if (const auto originTime = pos->getEditOriginTime())
+            result.editOriginTime = *originTime;
+
+        if (const auto bpm = pos->getBpm())
+            result.bpm = *bpm;
+
+        if (const auto timeInSamples = pos->getTimeInSamples())
+            result.timeInSamples = *timeInSamples;
+
+        result.isPlaying   = pos->getIsPlaying();
+        result.isRecording = pos->getIsRecording();
+        result.isLooping   = pos->getIsLooping();
+
+        return true;
+    }
+
+    return false;
+}
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLayout()
@@ -1685,9 +1739,7 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 
     auto* playhead = getPlayHead();
     juce::AudioPlayHead::CurrentPositionInfo pos {};
-    const bool transportRunning = playhead != nullptr
-                                  && playhead->getCurrentPosition (pos)
-                                  && pos.isPlaying;
+    const bool transportRunning = tryGetTransportPosition (playhead, pos) && pos.isPlaying;
 
     if (! transportRunning)
     {

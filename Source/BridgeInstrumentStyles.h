@@ -19,6 +19,8 @@ namespace bridge::instrumentLayout
 // ── Legacy constants (still referenced by older code paths) ────────────────
 /** Same height as plugin header bar (`kHeaderH`) — two menu bars align. */
 inline constexpr int kDropdownH   = 45;
+/** Strip combo vertical size (InstrumentControlBar, transport combos). */
+inline constexpr int kInstrumentComboH = 32;
 inline constexpr int kKnobRowH    = 86;
 inline constexpr int kDropdownRow = 34;
 inline constexpr int kLoopRowH    = 100;

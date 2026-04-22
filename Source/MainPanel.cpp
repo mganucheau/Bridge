@@ -4,6 +4,7 @@
 #include "BridgePanelLayout.h"
 #include "BridgeInstrumentStripStyle.h"
 #include "BridgeInstrumentStyles.h"
+#include "BridgeScaleHighlight.h"
 
 MainPanel::MainPanel (BridgeProcessor& p)
     : proc (p),
@@ -15,7 +16,7 @@ MainPanel::MainPanel (BridgeProcessor& p)
                       p.bassEngine.setFillHoldActive(active); 
                       p.pianoEngine.setFillHoldActive(active); 
                       p.guitarEngine.setFillHoldActive(active); 
-                  }) // Leader Fill Hold (macro?) // TODO implementation
+                  })
 {
     setLookAndFeel (&laf);
 
@@ -53,6 +54,9 @@ MainPanel::MainPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("leaderTabOn", this);
     for (const char* id : { "mainSoloDrums", "mainSoloBass", "mainSoloPiano", "mainSoloGuitar" })
         proc.apvtsMain.addParameterListener (id, this);
+    for (const char* id : { "presence", "density", "swing", "humanize", "pocket", "velocity", "fillRate",
+                            "complexity", "ghostAmount", "leaderStyle", "perform", "scale", "rootNote" })
+        proc.apvtsMain.addParameterListener (id, this);
 
     startTimerHz (30);
     syncSoloButtonColours();
@@ -64,6 +68,9 @@ MainPanel::~MainPanel()
 {
     proc.apvtsMain.removeParameterListener ("leaderTabOn", this);
     for (const char* id : { "mainSoloDrums", "mainSoloBass", "mainSoloPiano", "mainSoloGuitar" })
+        proc.apvtsMain.removeParameterListener (id, this);
+    for (const char* id : { "presence", "density", "swing", "humanize", "pocket", "velocity", "fillRate",
+                            "complexity", "ghostAmount", "leaderStyle", "perform", "scale", "rootNote" })
         proc.apvtsMain.removeParameterListener (id, this);
     proc.apvtsMain.state.removeListener (this);
     setLookAndFeel (nullptr);
@@ -79,6 +86,21 @@ void MainPanel::parameterChanged (const juce::String& parameterID, float newValu
     {
         syncPageSoloToggle();
         syncSoloButtonColours();
+    }
+    else if (parameterID == "presence" || parameterID == "density" || parameterID == "swing"
+             || parameterID == "humanize" || parameterID == "pocket" || parameterID == "velocity"
+             || parameterID == "fillRate" || parameterID == "complexity" || parameterID == "ghostAmount"
+             || parameterID == "leaderStyle" || parameterID == "perform" || parameterID == "scale"
+             || parameterID == "rootNote")
+    {
+        proc.rebuildDrumsGridPreview();
+        proc.rebuildBassGridPreview();
+        proc.rebuildPianoGridPreview();
+        proc.rebuildGuitarGridPreview();
+        if (drumsRow.preview != nullptr) drumsRow.preview->repaint();
+        if (bassRow.preview != nullptr) bassRow.preview->repaint();
+        if (pianoRow.preview != nullptr) pianoRow.preview->repaint();
+        if (guitarRow.preview != nullptr) guitarRow.preview->repaint();
     }
 }
 
@@ -342,6 +364,12 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
         }
         else
         {
+            const int scaleIdx = proc.apvtsMain.getRawParameterValue ("scale") != nullptr
+                                     ? (int) proc.apvtsMain.getRawParameterValue ("scale")->load()
+                                     : 0;
+            const int rootPc = proc.apvtsMain.getRawParameterValue ("rootNote") != nullptr
+                                   ? (int) proc.apvtsMain.getRawParameterValue ("rootNote")->load()
+                                   : 0;
             auto paintMiniKeys = [&] (auto& engine)
             {
                 int low = 60, high = 72;
@@ -354,7 +382,11 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
                     auto row = strip.withHeight (rowH).withY (strip.getY() + (float) r * rowH);
                     const bool bk = (midi % 12 == 1 || midi % 12 == 3 || midi % 12 == 6
                                     || midi % 12 == 8 || midi % 12 == 10);
-                    g.setColour (bk ? bridge::hig::systemBackground : bridge::hig::secondaryLabel);
+                    const bool inScale = bridge::pitchClassInPresetScale (scaleIdx, rootPc, midi % 12);
+                    juce::Colour fill = bk ? bridge::hig::systemBackground : bridge::hig::secondaryLabel;
+                    if (! inScale)
+                        fill = fill.interpolatedWith (bridge::hig::tertiaryGroupedBackground, 0.55f);
+                    g.setColour (fill);
                     g.fillRect (row.reduced (0.0f, 0.5f));
                 }
                 g.setColour (bridge::hig::separatorOpaque.withAlpha (0.35f));
@@ -376,7 +408,7 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
     if (kind == Kind::drums)
     {
         const float cellH = gridRect.getHeight() / (float) NUM_DRUMS;
-        const auto& pat = proc.drumEngine.getPattern();
+        const auto& pat = proc.getPatternForGrid();
 
         for (int i = 1; i < NUM_DRUMS; ++i)
             g.drawHorizontalLine (juce::roundToInt (gridRect.getY() + (float) i * cellH),

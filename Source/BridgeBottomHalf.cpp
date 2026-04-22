@@ -100,7 +100,7 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
     addAndMakeVisible (knobLoopEnd);
 
     {
-        const float iconS = 20.0f;
+        const float iconS = 15.0f;
         auto loopBounds = juce::Rectangle<float> (0.0f, 0.0f, iconS, iconS);
         juce::Path loopPath = bridge::icons::lucideRepeatFilled (loopBounds);
         loopPlaybackButton.setShape (loopPath, true, true, false);
@@ -119,7 +119,7 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
     }
 
     {
-        const float iconS = 20.0f;
+        const float iconS = 15.0f;
         auto syncBounds = juce::Rectangle<float> (0.0f, 0.0f, iconS, iconS);
         juce::Path syncGlyph = bridge::icons::lucideLockFilled (syncBounds);
         syncIconButton.setShape (syncGlyph, true, true, false);
@@ -190,7 +190,7 @@ void BridgeBottomHalf::resized()
     constexpr int kTopGap = 12;
     constexpr int kMargin = 16;
     constexpr int kPadXY = 160;
-    constexpr int kToggleSide = 20;
+    constexpr int kToggleSide = 15;
     constexpr int kToggleGap = 3;   // between loop and lock (vertical)
     constexpr int kToggleStackH = kToggleSide + kToggleGap + kToggleSide;
     constexpr int kKnobToToggleGap = 5;

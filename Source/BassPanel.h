@@ -81,8 +81,6 @@ private:
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xff5ed4c4), BassPreset::NUM_STEPS };
-    bool updatingLoopParams = false;
-    
 
     BassPianoRollComponent pianoRoll { proc };
     BassGridComponent grid { proc };

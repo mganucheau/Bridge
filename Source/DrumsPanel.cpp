@@ -37,6 +37,14 @@ int DrumGridComponent::visualRowToDrum (int visualRow)
     return NUM_DRUMS - 1 - visualRow;
 }
 
+void DrumGridComponent::syncGeometryFromBounds()
+{
+    const auto full = getLocalBounds().toFloat();
+    if (full.getWidth() < 1.0f || full.getHeight() < 1.0f)
+        return;
+    computeDrumGridGeometry (full, geomLaneX, geomLaneW, geomOriginX, geomOriginY, geomCellW, geomRowH);
+}
+
 DrumGridComponent::DrumGridComponent (BridgeProcessor& p)
     : proc (p)
 {
@@ -92,18 +100,18 @@ void DrumGridComponent::paint (juce::Graphics& g)
     const int le0 = loopEnd - 1;
 
     auto full = getLocalBounds().toFloat();
+    if (geomLaneW <= 0.0f)
+        syncGeometryFromBounds();
+
     g.setColour (bridge::colors::cardSurface());
     g.fillRect (full);
     g.setColour (outline.withAlpha (0.35f));
     g.drawRect (full.reduced (0.5f), 1.0f);
 
-    float laneX = 0, laneW = 0, originX = 0, originY = 0, cellW = 0, rowH = 0;
-    computeDrumGridGeometry (full, laneX, laneW, originX, originY, cellW, rowH);
-
     g.setColour (bridge::hig::tertiaryGroupedBackground);
-    g.fillRect (laneX, full.getY(), laneW, full.getHeight());
+    g.fillRect (geomLaneX, full.getY(), geomLaneW, full.getHeight());
     g.setColour (bridge::hig::separatorOpaque.withAlpha (0.5f));
-    g.drawVerticalLine ((int) originX, (int) full.getY(), (int) full.getBottom());
+    g.drawVerticalLine ((int) geomOriginX, (int) full.getY(), (int) full.getBottom());
 
     const float pad = 2.0f;
 
@@ -111,10 +119,10 @@ void DrumGridComponent::paint (juce::Graphics& g)
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
         const int drum = visualRowToDrum (visualRow);
-        const float cy = originY + (float) visualRow * rowH;
-        const int btn = juce::jlimit (12, 17, (int) (rowH * 0.42f));
+        const float cy = geomOriginY + (float) visualRow * geomRowH;
+        const int btn = juce::jlimit (12, 17, (int) (geomRowH * 0.42f));
         const int pairW = btn * 2 + 4;
-        auto laneRow = juce::Rectangle<float> (laneX + 3.0f, cy, laneW - 6.0f, rowH);
+        auto laneRow = juce::Rectangle<float> (geomLaneX + 3.0f, cy, geomLaneW - 6.0f, geomRowH);
         auto nameArea = laneRow.removeFromLeft (juce::jmax (18.0f, laneRow.getWidth() - (float) pairW));
         g.setColour (juce::Colours::white);
         g.drawText (DRUM_NAMES[drum], nameArea.toNearestInt(), juce::Justification::centredLeft, true);
@@ -123,7 +131,7 @@ void DrumGridComponent::paint (juce::Graphics& g)
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
         const int drum = visualRowToDrum (visualRow);
-        float cy = originY + (float) visualRow * rowH;
+        float cy = geomOriginY + (float) visualRow * geomRowH;
 
         const bool muted = proc.apvtsDrums.getRawParameterValue ("mute_" + juce::String (drum))->load() > 0.5f;
         const bool soloed = proc.apvtsDrums.getRawParameterValue ("solo_" + juce::String (drum))->load() > 0.5f;
@@ -135,9 +143,9 @@ void DrumGridComponent::paint (juce::Graphics& g)
 
         for (int step = 0; step < NUM_STEPS; ++step)
         {
-            float cx = originX + (float) step * cellW + pad;
+            float cx = geomOriginX + (float) step * geomCellW + pad;
             auto  cell = juce::Rectangle<float> (cx, cy + pad,
-                                                 cellW - pad * 2.0f, rowH - pad * 2.0f);
+                                                 geomCellW - pad * 2.0f, geomRowH - pad * 2.0f);
 
             bool inPattern = (step < patLen);
             bool inLoop = inPattern && (step >= ls0 && step <= le0);
@@ -217,12 +225,12 @@ void DrumGridComponent::paint (juce::Graphics& g)
 
     if (drumsOn && currentStep >= 0 && currentStep < NUM_STEPS)
     {
-        float cx = originX + (float) currentStep * cellW;
+        float cx = geomOriginX + (float) currentStep * geomCellW;
         g.setColour (primary().withAlpha (0.08f));
-        g.fillRect  (cx, originY, cellW, rowH * (float) NUM_DRUMS);
+        g.fillRect  (cx, geomOriginY, geomCellW, geomRowH * (float) NUM_DRUMS);
 
         g.setColour (primary().withAlpha (0.85f));
-        g.fillRect  (cx + pad, originY, cellW - pad * 2.0f, 2.0f);
+        g.fillRect  (cx + pad, geomOriginY, geomCellW - pad * 2.0f, 2.0f);
     }
 }
 
@@ -234,14 +242,13 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
 
     int patLen = proc.drumEngine.getPatternLen();
 
-    auto full = getLocalBounds().toFloat();
-    float laneX = 0, laneW = 0, originX = 0, originY = 0, cellW = 0, rowH = 0;
-    computeDrumGridGeometry (full, laneX, laneW, originX, originY, cellW, rowH);
+    if (geomLaneW <= 0.0f)
+        syncGeometryFromBounds();
 
-    if (e.position.x < originX) return;
+    if (e.position.x < geomOriginX) return;
 
-    int step = (int) ((e.position.x - originX) / cellW);
-    int visualRow = (int) ((e.position.y - originY) / rowH);
+    int step = (int) ((e.position.x - geomOriginX) / geomCellW);
+    int visualRow = (int) ((e.position.y - geomOriginY) / geomRowH);
     int drum = visualRowToDrum (visualRow);
 
     if (step < 0 || step >= patLen || visualRow < 0 || visualRow >= NUM_DRUMS
@@ -256,19 +263,17 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
 
 void DrumGridComponent::resized()
 {
-    auto full = getLocalBounds().toFloat();
-    float laneX = 0, laneW = 0, originX = 0, originY = 0, cellW = 0, rowH = 0;
-    computeDrumGridGeometry (full, laneX, laneW, originX, originY, cellW, rowH);
+    syncGeometryFromBounds();
 
-    const int rowHi = juce::jmax (1, (int) rowH);
+    const int rowHi = juce::jmax (1, (int) geomRowH);
     const int btn = juce::jlimit (12, 17, rowHi * 7 / 16);
     const int pairGap = 4;
 
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
         const int drum = visualRowToDrum (visualRow);
-        const int y = (int) (originY + (float) visualRow * rowH);
-        auto rowR = juce::Rectangle<int> ((int) laneX, y, (int) laneW, rowHi).reduced (3, 1);
+        const int y = (int) (geomOriginY + (float) visualRow * geomRowH);
+        auto rowR = juce::Rectangle<int> ((int) geomLaneX, y, (int) geomLaneW, rowHi).reduced (3, 1);
         auto pair = rowR.removeFromRight (btn * 2 + pairGap);
         auto muteR = pair.removeFromLeft (btn).withSizeKeepingCentre (btn, btn);
         pair.removeFromLeft (pairGap);

@@ -23,6 +23,9 @@ private:
     BridgeProcessor& proc;
     int currentStep = -1;
 
+    float geomLaneX = 0.0f, geomLaneW = 0.0f, geomOriginX = 0.0f, geomOriginY = 0.0f, geomCellW = 0.0f, geomRowH = 0.0f;
+    void syncGeometryFromBounds();
+
     juce::OwnedArray<juce::TextButton> muteButtons;
     juce::OwnedArray<juce::TextButton> soloButtons;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttachments;
@@ -62,9 +65,6 @@ private:
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffff7f5c), NUM_STEPS };
     DrumGridComponent drumGrid;
 
-    bool updatingLoopParams = false;
-    int  lockedLoopWidth    = NUM_STEPS;
-    
     struct StepTimer : public juce::Timer
     {
         DrumsPanel& panel;
@@ -74,7 +74,6 @@ private:
 
     void updateStepAnimation();
     int  lastAnimStep = -1;
-    uint32_t performBlinkTick = 0;
 
     void applyDrumsPageState();
 

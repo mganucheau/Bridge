@@ -20,15 +20,15 @@ static void setupTransportBtn (juce::ShapeButton& b)
     b.setOutline (juce::Colours::white.withAlpha (0.2f), 1.0f);
 }
 
-/** Gear icon path normalized to ~32×32, scaled to 18px in 36×36 button. */
-static juce::Path makeGearPath18in36()
+/** Gear icon path for 18×18 button (half of former 36px control). */
+static juce::Path makeGearPathForSmallButton()
 {
     juce::Path p;
     p.addStar (juce::Point<float> (16.0f, 16.0f), 8, 5.5f, 8.5f, 0.0f);
     p.addEllipse (10.0f, 10.0f, 12.0f, 12.0f);
     p.setUsingNonZeroWinding (false);
-    const float s = 18.0f / 32.0f;
-    p.applyTransform (juce::AffineTransform::scale (s).translated (9.0f, 9.0f));
+    const float s = 9.0f / 32.0f;
+    p.applyTransform (juce::AffineTransform::scale (s).translated (4.5f, 4.5f));
     return p;
 }
 } // namespace
@@ -79,7 +79,7 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
     addAndMakeVisible (bpmUnitLabel);
 
     juce::Path playPath;
-    playPath.addTriangle (12.0f, 9.0f, 12.0f, 23.0f, 24.0f, 16.0f);
+    playPath.addTriangle (6.0f, 4.5f, 6.0f, 11.5f, 12.0f, 8.0f);
     playButton.setShape (playPath, true, true, false);
     playButton.setClickingTogglesState (true);
     playButton.shouldUseOnColours (true);
@@ -92,7 +92,7 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
     playButton.setLookAndFeel (&chromeLaf);
 
     juce::Path stopPath;
-    stopPath.addRectangle (12.0f, 12.0f, 10.0f, 10.0f);
+    stopPath.addRectangle (6.0f, 6.0f, 5.0f, 5.0f);
     stopButton.setShape (stopPath, true, true, false);
     stopButton.setClickingTogglesState (false);
     stopButton.setName ("bridgeStopBtn");
@@ -146,7 +146,7 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
     addAndMakeVisible (*tabRail);
 
     {
-        juce::Path gearPath = makeGearPath18in36();
+        juce::Path gearPath = makeGearPathForSmallButton();
         gearButton.setShape (gearPath, true, true, false);
     }
     gearButton.setColours (juce::Colours::white, juce::Colours::white, juce::Colours::white);
@@ -210,7 +210,8 @@ void BridgeHeaderBar::resized()
     const int hostW = juce::jmax (88, (int) std::ceil (ga.getBoundingBox (0, ga.getNumGlyphs(), true).getWidth()) + 16);
 
     constexpr int transportGap = kTransportGap;
-    const int centerW = kBpmFieldW + transportGap + kBpmLabelW + transportGap + 32 + transportGap + 32
+    const int trBtn = kTransportBtnSide;
+    const int centerW = kBpmFieldW + transportGap + kBpmLabelW + transportGap + trBtn + transportGap + trBtn
                         + transportGap + kDivComboW + transportGap + hostW;
 
     const int tabsW = BridgeInstrumentTabRail::contentWidth();
@@ -228,8 +229,8 @@ void BridgeHeaderBar::resized()
         row.removeFromLeft (transportGap);
         bpmUnitLabel.setBounds (row.removeFromLeft (kBpmLabelW).withHeight (kCtrlRowH));
         row.removeFromLeft (transportGap);
-        playButton.setBounds (row.removeFromLeft (32));
-        stopButton.setBounds (row.removeFromLeft (32));
+        playButton.setBounds (row.removeFromLeft (trBtn));
+        stopButton.setBounds (row.removeFromLeft (trBtn));
         row.removeFromLeft (transportGap);
         timeDivisionBox.setBounds (row.removeFromLeft (kDivComboW));
         row.removeFromLeft (transportGap);
