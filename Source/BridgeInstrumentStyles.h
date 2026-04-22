@@ -17,7 +17,8 @@ inline int bridgeMelodicEngineStyleIndex (int unifiedStyleIndex)
 namespace bridge::instrumentLayout
 {
 // ── Legacy constants (still referenced by older code paths) ────────────────
-inline constexpr int kDropdownH   = 28;
+/** Same height as plugin header bar (`kHeaderH`) — two menu bars align. */
+inline constexpr int kDropdownH   = 45;
 inline constexpr int kKnobRowH    = 86;
 inline constexpr int kDropdownRow = 34;
 inline constexpr int kLoopRowH    = 100;
@@ -41,17 +42,18 @@ inline constexpr int kPerformBlinkTicks = 20;
 //   • bottom row  (knobs card on the left + loop/actions card on the right)
 inline constexpr int kWindowW          = 960;
 inline constexpr int kWindowH          = 740;
-inline constexpr int kHeaderH          = 72;      // BRIDGE logo + transport + tab strip
+inline constexpr int kHeaderH          = 54;      // BRIDGE logo + transport + tab strip
 /** Transport + tab chips share one vertical size. */
-inline constexpr int kHeaderControlH   = 26;
-inline constexpr int kPanelEdge        = 14;      // outer margin inside a panel
+inline constexpr int kHeaderControlH   = 38;
+/** HIG-style 16 pt margins on primary content. */
+inline constexpr int kPanelEdge        = 16;
 
-inline constexpr int kMainAreaH        = 374;     // piano roll / drum grid / mixer (322 + 42 + 10 merged)
-inline constexpr int kBottomCardH      = 236;     // knobs + loop/actions cards
-inline constexpr int kSectionGap       = 10;      // vertical space between stacked sections
-inline constexpr int kCardRadius       = 12;
+inline constexpr int kMainAreaH        = 313;     // pattern / mixer (reduced when strip matched header height)
+inline constexpr int kBottomCardH      = 288;     // four columns: knobs / tension XY / feel XY / loop+actions
+inline constexpr int kSectionGap       = 12;      // gap between main grid and bottom strip
+inline constexpr int kCardRadius       = 0;
 inline constexpr int kCardGap          = 10;      // horizontal space between knobs card and loop card
-inline constexpr int kLoopCardW        = 264;     // width of the right-hand Looping + Actions card
+inline constexpr int kLoopCardW        = 0;       // deprecated (full-width bottom strip)
 inline constexpr int kSectionHeaderH   = 16;      // "GROOVE" / "EXPRESSION" / "LOOPING" / "ACTIONS" label
 inline constexpr int kBigActionBtnH    = 52;      // GENERATE / FILL / PERFORM squares in the loop card
 inline constexpr int kSyncBtnSide      = 34;      // sync toggle between Start and End knobs

@@ -1,9 +1,14 @@
 #include "BridgeBottomHalf.h"
-#include "BridgeLoopRangeStrip.h"
+#include "BridgeAppleHIG.h"
+#include "BridgeIconPaths.h"
 #include "BridgePanelLayout.h"
 
 LabelledKnob::LabelledKnob (const juce::String& paramId, const juce::String& name,
-                            juce::AudioProcessorValueTreeState& apvts, BridgeLookAndFeel::KnobStyle style, juce::Colour accent)
+                            juce::AudioProcessorValueTreeState& apvts, BridgeLookAndFeel::KnobStyle style, juce::Colour accent,
+                            int rotaryDiameterIn,
+                            int labelBandHeightIn)
+    : rotaryDiameter (juce::jlimit (28, 72, rotaryDiameterIn)),
+      labelBandHeight (juce::jlimit (10, 24, labelBandHeightIn))
 {
     slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
     slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -12,8 +17,8 @@ LabelledKnob::LabelledKnob (const juce::String& paramId, const juce::String& nam
 
     label.setText (name, juce::dontSendNotification);
     label.setJustificationType (juce::Justification::centredTop);
-    label.setColour (juce::Label::textColourId, bridge::colors::textDim);
-    label.setFont (juce::Font (juce::FontOptions().withHeight (10.0f).withStyle ("SemiBold")));
+    label.setColour (juce::Label::textColourId, bridge::colors::textDim());
+    label.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
     addAndMakeVisible (label);
 
     auto* param = apvts.getParameter (paramId);
@@ -24,206 +29,275 @@ LabelledKnob::LabelledKnob (const juce::String& paramId, const juce::String& nam
 void LabelledKnob::resized()
 {
     auto b = getLocalBounds();
-    label.setBounds (b.removeFromBottom (16));
-    slider.setBounds (b.withSizeKeepingCentre (juce::jmin (b.getWidth(), b.getHeight()), juce::jmin (b.getWidth(), b.getHeight())));
+    label.setBounds (b.removeFromBottom (labelBandHeight));
+    const int side = rotaryDiameter;
+    slider.setBounds (b.withSizeKeepingCentre (side, side));
 }
 
-// ----------------------------------------------------
+namespace
+{
+static void setupSectionLabel (juce::Label& l, const juce::String& t)
+{
+    l.setText (t, juce::dontSendNotification);
+    l.setFont (bridge::hig::uiFont (10.0f, "Bold"));
+    l.setColour (juce::Label::textColourId, bridge::colors::textSecondary());
+    l.setJustificationType (juce::Justification::centredLeft);
+}
+}
 
-BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& apvtsToUse,
+BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvtsToUse,
+                                    juce::AudioProcessorValueTreeState& mainApvtsToUse,
                                     BridgeLookAndFeel& laf,
                                     juce::Colour groupAccent,
                                     std::function<void()> onGenerate,
                                     std::function<void(bool)> onFillHold)
-    : apvts (apvtsToUse),
-      knobDensity ("density", "DENSITY", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobSwing ("swing", "SWING", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobHumanize ("humanize", "HUMANIZE", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobPocket ("pocket", "POCKET", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobVelocity ("velocity", "VELOCITY", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobFillRate ("fillRate", "FILL RATE", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobComplexity ("complexity", "COMPLEXITY", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobGhost ("ghostAmount", "GHOST", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobPresence ("presence", "PRESENCE", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobLoopStart ("loopStart", "START", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobLoopEnd ("loopEnd", "END", apvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+    : instApvts (instApvtsToUse),
+      mainApvts (mainApvtsToUse),
+      knobDensity ("density", "DENSITY", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobSwing ("swing", "SWING", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobHumanize ("humanize", "HUMANIZE", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobPocket ("pocket", "POCKET", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobVelocity ("velocity", "VELOCITY", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobFillRate ("fillRate", "FILL RATE", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobComplexity ("complexity", "COMPLEXITY", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobPresence ("presence", "PRESENCE", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      xyTension (std::make_unique<BridgeXYPad> (instApvts, "complexity", "density", groupAccent)),
+      xyFeel (std::make_unique<BridgeXYPad> (instApvts, "humanize", "swing", groupAccent)),
+      knobLoopStart ("loopStart", "START", mainApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent, 48, 10),
+      knobLoopEnd ("loopEnd", "END", mainApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent, 48, 10),
       fillHoldCallback (onFillHold)
 {
     setLookAndFeel (&laf);
 
-    auto setupHeader = [&] (juce::Label& l, const juce::String& text) {
-        l.setText (text, juce::dontSendNotification);
-        l.setFont (juce::Font (juce::FontOptions().withHeight (11.0f).withStyle ("Semibold")));
-        l.setColour (juce::Label::textColourId, bridge::colors::textDim);
-        addAndMakeVisible (l);
-    };
+    setupSectionLabel (grooveLabel, "GROOVE");
+    setupSectionLabel (expressionLabel, "EXPRESSION");
+    setupSectionLabel (tensionLabel, "TENSION");
+    setupSectionLabel (feelLabel, "FEEL");
+    setupSectionLabel (selectorsLabel, "SELECTORS");
+    setupSectionLabel (actionsLabel, "ACTIONS");
 
-    setupHeader (grooveLabel, "I  GROOVE");
-    setupHeader (expressionLabel, "I  EXPRESSION");
-    setupHeader (loopingLabel, "I  LOOPING");
-    setupHeader (actionsLabel, "I  ACTIONS");
-
-    // Add knobs to view
+    addAndMakeVisible (grooveLabel);
+    addAndMakeVisible (expressionLabel);
+    addAndMakeVisible (tensionLabel);
+    addAndMakeVisible (feelLabel);
+    addAndMakeVisible (selectorsLabel);
+    addAndMakeVisible (actionsLabel);
     addAndMakeVisible (knobDensity);
     addAndMakeVisible (knobSwing);
     addAndMakeVisible (knobHumanize);
     addAndMakeVisible (knobPocket);
     addAndMakeVisible (knobVelocity);
-    
     addAndMakeVisible (knobFillRate);
     addAndMakeVisible (knobComplexity);
-    addAndMakeVisible (knobGhost);
     addAndMakeVisible (knobPresence);
+
+    if (xyTension != nullptr)
+        addAndMakeVisible (*xyTension);
+    if (xyFeel != nullptr)
+        addAndMakeVisible (*xyFeel);
 
     addAndMakeVisible (knobLoopStart);
     addAndMakeVisible (knobLoopEnd);
 
-    loopRangeStrip = std::make_unique<BridgeLoopRangeStrip> (apvts, groupAccent, 16);
-    addAndMakeVisible (*loopRangeStrip);
+    {
+        const float iconS = 20.0f;
+        auto loopBounds = juce::Rectangle<float> (0.0f, 0.0f, iconS, iconS);
+        juce::Path loopPath = bridge::icons::lucideRepeatFilled (loopBounds);
+        loopPlaybackButton.setShape (loopPath, true, true, false);
+        loopPlaybackButton.setClickingTogglesState (true);
+        loopPlaybackButton.shouldUseOnColours (true);
+        loopPlaybackButton.setColours (bridge::colors::knobTrack(), bridge::colors::knobTrack(), bridge::colors::knobTrack());
+        loopPlaybackButton.setOnColours (groupAccent.withAlpha (0.75f), groupAccent.brighter (0.1f), groupAccent);
+        loopPlaybackButton.setOutline (bridge::colors::cardOutline(), 1.0f);
+        loopPlaybackButton.setTooltip ("Playback loop (wrap transport in selection)");
+        loopPlaybackButton.setWantsKeyboardFocus (false);
+        loopPlaybackButton.setMouseClickGrabsKeyboardFocus (false);
+        if (mainApvts.getParameter ("playbackLoopOn") != nullptr)
+            loopPlaybackAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                mainApvts, "playbackLoopOn", loopPlaybackButton);
+        addAndMakeVisible (loopPlaybackButton);
+    }
 
-    juce::Path syncGlyph;
-    syncGlyph.addEllipse (3.0f, 3.0f, 18.0f, 18.0f);
-    syncGlyph.addEllipse (8.0f, 8.0f, 8.0f, 8.0f);
-    syncGlyph.setUsingNonZeroWinding (false);
-    syncIconButton.setShape (syncGlyph, true, true, false);
+    {
+        const float iconS = 20.0f;
+        auto syncBounds = juce::Rectangle<float> (0.0f, 0.0f, iconS, iconS);
+        juce::Path syncGlyph = bridge::icons::lucideLockFilled (syncBounds);
+        syncIconButton.setShape (syncGlyph, true, true, false);
+    }
     syncIconButton.setClickingTogglesState (true);
     syncIconButton.shouldUseOnColours (true);
-    syncIconButton.setColours (bridge::colors::knobTrack, bridge::colors::knobTrack, bridge::colors::knobTrack);
+    syncIconButton.setColours (bridge::colors::knobTrack(), bridge::colors::knobTrack(), bridge::colors::knobTrack());
     syncIconButton.setOnColours (groupAccent.withAlpha (0.75f), groupAccent.brighter (0.1f), groupAccent);
-    syncIconButton.setOutline (juce::Colour (0xff9e99a8), 1.0f);
-    syncIconButton.setTooltip ("Loop sync (loop width lock when on)");
-    if (apvts.getParameter ("loopOn") != nullptr)
-        syncAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, "loopOn", syncIconButton);
+    syncIconButton.setOutline (bridge::colors::cardOutline(), 1.0f);
+    syncIconButton.setTooltip ("Lock loop width: moving start or end keeps the same span");
+    syncIconButton.setWantsKeyboardFocus (false);
+    syncIconButton.setMouseClickGrabsKeyboardFocus (false);
+    if (mainApvts.getParameter ("loopSpanLock") != nullptr)
+        syncAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            mainApvts, "loopSpanLock", syncIconButton);
     addAndMakeVisible (syncIconButton);
 
-    apvts.addParameterListener ("loopStart", this);
-    apvts.addParameterListener ("loopEnd", this);
-
-    // Action buttons
     generateButton.onClick = onGenerate;
     fillButton.addMouseListener (&fillListener, false);
     performButton.setClickingTogglesState (true);
-    
-    // Style actions like pads
+
     auto setupAction = [&] (juce::TextButton& btn) {
-        btn.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack);
-        btn.setColour (juce::TextButton::textColourOffId, bridge::colors::textDim);
-        addAndMakeVisible(btn);
+        btn.setConnectedEdges (0);
+        btn.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack());
+        btn.setColour (juce::TextButton::textColourOffId, bridge::colors::textDim());
+        addAndMakeVisible (btn);
     };
     setupAction (generateButton);
     setupAction (fillButton);
     setupAction (performButton);
-    
-    performButton.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack);
+
     performButton.setColour (juce::TextButton::buttonOnColourId, groupAccent.withAlpha (0.4f));
     performButton.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
-    if (apvts.getParameter ("perform") != nullptr)
-        performAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (apvts, "perform", performButton);
+    if (instApvts.getParameter ("perform") != nullptr)
+        performAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (instApvts, "perform", performButton);
 }
 
 BridgeBottomHalf::~BridgeBottomHalf()
 {
-    apvts.removeParameterListener ("loopStart", this);
-    apvts.removeParameterListener ("loopEnd", this);
     setLookAndFeel (nullptr);
-}
-
-void BridgeBottomHalf::parameterChanged (const juce::String& parameterID, float newValue)
-{
-    juce::ignoreUnused (newValue);
-    if (parameterID == "loopStart" || parameterID == "loopEnd")
-        if (loopRangeStrip != nullptr)
-            loopRangeStrip->repaint();
 }
 
 void BridgeBottomHalf::paint (juce::Graphics& g)
 {
-    using namespace bridge::colors;
-    
-    auto bounds = getLocalBounds();
-    auto shell = bridge::panelLayout::splitInstrumentContent (bounds, 0); // No top trim inside the component itself
+    auto rf = getLocalBounds().toFloat();
+    g.setColour (bridge::colors::cardSurface());
+    g.fillRect (rf);
+    g.setColour (bridge::colors::cardOutline().withAlpha (0.35f));
+    g.drawRect (rf.reduced (0.5f), 1.0f);
 
-    // Draw generic cards
-    auto drawCard = [&] (juce::Rectangle<int> r) {
-        g.setColour (cardSurface);
-        g.fillRoundedRectangle (r.toFloat(), bridge::instrumentLayout::kCardRadius);
-        g.setColour (cardOutline.withAlpha (0.35f));
-        g.drawRoundedRectangle (r.toFloat().reduced(0.5f), bridge::instrumentLayout::kCardRadius, 1.0f);
-    };
-
-    drawCard (shell.knobsCard);
-    drawCard (shell.loopActionsCard);
-    
-    // Subtle separator line in Knobs Card
-    g.setColour (cardOutline.withAlpha(0.6f));
-    auto sep = shell.knobsCard.withTrimmedLeft(16).withTrimmedRight(16);
-    g.fillRect (sep.getX(), sep.getCentreY(), sep.getWidth(), 1);
+    constexpr int kGap = 12;
+    constexpr int kMargin = 16;
+    const int nCols = 4;
+    const int innerW = getWidth() - kMargin * 2 - kGap * (nCols - 1);
+    const int cw = innerW / nCols;
+    int x = kMargin + cw;
+    for (int i = 0; i < 3; ++i)
+    {
+        g.setColour (bridge::colors::cardOutline().withAlpha (0.45f));
+        g.drawVerticalLine (x, rf.getY() + 12.0f, rf.getBottom() - 12.0f);
+        x += cw + kGap;
+    }
 }
 
 void BridgeBottomHalf::resized()
 {
-    auto bounds = getLocalBounds();
-    auto shell = bridge::panelLayout::splitInstrumentContent (bounds, 0);
+    constexpr int kColGap = 12;
+    constexpr int kTopGap = 12;
+    constexpr int kMargin = 16;
+    constexpr int kPadXY = 160;
+    constexpr int kToggleSide = 20;
+    constexpr int kToggleGap = 3;   // between loop and lock (vertical)
+    constexpr int kToggleStackH = kToggleSide + kToggleGap + kToggleSide;
+    constexpr int kKnobToToggleGap = 5;
 
-    // ── Knobs Card (GROOVE / EXPRESSION) ──
-    auto knobsCard = shell.knobsCard.reduced (16, 16);
-    
-    // Groove Row (5 Knobs)
-    auto topHalf = knobsCard.removeFromTop (knobsCard.getHeight() / 2 - 4);
-    knobsCard.removeFromTop (8); // separator gap
-    
-    grooveLabel.setBounds (topHalf.removeFromTop (16));
-    topHalf.removeFromTop (4);
-    
-    int w = topHalf.getWidth() / 5;
-    knobDensity.setBounds (topHalf.removeFromLeft (w));
-    knobSwing.setBounds (topHalf.removeFromLeft (w));
-    knobHumanize.setBounds (topHalf.removeFromLeft (w));
-    knobPocket.setBounds (topHalf.removeFromLeft (w));
-    knobVelocity.setBounds (topHalf.removeFromLeft (w));
+    auto area = getLocalBounds().reduced (kMargin, kTopGap);
+    const int totalW = area.getWidth();
+    const int innerW = totalW - kColGap * 3;
+    const int cw = innerW / 4;
 
-    // Expression Row (4 Knobs)
-    auto botHalf = knobsCard;
-    expressionLabel.setBounds (botHalf.removeFromTop (16));
-    botHalf.removeFromTop (4);
-    
-    w = botHalf.getWidth() / 5; // Use 5 for scaling consistency so they physically match Groove
-    knobFillRate.setBounds (botHalf.removeFromLeft (w));
-    knobComplexity.setBounds (botHalf.removeFromLeft (w));
-    knobGhost.setBounds (botHalf.removeFromLeft (w));
-    knobPresence.setBounds (botHalf.removeFromLeft (w));
+    auto col1 = area.removeFromLeft (cw);
+    area.removeFromLeft (kColGap);
+    auto col2 = area.removeFromLeft (cw);
+    area.removeFromLeft (kColGap);
+    auto col3 = area.removeFromLeft (cw);
+    area.removeFromLeft (kColGap);
+    auto col4 = area;
 
-    // ── Looping / Actions Card ──
-    auto loopCard = shell.loopActionsCard.reduced (16, 16);
-    
-    // Looping Row
-    auto loopHalf = loopCard.removeFromTop (loopCard.getHeight() / 2 - 4);
-    loopCard.removeFromTop (8);
-    
-    loopingLabel.setBounds (loopHalf.removeFromTop (16));
-    loopHalf.removeFromTop (4);
-    if (loopRangeStrip != nullptr)
-        loopRangeStrip->setBounds (loopHalf.removeFromTop (34));
-    loopHalf.removeFromTop (6);
+    // Col 1: Groove (pocket / velocity) + Expression — no duplicates of Tension/Feel XY
+    grooveLabel.setBounds (col1.removeFromTop (14));
+    col1.removeFromTop (4);
+    {
+        auto row = col1.removeFromTop (70);
+        const int kGap = 8;
+        const int kw = (row.getWidth() - kGap) / 2;
+        knobPocket.setBounds (row.removeFromLeft (kw));
+        row.removeFromLeft (kGap);
+        knobVelocity.setBounds (row);
+    }
+    col1.removeFromTop (6);
+    expressionLabel.setBounds (col1.removeFromTop (14));
+    col1.removeFromTop (4);
+    {
+        auto row = col1.removeFromTop (70);
+        const int kGap = 8;
+        const int kw = (row.getWidth() - kGap) / 2;
+        knobFillRate.setBounds (row.removeFromLeft (kw));
+        row.removeFromLeft (kGap);
+        knobPresence.setBounds (row);
+    }
 
-    const int syncW = 34;
-    const int knobW = (loopHalf.getWidth() - syncW - 16) / 2;
-    knobLoopStart.setBounds (loopHalf.removeFromLeft (knobW));
-    loopHalf.removeFromLeft (8);
-    syncIconButton.setBounds (loopHalf.removeFromLeft (syncW).withSizeKeepingCentre (syncW, syncW));
-    loopHalf.removeFromLeft (8);
-    knobLoopEnd.setBounds (loopHalf.removeFromLeft (knobW));
-    
-    // Actions Row
-    auto actionsHalf = loopCard;
-    actionsLabel.setBounds (actionsHalf.removeFromTop (16));
-    actionsHalf.removeFromTop (4);
-    
-    auto btnGap = 10;
-    auto btnW = (actionsHalf.getWidth() - btnGap * 2) / 3;
-    generateButton.setBounds (actionsHalf.removeFromLeft (btnW));
-    actionsHalf.removeFromLeft (btnGap);
-    fillButton.setBounds (actionsHalf.removeFromLeft (btnW));
-    actionsHalf.removeFromLeft (btnGap);
-    performButton.setBounds (actionsHalf.removeFromLeft (btnW));
+    // Col 2: Tension XY + Complexity / Density
+    tensionLabel.setBounds (col2.removeFromTop (14));
+    col2.removeFromTop (4);
+    if (xyTension != nullptr)
+        xyTension->setBounds (col2.removeFromTop (kPadXY).withSizeKeepingCentre (kPadXY, kPadXY));
+    col2.removeFromTop (8);
+    {
+        auto row = col2.removeFromTop (70);
+        const int kGap = 8;
+        const int kw = (row.getWidth() - kGap) / 2;
+        knobComplexity.setBounds (row.removeFromLeft (kw));
+        row.removeFromLeft (kGap);
+        knobDensity.setBounds (row);
+    }
+
+    // Col 3: Feel XY + Humanize / Swing
+    feelLabel.setBounds (col3.removeFromTop (14));
+    col3.removeFromTop (4);
+    if (xyFeel != nullptr)
+        xyFeel->setBounds (col3.removeFromTop (kPadXY).withSizeKeepingCentre (kPadXY, kPadXY));
+    col3.removeFromTop (8);
+    {
+        auto row = col3.removeFromTop (70);
+        const int kGap = 8;
+        const int kw = (row.getWidth() - kGap) / 2;
+        knobHumanize.setBounds (row.removeFromLeft (kw));
+        row.removeFromLeft (kGap);
+        knobSwing.setBounds (row);
+    }
+
+    // Col 4: Selectors + Actions
+    const int selectorsH = (col4.getHeight() - 8 - 8) / 2;
+    auto selArea = col4.removeFromTop (selectorsH);
+    col4.removeFromTop (8);
+    auto actArea = col4;
+
+    selectorsLabel.setBounds (selArea.removeFromTop (14));
+    selArea.removeFromTop (4);
+    {
+        const int knobW = 48;
+        const int knobH = 10 + 48;
+        const int midColW = kToggleSide;
+        const int blockW = knobW + kKnobToToggleGap + midColW + kKnobToToggleGap + knobW;
+        const int x0 = selArea.getX() + (selArea.getWidth() - blockW) / 2;
+        const int y0 = selArea.getY() + (selArea.getHeight() - knobH) / 2;
+        knobLoopStart.setBounds (x0, y0, knobW, knobH);
+        const int xMid = x0 + knobW + kKnobToToggleGap;
+        const int yMid = selArea.getCentreY() - kToggleStackH / 2;
+        loopPlaybackButton.setBounds (xMid, yMid, kToggleSide, kToggleSide);
+        syncIconButton.setBounds (xMid, yMid + kToggleSide + kToggleGap, kToggleSide, kToggleSide);
+        knobLoopEnd.setBounds (xMid + midColW + kKnobToToggleGap, y0, knobW, knobH);
+    }
+
+    actionsLabel.setBounds (actArea.removeFromTop (14));
+    actArea.removeFromTop (4);
+    {
+        constexpr int btnGap = 6;
+        constexpr int outerMargin = 8;
+        actArea.reduce (outerMargin, outerMargin);
+        auto row = actArea;
+        const int bw = (row.getWidth() - btnGap * 2) / 3;
+        const int bh = bw;
+        auto r2 = row.withHeight (bh);
+        generateButton.setBounds (r2.removeFromLeft (bw));
+        r2.removeFromLeft (btnGap);
+        fillButton.setBounds (r2.removeFromLeft (bw));
+        r2.removeFromLeft (btnGap);
+        performButton.setBounds (r2.removeFromLeft (bw));
+    }
 }

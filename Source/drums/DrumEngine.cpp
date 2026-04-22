@@ -9,42 +9,42 @@ DrumEngine::DrumEngine()
 
 // ─── Core generation ──────────────────────────────────────────────────────────
 
-void DrumEngine::generatePattern (bool seamlessPerform)
+void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform)
 {
+    from0 = juce::jlimit (0, NUM_STEPS - 1, from0);
+    to0   = juce::jlimit (0, NUM_STEPS - 1, to0);
+    if (to0 < from0)
+        std::swap (from0, to0);
+
     DrumPattern previous {};
     if (seamlessPerform)
         previous = pattern;
 
-    for (int step = 0; step < patternLen; ++step)
+    for (int step = from0; step <= to0; ++step)
     {
+        if (step >= patternLen)
+            break;
+
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
         {
-            // In seamlessJam mode, we have a high chance (80%) of keeping the existing step exactly as is,
-            // unless complexity/density are extremely high or low, in which case we might add or prune.
-            // This creates an evolving "Jam" feel.
             bool mutateThisStep = true;
             if (seamlessPerform)
             {
-                // 15% to 35% chance to mutate a specific drum hit on a specific step
                 float mutateProb = 0.15f + 0.20f * (complexity + (1.0f - density));
-                // Add some extra mutation chance to hi-hats (drum 2, 3) and ghost notes based on temperature
                 if (drum == 2 || drum == 3) mutateProb *= 1.3f;
-                // Temperature increases mutation
                 mutateProb *= std::pow (1.0f, 1.0f / temperature);
-                
                 mutateThisStep = pseudoRandom01 (rng()) < mutateProb;
             }
 
-            if (!mutateThisStep)
+            if (! mutateThisStep)
             {
-                // Retain previous state
                 pattern[step][drum] = previous[step][drum];
                 continue;
             }
 
             float base = blendedStyleBase (step, drum);
             float prob = base + complexityMod (step, drum);
-            prob *= density * 1.5f; 
+            prob *= density * 1.5f;
             prob = jlimit (0.0f, 1.0f, prob);
 
             bool active = sampleProb (prob);
@@ -63,16 +63,19 @@ void DrumEngine::generatePattern (bool seamlessPerform)
         }
     }
 
-    // Mute steps beyond patternLen
     for (int step = patternLen; step < NUM_STEPS; ++step)
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
             pattern[step][drum].active = false;
 
-    // We no longer strictly cross-fade the beginning because the mutation itself is non-destructive
     applyHumanize (playbackSamplesPerStep);
 
     if (onPatternChanged)
         onPatternChanged();
+}
+
+void DrumEngine::generatePattern (bool seamlessPerform)
+{
+    generatePatternRange (0, patternLen - 1, seamlessPerform);
 }
 
 void DrumEngine::generateFill (int fromStep)

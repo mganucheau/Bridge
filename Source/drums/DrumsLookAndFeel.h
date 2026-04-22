@@ -1,93 +1,73 @@
 #pragma once
 #include <JuceHeader.h>
+#include "BridgeLookAndFeel.h"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Material Design 3 — dark colour scheme (tonal roles, “Material You”-style)
-// Reference: https://m3.material.io/styles/color/the-color-system/color-roles
-// Values are aligned with the M3 dark-theme palette for a violet primary seed.
-// ─────────────────────────────────────────────────────────────────────────────
-namespace DrumsM3
+namespace DrumsHIG
 {
-    // Core surfaces
-    inline const juce::Colour surface                { 0xFF1C1B1F };
-    inline const juce::Colour surfaceDim             { 0xFF141218 };
-    inline const juce::Colour surfaceBright            { 0xFF2B2930 };
-    inline const juce::Colour surfaceContainerLowest { 0xFF0F0D13 };
-    inline const juce::Colour surfaceContainerLow    { 0xFF1D1B20 };
-    inline const juce::Colour surfaceContainer       { 0xFF211F26 };
-    inline const juce::Colour surfaceContainerHigh     { 0xFF2B2930 };
-    inline const juce::Colour surfaceContainerHighest  { 0xFF36343B };
+    inline const juce::Colour& surface                 = bridge::hig::secondaryGroupedBackground;
+    inline const juce::Colour& surfaceDim              = bridge::hig::systemBackground;
+    inline const juce::Colour& surfaceBright         = bridge::hig::tertiaryGroupedBackground;
+    inline const juce::Colour& surfaceContainerLowest  = bridge::hig::systemBackground;
+    inline const juce::Colour& surfaceContainerLow     = bridge::hig::secondaryGroupedBackground;
+    inline const juce::Colour& surfaceContainer        = bridge::hig::secondaryGroupedBackground;
+    inline const juce::Colour& surfaceContainerHigh    = bridge::hig::tertiaryGroupedBackground;
+    inline const juce::Colour& surfaceContainerHighest = bridge::hig::quaternaryFill;
 
-    // Content
-    inline const juce::Colour onSurface              { 0xFFE6E1E9 };
-    inline const juce::Colour onSurfaceVariant       { 0xFFCAC4D0 };
-    inline const juce::Colour outline                { 0xFF948F99 };
-    inline const juce::Colour outlineVariant         { 0xFF49454F };
+    inline const juce::Colour& onSurface               = bridge::hig::label;
+    inline const juce::Colour& onSurfaceVariant        = bridge::hig::secondaryLabel;
+    inline const juce::Colour& outline                 = bridge::hig::separatorOpaque;
+    inline const juce::Colour& outlineVariant          = bridge::hig::quaternaryFill;
 
-    // Primary
-    inline const juce::Colour primary                { 0xFFD0BCFF };
-    inline const juce::Colour onPrimary              { 0xFF381E72 };
-    inline const juce::Colour primaryContainer       { 0xFF4F378B };
-    inline const juce::Colour onPrimaryContainer     { 0xFFEADDFF };
+    inline juce::Colour primary()               { return bridge::colors::accentDrums(); }
+    inline const juce::Colour& onPrimary        = bridge::hig::label;
+    inline juce::Colour primaryContainer()     { return bridge::hig::accentFillSubdued (bridge::colors::accentDrums()); }
+    inline const juce::Colour& onPrimaryContainer = bridge::hig::label;
 
-    // Secondary
-    inline const juce::Colour secondaryContainer     { 0xFF4A4458 };
-    inline const juce::Colour onSecondaryContainer   { 0xFFE8DEF8 };
+    inline juce::Colour secondaryContainer()
+    {
+        return bridge::hig::tertiaryGroupedBackground.interpolatedWith (bridge::colors::accentDrums(), 0.32f);
+    }
+    inline const juce::Colour& onSecondaryContainer = bridge::hig::label;
 
-    // Tertiary (accents / highlights)
-    inline const juce::Colour tertiary                 { 0xFFEFB8C8 };
-    inline const juce::Colour tertiaryContainer      { 0xFF633B48 };
-    inline const juce::Colour onTertiaryContainer    { 0xFFFFD8E4 };
+    inline juce::Colour tertiary()               { return bridge::colors::accentDrums(); }
+    inline juce::Colour tertiaryContainer()      { return bridge::hig::accentFillSubdued (bridge::colors::accentDrums()); }
+    inline const juce::Colour& onTertiaryContainer = bridge::hig::label;
 
-    // State overlays (approximate “state layers” on containers)
-    inline juce::Colour stateHover (juce::Colour base)   { return base.interpolatedWith (juce::Colours::white, 0.08f); }
-    inline juce::Colour statePressed (juce::Colour base) { return base.interpolatedWith (juce::Colours::white, 0.12f); }
+    inline juce::Colour stateHover (juce::Colour base)   { return bridge::hig::stateHover (base); }
+    inline juce::Colour statePressed (juce::Colour base) { return bridge::hig::statePressed (base); }
 
-    // Shapes (corner radius, dp → px: 1:1 at 100% scale)
     inline constexpr float cornerNone   = 0.0f;
-    inline constexpr float cornerExtraSmall = 4.0f;
-    inline constexpr float cornerSmall  = 8.0f;
-    inline constexpr float cornerMedium = 12.0f;
-    inline constexpr float cornerLarge  = 16.0f;
-    inline constexpr float cornerExtraLarge = 28.0f;
+    inline constexpr float cornerExtraSmall = 0.0f;
+    inline constexpr float cornerSmall  = 0.0f;
+    inline constexpr float cornerMedium = 0.0f;
+    inline constexpr float cornerLarge  = 0.0f;
+    inline constexpr float cornerExtraLarge = 0.0f;
 
     inline void drawShadow (juce::Graphics& g, juce::Rectangle<float> bounds,
                             float cornerRadius, int elevationLevel)
     {
-        if (elevationLevel <= 0 || cornerRadius <= 0.0f)
-            return;
-
-        const float yOff = 1.0f + 0.6f * (float) elevationLevel;
-        const float blur = 2.5f + 1.2f * (float) elevationLevel;
-        const float alpha = juce::jlimit (0.04f, 0.22f, 0.06f + 0.035f * (float) elevationLevel);
-
-        juce::Path p;
-        p.addRoundedRectangle (bounds.translated (0.0f, yOff), cornerRadius);
-        g.setColour (juce::Colours::black.withAlpha (alpha));
-        g.fillPath (p); // cheap “drop shadow”; good enough for plugin UI
-        juce::ignoreUnused (blur);
+        bridge::hig::drawElevatedShadow (g, bounds, cornerRadius, elevationLevel);
     }
 
     inline void fillSurface (juce::Graphics& g, juce::Rectangle<float> bounds,
                              juce::Colour fill, float cornerRadius)
     {
-        g.setColour (fill);
-        g.fillRoundedRectangle (bounds, cornerRadius);
+        bridge::hig::fillRounded (g, bounds, fill, cornerRadius);
     }
 }
 
 // Legacy alias tokens (keeps existing call sites readable)
 namespace DrumsColors
 {
-    inline const juce::Colour& Background   = DrumsM3::surface;
-    inline const juce::Colour& Panel          = DrumsM3::surfaceContainer;
-    inline const juce::Colour& Border         = DrumsM3::outlineVariant;
-    inline const juce::Colour& Accent         = DrumsM3::primary;
-    inline const juce::Colour& AccentBright   = DrumsM3::onPrimaryContainer;
-    inline const juce::Colour& TextPrimary    = DrumsM3::onSurface;
-    inline const juce::Colour& TextDim        = DrumsM3::onSurfaceVariant;
-    inline const juce::Colour& ActiveStep     = DrumsM3::primary;
-    inline const juce::Colour& PlayheadCol    = DrumsM3::primary;
+    inline const juce::Colour& Background   = DrumsHIG::surface;
+    inline const juce::Colour& Panel          = DrumsHIG::surfaceContainer;
+    inline const juce::Colour& Border         = DrumsHIG::outlineVariant;
+    inline juce::Colour Accent() { return DrumsHIG::primary(); }
+    inline const juce::Colour& AccentBright   = DrumsHIG::onPrimaryContainer;
+    inline const juce::Colour& TextPrimary    = DrumsHIG::onSurface;
+    inline const juce::Colour& TextDim        = DrumsHIG::onSurfaceVariant;
+    inline juce::Colour ActiveStep() { return DrumsHIG::primary(); }
+    inline juce::Colour PlayheadCol() { return DrumsHIG::primary(); }
 
     // Per-drum colours (seed hues, slightly tuned for dark surfaces)
     inline const juce::Colour DrumColors[9] = {
@@ -109,19 +89,19 @@ class DrumsLookAndFeel : public juce::LookAndFeel_V4
 public:
     DrumsLookAndFeel()
     {
-        using namespace DrumsM3;
+        using namespace DrumsHIG;
 
         setColour (juce::ResizableWindow::backgroundColourId, surface);
-        setColour (juce::Slider::thumbColourId, primary);
+        setColour (juce::Slider::thumbColourId, primary());
         setColour (juce::Slider::trackColourId, outlineVariant);
         setColour (juce::Slider::backgroundColourId, surfaceContainerHigh);
-        setColour (juce::Slider::rotarySliderFillColourId, primary);
+        setColour (juce::Slider::rotarySliderFillColourId, primary());
         setColour (juce::Slider::rotarySliderOutlineColourId, outlineVariant);
 
         setColour (juce::Label::textColourId, onSurface);
 
         setColour (juce::TextButton::buttonColourId, surfaceContainerHigh);
-        setColour (juce::TextButton::buttonOnColourId, secondaryContainer);
+        setColour (juce::TextButton::buttonOnColourId, secondaryContainer());
         setColour (juce::TextButton::textColourOffId, onSurfaceVariant);
         setColour (juce::TextButton::textColourOnId, onSecondaryContainer);
 
@@ -131,30 +111,40 @@ public:
 
         setColour (juce::PopupMenu::backgroundColourId, surfaceContainerHigh);
         setColour (juce::PopupMenu::textColourId, onSurface);
-        setColour (juce::PopupMenu::highlightedBackgroundColourId, primaryContainer);
+        setColour (juce::PopupMenu::highlightedBackgroundColourId, primaryContainer());
         setColour (juce::PopupMenu::highlightedTextColourId, onPrimaryContainer);
 
         setColour (juce::ToggleButton::textColourId, onSurfaceVariant);
-        setColour (juce::ToggleButton::tickColourId, primary);
+        setColour (juce::ToggleButton::tickColourId, primary());
         setColour (juce::ToggleButton::tickDisabledColourId, outlineVariant);
     }
 
     juce::Font getLabelFont (juce::Label&) override
     {
-        return juce::Font (juce::FontOptions().withHeight (12.0f));
+        return bridge::hig::uiFont (13.0f);
     }
 
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override
     {
         juce::ignoreUnused (buttonHeight);
-        return juce::Font (juce::FontOptions().withHeight (12.0f).withStyle ("Semibold"));
+        return bridge::hig::uiFont (13.0f, "Semibold");
+    }
+
+    void positionComboBoxText (juce::ComboBox& box, juce::Label& label) override
+    {
+        if (box.getProperties()["bridgeInstrumentStrip"] || box.getProperties()["bridgeHeaderStrip"])
+        {
+            BridgeLookAndFeel().positionComboBoxText (box, label);
+            return;
+        }
+        juce::LookAndFeel_V4::positionComboBoxText (box, label);
     }
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPosProportional, float rotaryStartAngle,
                            float rotaryEndAngle, juce::Slider& slider) override
     {
-        using namespace DrumsM3;
+        using namespace DrumsHIG;
 
         auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height).reduced (6.0f);
         float radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
@@ -170,7 +160,7 @@ public:
         float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
         juce::Path valueArc;
         valueArc.addCentredArc (cx, cy, radius - 2, radius - 2, 0.0f, rotaryStartAngle, angle, true);
-        g.setColour (primary);
+        g.setColour (primary());
         g.strokePath (valueArc, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Knob “container”
@@ -184,7 +174,7 @@ public:
         // Handle
         float hx = cx + std::sin (angle) * (knobR * 0.55f);
         float hy = cy - std::cos (angle) * (knobR * 0.55f);
-        g.setColour (primary);
+        g.setColour (primary());
         g.fillEllipse (hx - 4.0f, hy - 4.0f, 8.0f, 8.0f);
 
         juce::ignoreUnused (slider);
@@ -194,7 +184,7 @@ public:
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        using namespace DrumsM3;
+        using namespace DrumsHIG;
 
         auto track = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
 
@@ -207,12 +197,12 @@ public:
 
             float xFill = juce::jmap (sliderPos, minSliderPos, maxSliderPos, r.getX(), r.getRight());
             auto fill = r.withRight (xFill);
-            fillSurface (g, fill, primaryContainer, cornerExtraSmall);
+            fillSurface (g, fill, primaryContainer(), cornerExtraSmall);
 
             float thumbX = juce::jmap (sliderPos, minSliderPos, maxSliderPos, r.getX(), r.getRight());
             auto thumb = juce::Rectangle<float> (thumbX - 6.0f, r.getCentreY() - 10.0f, 12.0f, 20.0f);
             drawShadow (g, thumb, cornerSmall, 1);
-            fillSurface (g, thumb, primary, cornerSmall);
+            fillSurface (g, thumb, primary(), cornerSmall);
         }
         else
         {
@@ -224,7 +214,13 @@ public:
                        int buttonX, int buttonY, int buttonW, int buttonH,
                        juce::ComboBox& box) override
     {
-        using namespace DrumsM3;
+        if (box.getProperties()["bridgeInstrumentStrip"] || box.getProperties()["bridgeHeaderStrip"])
+        {
+            BridgeLookAndFeel().drawComboBox (g, width, height, isButtonDown, buttonX, buttonY, buttonW, buttonH, box);
+            return;
+        }
+
+        using namespace DrumsHIG;
 
         auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float) width, (float) height);
         fillSurface (g, bounds.reduced (0.5f), surfaceContainerHigh, cornerSmall);
@@ -247,7 +243,7 @@ public:
                                bool shouldDrawButtonAsHighlighted,
                                bool shouldDrawButtonAsDown) override
     {
-        using namespace DrumsM3;
+        using namespace DrumsHIG;
 
         auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
         const float rad = cornerSmall;
@@ -265,13 +261,13 @@ public:
 
             if (isPrimaryFilled)
             {
-                fill = primaryContainer;
+                fill = primaryContainer();
                 content = onPrimaryContainer;
                 stroke = juce::Colours::transparentBlack;
             }
             else if (isToggleStyle && tb->getToggleState())
             {
-                fill = secondaryContainer;
+                fill = secondaryContainer();
                 content = onSecondaryContainer;
                 stroke = juce::Colours::transparentBlack;
             }
@@ -293,7 +289,7 @@ public:
             g.drawRoundedRectangle (bounds, rad, 1.0f);
 
             g.setColour (content);
-            g.setFont (juce::Font (juce::FontOptions().withHeight (12.0f).withStyle ("Semibold")));
+            g.setFont (bridge::hig::uiFont (13.0f, "Semibold"));
             g.drawFittedText (text, button.getLocalBounds(), juce::Justification::centred, 1);
             return;
         }
@@ -313,14 +309,14 @@ public:
                            bool shouldDrawButtonAsHighlighted,
                            bool shouldDrawButtonAsDown) override
     {
-        using namespace DrumsM3;
+        using namespace DrumsHIG;
 
         auto bounds = button.getLocalBounds().toFloat().reduced (1.0f);
         const bool on = button.getToggleState();
 
         juce::Colour fill = surfaceContainerHigh;
         if (button.getButtonText() == "S" && on)
-            fill = juce::Colour (0xff143d28);
+            fill = bridge::hig::tertiaryGroupedBackground.interpolatedWith (bridge::hig::systemGreen, 0.42f);
         else if (button.getButtonText() == "M" && on)
             fill = surfaceBright;
 
@@ -333,9 +329,9 @@ public:
         g.drawRoundedRectangle (bounds, cornerExtraSmall, 1.0f);
 
         g.setColour (button.getButtonText() == "S" && on
-                          ? juce::Colour (0xff7dffb3)
+                          ? bridge::hig::systemGreen.brighter (0.12f)
                           : (on ? onSurface : onSurfaceVariant));
-        g.setFont (juce::Font (juce::FontOptions().withHeight (10.0f).withStyle ("Semibold")));
+        g.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
         g.drawFittedText (button.getButtonText(), button.getLocalBounds(), juce::Justification::centred, 1);
     }
 };

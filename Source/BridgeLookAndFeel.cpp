@@ -1,6 +1,5 @@
 #include "BridgeLookAndFeel.h"
-
-using namespace bridge::colors;
+#include "BridgeInstrumentStripStyle.h"
 
 namespace
 {
@@ -10,18 +9,22 @@ namespace
 
 BridgeLookAndFeel::BridgeLookAndFeel()
 {
-    setColour (juce::Label::textColourId, textPrimary);
-    setColour (juce::ComboBox::backgroundColourId, cardSurface);
-    setColour (juce::ComboBox::textColourId, textSecondary);
-    setColour (juce::ComboBox::outlineColourId, cardOutline);
-    setColour (juce::ComboBox::arrowColourId, textDim);
+    setColour (juce::Label::textColourId, bridge::colors::textPrimary());
+    setColour (juce::ComboBox::backgroundColourId, bridge::colors::cardSurface());
+    setColour (juce::ComboBox::textColourId, bridge::colors::textSecondary());
+    setColour (juce::ComboBox::outlineColourId, bridge::colors::cardOutline());
+    setColour (juce::ComboBox::arrowColourId, bridge::colors::textDim());
     
-    setColour (juce::PopupMenu::backgroundColourId, cardSurface);
-    setColour (juce::PopupMenu::textColourId, textPrimary);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, cardOutline);
-    setColour (juce::PopupMenu::highlightedTextColourId, textPrimary);
+    setColour (juce::PopupMenu::backgroundColourId, bridge::colors::cardSurface());
+    setColour (juce::PopupMenu::textColourId, bridge::colors::textPrimary());
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, bridge::colors::cardOutline());
+    setColour (juce::PopupMenu::highlightedTextColourId, bridge::colors::textPrimary());
 
-    setDefaultSansSerifTypefaceName ("Inter"); // Fallback to sans-serif OS font if missing
+#if JUCE_MAC || JUCE_IOS
+    setDefaultSansSerifTypefaceName (".AppleSystemUIFont");
+#else
+    setDefaultSansSerifTypefaceName (juce::Font::getDefaultSansSerifFontName());
+#endif
 }
 
 void BridgeLookAndFeel::setKnobStyle (juce::Slider& slider, KnobStyle style, juce::Colour accent)
@@ -46,7 +49,7 @@ void BridgeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
 
     int styleInt = slider.getProperties().getWithDefault (knobStyleId, (int) KnobStyle::BigRing);
     KnobStyle style = (KnobStyle) styleInt;
-    juce::Colour accentCol = juce::Colour ((juce::uint32) (int) slider.getProperties().getWithDefault (knobAccentId, (int) accentPiano.getARGB()));
+    juce::Colour accentCol = juce::Colour ((juce::uint32) (int) slider.getProperties().getWithDefault (knobAccentId, (int) bridge::colors::accentPiano().getARGB()));
 
     if (style == KnobStyle::BigRing)
     {
@@ -55,7 +58,7 @@ void BridgeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
         juce::Path trackPath;
         trackPath.addCentredArc (centreX, centreY, radius - trackThickness * 0.5f, radius - trackThickness * 0.5f,
                                  0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour (knobTrack);
+        g.setColour (bridge::colors::knobTrack());
         g.strokePath (trackPath, juce::PathStrokeType (trackThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Draw the filled colored arc
@@ -67,11 +70,11 @@ void BridgeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
 
         // Draw the inner circle background
         const float innerRadius = radius - trackThickness - 4.0f;
-        g.setColour (background);
+        g.setColour (bridge::colors::background());
         g.fillEllipse (centreX - innerRadius, centreY - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f);
         
         // Draw the subtle top reflection or outline
-        g.setColour (cardOutline.withAlpha(0.5f));
+        g.setColour (bridge::colors::cardOutline().withAlpha (0.5f));
         g.drawEllipse (centreX - innerRadius, centreY - innerRadius, innerRadius * 2.0f, innerRadius * 2.0f, 1.0f);
 
         // Draw tick mark inside the dial
@@ -87,7 +90,7 @@ void BridgeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
         const float trackThickness = 2.0f;
         juce::Path track;
         track.addCentredArc (centreX, centreY, radius - 1.0f, radius - 1.0f, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-        g.setColour (background);
+        g.setColour (bridge::colors::background());
         g.strokePath (track, juce::PathStrokeType (trackThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         juce::Path fill;
@@ -96,7 +99,7 @@ void BridgeLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
         g.strokePath (fill, juce::PathStrokeType (trackThickness, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Inner circle
-        g.setColour (cardSurface);
+        g.setColour (bridge::colors::cardSurface());
         g.fillEllipse (centreX - radius + 3.0f, centreY - radius + 3.0f, (radius - 3.0f) * 2.0f, (radius - 3.0f) * 2.0f);
 
         // Dot indicator
@@ -113,7 +116,40 @@ void BridgeLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
                                               bool shouldDrawButtonAsDown)
 {
     auto bounds = button.getLocalBounds().toFloat();
-    float corner = 6.0f;
+    const auto ms = button.getProperties()["bridgeStripMs"].toString();
+
+    if (ms.isNotEmpty())
+    {
+        const bool on = button.getToggleState();
+        juce::Colour fill = bridge::instrumentStripStyle::fieldBg();
+        juce::Colour border = juce::Colour (0xff444444);
+
+        if (ms == "mute")
+        {
+            if (on)
+            {
+                fill = bridge::instrumentStripStyle::muteOn();
+                border = bridge::instrumentStripStyle::muteOn();
+            }
+        }
+        else if (ms == "solo")
+        {
+            if (on)
+            {
+                fill = bridge::instrumentStripStyle::soloOn();
+                border = bridge::instrumentStripStyle::soloOn();
+            }
+        }
+
+        if (! on && (shouldDrawButtonAsHighlighted || shouldDrawButtonAsDown))
+            fill = bridge::instrumentStripStyle::fieldHoverBg();
+
+        g.setColour (fill);
+        g.fillRect (bounds);
+        g.setColour (border);
+        g.drawRect (bounds.reduced (1.0f), 2);
+        return;
+    }
 
     auto baseColor = backgroundColour;
     if (shouldDrawButtonAsDown)
@@ -122,12 +158,12 @@ void BridgeLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
         baseColor = baseColor.brighter (0.05f);
 
     g.setColour (baseColor);
-    g.fillRoundedRectangle (bounds, corner);
+    g.fillRect (bounds);
 
     if (button.getToggleState() && button.getRadioGroupId() == 0)
     {
         g.setColour (juce::Colours::white.withAlpha (0.1f));
-        g.fillRoundedRectangle (bounds, corner);
+        g.fillRect (bounds);
     }
 }
 
@@ -135,8 +171,16 @@ void BridgeLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
                                         bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
     juce::ignoreUnused (shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
+    if (button.getProperties()["bridgeStripMs"].toString().isNotEmpty())
+    {
+        g.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
+        g.setColour (juce::Colours::white);
+        g.drawText (button.getButtonText(), button.getLocalBounds(), juce::Justification::centred, false);
+        return;
+    }
+
     g.setFont (button.getProperties().getWithDefault ("fontHeight", 11.0f));
-    
+
     auto textCol = button.findColour (button.getToggleState() ? juce::TextButton::textColourOnId : juce::TextButton::textColourOffId);
     g.setColour (textCol);
     g.drawText (button.getButtonText(), button.getLocalBounds(), juce::Justification::centred, false);
@@ -146,24 +190,38 @@ void BridgeLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height, 
                                       int buttonX, int buttonY, int buttonW, int buttonH,
                                       juce::ComboBox& box)
 {
-    juce::ignoreUnused(isButtonDown, buttonX, buttonY, buttonW, buttonH);
-    auto bounds = juce::Rectangle<int>(0, 0, width, height).toFloat();
-    
-    g.setColour (box.findColour (juce::ComboBox::backgroundColourId));
-    g.fillRoundedRectangle (bounds, 6.0f);
-    
+    juce::ignoreUnused (isButtonDown, buttonX, buttonY, buttonW, buttonH);
+    auto bounds = juce::Rectangle<int> (0, 0, width, height).toFloat();
+    const bool strip = box.getProperties()["bridgeInstrumentStrip"]
+                       || box.getProperties()["bridgeHeaderStrip"];
+
+    juce::Colour fill = box.findColour (juce::ComboBox::backgroundColourId);
+    if (strip && box.isMouseOver (true))
+        fill = bridge::instrumentStripStyle::fieldHoverBg();
+
+    g.setColour (fill);
+    g.fillRect (bounds);
+
     g.setColour (box.findColour (juce::ComboBox::outlineColourId));
-    g.drawRoundedRectangle (bounds.reduced(0.5f), 6.0f, 1.0f);
+    g.drawRect (bounds.reduced (0.5f), 1.0f);
 
     juce::Path arrow;
     arrow.addTriangle (0.0f, 0.0f, 8.0f, 0.0f, 4.0f, 5.0f);
     g.setColour (box.findColour (juce::ComboBox::arrowColourId));
-    g.fillPath (arrow, juce::AffineTransform::translation ((float) width - 16.0f, (float) height * 0.5f - 2.5f));
+    g.fillPath (arrow, juce::AffineTransform::translation ((float) width - 14.0f, (float) height * 0.5f - 2.5f));
 }
 
 void BridgeLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
-    label.setBounds (10, 0, box.getWidth() - 30, box.getHeight());
-    label.setFont (juce::Font(juce::FontOptions().withHeight(12.0f)));
-    label.setColour (juce::Label::textColourId, textSecondary);
+    if (box.getProperties()["bridgeInstrumentStrip"] || box.getProperties()["bridgeHeaderStrip"])
+    {
+        label.setBounds (8, 0, box.getWidth() - 30, box.getHeight());
+        label.setFont (bridge::hig::uiFont (12.0f));
+        label.setColour (juce::Label::textColourId, juce::Colours::white);
+        return;
+    }
+
+    label.setBounds (12, 0, box.getWidth() - 32, box.getHeight());
+    label.setFont (bridge::hig::uiFont (13.0f));
+    label.setColour (juce::Label::textColourId, bridge::colors::textSecondary());
 }

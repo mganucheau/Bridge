@@ -5,8 +5,10 @@
 #include "piano/PianoStylePresets.h"
 #include "BridgeLookAndFeel.h"
 #include "BridgeBottomHalf.h"
-#include "BridgeInstrumentUI.h"
+#include "BridgeLoopRangeStrip.h"
+#include "InstrumentControlBar.h"
 #include "piano/PianoLookAndFeel.h"
+#include "piano/PianoStylePresets.h"
 
 class PianoPanel;
 class FillHoldListener;
@@ -16,6 +18,7 @@ class PianoPianoRollComponent : public juce::Component
 public:
     explicit PianoPianoRollComponent (BridgeProcessor& p);
     void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent& e) override;
 
 private:
     BridgeProcessor& proc;
@@ -77,6 +80,8 @@ private:
     BridgeProcessor& proc;
     BridgeLookAndFeel laf;
     BridgeBottomHalf bottomHalf;
+    InstrumentControlBar instrumentStrip;
+    BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffbf5af2), PianoPreset::NUM_STEPS };
     bool updatingLoopParams = false;
     
 
@@ -84,22 +89,6 @@ private:
 
         PianoPianoRollComponent pianoRoll { proc };
     PianoGridComponent grid { proc };
-    
-    juce::Label    styleLabel;
-    juce::ComboBox styleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
-    juce::Label  rootLabel;
-    juce::ComboBox rootBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> rootAttach;
-    
-    juce::Label  scaleLabel;
-    juce::ComboBox scaleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> scaleAttach;
-    
-    juce::Label  octaveLabel;
-    juce::ComboBox octaveBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> octaveAttach;
-
 
     struct StepTimer : public juce::Timer
     {
@@ -111,8 +100,6 @@ private:
     void updateStepAnimation();
     int  lastAnimStep = -1;
 
-    PagePowerButton pagePower { bridge::colors::accentPiano };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttach;
     void applyPianoPageState();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PianoPanel)

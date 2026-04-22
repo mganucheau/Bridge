@@ -24,6 +24,8 @@ public:
 
     // ── Generation ─────────────────────────────────────────────────────────
     void generatePattern (bool seamlessPerform = false);
+    /** Regenerate only steps from0..to0 inclusive (pattern indices 0..NUM_STEPS-1). */
+    void generatePatternRange (int from0, int to0, bool seamlessPerform = false);
     void generateFill (int fromStep = 12);  // from step 12 = last 4 steps
 
     // ── Pattern access ─────────────────────────────────────────────────────

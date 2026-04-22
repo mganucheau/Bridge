@@ -8,7 +8,8 @@
 
 class BridgeEditor;
 
-class BridgeProcessor : public juce::AudioProcessor
+class BridgeProcessor : public juce::AudioProcessor,
+                         private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     BridgeProcessor();
@@ -38,15 +39,20 @@ public:
 
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override
     {
-        const auto& out = layouts.getMainOutputChannelSet();
-        if (out != juce::AudioChannelSet::mono()
-            && out != juce::AudioChannelSet::stereo())
+        const auto& in = layouts.getMainInputChannelSet();
+        if (in != juce::AudioChannelSet::disabled()
+            && in != juce::AudioChannelSet::mono()
+            && in != juce::AudioChannelSet::stereo())
             return false;
 
-        const auto& in = layouts.getMainInputChannelSet();
-        return in == juce::AudioChannelSet::disabled()
-            || in == juce::AudioChannelSet::mono()
-            || in == juce::AudioChannelSet::stereo();
+        if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+            return false;
+
+        for (int bus = 1; bus < layouts.outputBuses.size(); ++bus)
+            if (layouts.getChannelSet (false, bus) != juce::AudioChannelSet::disabled())
+                return false;
+
+        return true;
     }
 
     DrumEngine   drumEngine;
@@ -70,6 +76,10 @@ public:
     void triggerDrumsFill (int fromStep = 12);
     void rebuildDrumsGridPreview();
     const DrumPattern& getPatternForGrid() const;
+    /** Global selection (1-based steps), always from apvtsMain; never collapsed to full clip. */
+    void getMainSelectionBounds (int numSteps, int& loopStart, int& loopEnd) const;
+    bool isMainSelectionFullClip (int numSteps) const;
+    /** UI / grid highlight — same as main selection. */
     void getDrumsLoopBounds (int& loopStart, int& loopEnd) const;
     std::atomic<int> drumsCurrentStep { -1 };
     std::atomic<int> drumsCurrentVisualStep { -1 };
@@ -98,10 +108,25 @@ public:
     void rebuildGuitarGridPreview();
     void randomizeGuitarSettings();
     void getGuitarLoopBounds (int& loopStart, int& loopEnd) const;
+
+    /** Preview note from UI (audio thread drains). */
+    void queueMelodicPreviewNote (int midiChannel, int noteNumber, int velocity);
+
+    /** Current PPQ per pattern step from main "timeDivision" param (phase A: one bar = 16 steps). */
+    double getMainPpqPerStep() const noexcept;
     std::atomic<int> guitarCurrentStep { -1 };
     std::atomic<int> guitarCurrentVisualStep { -1 };
 
 private:
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+
+    void getDrumsPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
+    void getBassPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
+    void getPianoPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
+    void getGuitarPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
+
+    bool playbackLoopEngaged() const noexcept;
+
     static juce::AudioProcessorValueTreeState::ParameterLayout buildMainLayout();
     static juce::AudioProcessorValueTreeState::ParameterLayout buildDrumsLayout();
 
@@ -185,6 +210,23 @@ private:
     bool   guitarPerformMode = false;
     int    guitarMidiChannel = 3;
     double guitarTickerRate = 1.0;
+
+    int drumsMidiChannel = 10;
+
+    int lastSpanLockStart = 1;
+    int lastSpanLockEnd = 16;
+    bool spanLockApplying = false;
+
+    struct PreviewNoteEvent
+    {
+        int channel = 1;
+        int note = 60;
+        int velocity = 100;
+        int samplesRemaining = 0;
+        bool noteOnSent = false;
+    };
+    juce::Array<PreviewNoteEvent> previewNotes;
+    juce::CriticalSection previewLock;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BridgeProcessor)
 };

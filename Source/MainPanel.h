@@ -4,7 +4,7 @@
 #include "BridgeProcessor.h"
 #include "BridgeBottomHalf.h"
 #include "BridgeLookAndFeel.h"
-#include "BridgeInstrumentUI.h"
+#include "InstrumentControlBar.h"
 
 class MainPanel : public juce::Component,
                   private juce::Timer,
@@ -24,6 +24,7 @@ private:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     void parameterChanged (const juce::String& parameterID, float newValue) override;
     void syncSoloButtonColours();
+    void syncPageSoloToggle();
     void applyLeaderPageState();
 
     struct StripPreview : public juce::Component
@@ -56,25 +57,7 @@ private:
     BridgeProcessor& proc;
     BridgeLookAndFeel laf;
 
-    // Header tonality
-    juce::Label  styleLabel;
-    juce::ComboBox styleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
-    
-    juce::Label  rootLabel;
-    juce::ComboBox rootBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> rootAttach;
-    
-    juce::Label  scaleLabel;
-    juce::ComboBox scaleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> scaleAttach;
-    
-    juce::Label  octaveLabel;
-    juce::ComboBox octaveBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> octaveAttach;
-
-    PagePowerButton pagePower { bridge::colors::accentLeader };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttach;
+    InstrumentControlBar instrumentStrip;
 
     Row drumsRow;
     Row bassRow;

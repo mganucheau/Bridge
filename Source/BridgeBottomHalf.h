@@ -1,28 +1,32 @@
 #pragma once
 
 #include "BridgeLookAndFeel.h"
-
-class BridgeLoopRangeStrip;
+#include "BridgeXYPad.h"
 
 class LabelledKnob : public juce::Component
 {
 public:
     LabelledKnob (const juce::String& paramId, const juce::String& name,
-                  juce::AudioProcessorValueTreeState& apvts, BridgeLookAndFeel::KnobStyle style, juce::Colour accent);
+                  juce::AudioProcessorValueTreeState& apvts, BridgeLookAndFeel::KnobStyle style, juce::Colour accent,
+                  int rotaryDiameter = 48,
+                  int labelBandHeight = 16);
     void resized() override;
     juce::Slider& getSlider() { return slider; }
 
 private:
     juce::Slider slider;
     juce::Label label;
+    int rotaryDiameter = 48;
+    int labelBandHeight = 16;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
 };
 
-class BridgeBottomHalf : public juce::Component,
-                         private juce::AudioProcessorValueTreeState::Listener
+class BridgeBottomHalf : public juce::Component
 {
 public:
-    BridgeBottomHalf (juce::AudioProcessorValueTreeState& apvts,
+    /** instApvts: per-instrument params (groove, expression, perform). mainApvts: global loop + playback. */
+    BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvts,
+                      juce::AudioProcessorValueTreeState& mainApvts,
                       BridgeLookAndFeel& laf,
                       juce::Colour groupAccent,
                       std::function<void()> onGenerate,
@@ -33,10 +37,9 @@ public:
     void resized() override;
 
 private:
-    void parameterChanged (const juce::String& parameterID, float newValue) override;
-    juce::AudioProcessorValueTreeState& apvts;
+    juce::AudioProcessorValueTreeState& instApvts;
+    juce::AudioProcessorValueTreeState& mainApvts;
 
-    // GROOVE
     juce::Label grooveLabel;
     LabelledKnob knobDensity;
     LabelledKnob knobSwing;
@@ -44,22 +47,25 @@ private:
     LabelledKnob knobPocket;
     LabelledKnob knobVelocity;
 
-    // EXPRESSION (4 Knobs)
     juce::Label expressionLabel;
     LabelledKnob knobFillRate;
     LabelledKnob knobComplexity;
-    LabelledKnob knobGhost;
     LabelledKnob knobPresence;
 
-    // LOOPING
-    juce::Label loopingLabel;
-    std::unique_ptr<BridgeLoopRangeStrip> loopRangeStrip;
+    juce::Label tensionLabel;
+    std::unique_ptr<BridgeXYPad> xyTension;
+
+    juce::Label feelLabel;
+    std::unique_ptr<BridgeXYPad> xyFeel;
+
+    juce::Label selectorsLabel;
     LabelledKnob knobLoopStart;
     LabelledKnob knobLoopEnd;
+    juce::ShapeButton loopPlaybackButton { "Loop", juce::Colours::transparentBlack, juce::Colours::transparentBlack, juce::Colours::transparentBlack };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopPlaybackAttach;
     juce::ShapeButton syncIconButton { "Sync", juce::Colours::transparentBlack, juce::Colours::transparentBlack, juce::Colours::transparentBlack };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> syncAttach;
 
-    // ACTIONS
     juce::Label actionsLabel;
     juce::TextButton generateButton { "GENERATE" };
     juce::TextButton fillButton { "FILL" };
@@ -71,9 +77,18 @@ private:
     class FillMouseListener : public juce::MouseListener
     {
     public:
-        FillMouseListener (BridgeBottomHalf& o) : owner(o) {}
-        void mouseDown (const juce::MouseEvent& e) override { if (e.eventComponent == &owner.fillButton && owner.fillHoldCallback) owner.fillHoldCallback(true); }
-        void mouseUp   (const juce::MouseEvent& e) override { if (e.eventComponent == &owner.fillButton && owner.fillHoldCallback) owner.fillHoldCallback(false); }
+        FillMouseListener (BridgeBottomHalf& o) : owner (o) {}
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            if (e.eventComponent == &owner.fillButton && owner.fillHoldCallback)
+                owner.fillHoldCallback (true);
+        }
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            if (e.eventComponent == &owner.fillButton && owner.fillHoldCallback)
+                owner.fillHoldCallback (false);
+        }
+
     private:
         BridgeBottomHalf& owner;
     } fillListener { *this };

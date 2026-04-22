@@ -1,4 +1,5 @@
 #include "BridgeProcessor.h"
+#include "BridgeTheme.h"
 #include "BridgeEditor.h"
 #include "BridgeInstrumentStyles.h"
 #include "LeaderStylePresets.h"
@@ -147,7 +148,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost", 0.f, 1.f, 0.70f));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart", "Loop Start", 1, 16, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd", "Loop End", 1, 16, 16));
-    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On", false));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On (legacy)", false));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("playbackLoopOn", "Playback loop", false));
+    layout.add (std::make_unique<juce::AudioParameterBool>  ("loopSpanLock", "Loop span lock", false));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("perform", "Perform", false));
     layout.add (std::make_unique<juce::AudioParameterChoice>("tickerSpeed", "Speed", juce::StringArray { "x2", "1", "1/2" }, 1));
     // Global tonality params
@@ -159,8 +162,39 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     layout.add (std::make_unique<juce::AudioParameterBool>  ("hostSync",        "Host Sync",         true));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("transportPlaying","Transport Playing", false));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("internalBpm",     "Internal BPM",
-                                                              juce::NormalisableRange<float> (40.0f, 240.0f, 0.1f),
+                                                              juce::NormalisableRange<float> (20.0f, 300.0f, 0.1f),
                                                               120.0f));
+
+    juce::StringArray divNames;
+    divNames.add ("1/64");
+    divNames.add ("1/32");
+    divNames.add ("1/24 T");
+    divNames.add ("1/16");
+    divNames.add ("1/12 T");
+    divNames.add ("1/8");
+    divNames.add ("1/6 T");
+    divNames.add ("1/4");
+    divNames.add ("1/2");
+    divNames.add ("1 bar");
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("timeDivision", "Grid division", divNames, 3));
+
+    juce::StringArray themeNames;
+    const char* pairs[] = {
+        "Material Light", "Material Dark",
+        "Apple HIG Light", "Apple HIG Dark",
+        "Fluent Light", "Fluent Dark",
+        "Carbon Light", "Carbon Dark",
+        "Spectrum Light", "Spectrum Dark",
+        "Atlassian Light", "Atlassian Dark",
+        "Ant Light", "Ant Dark",
+        "Radix Sand", "Radix Slate",
+        "Nord Snow", "Nord Polar Night",
+        "Tokyo Day", "Tokyo Night",
+        "Rose Pine Dawn", "Rose Pine Moon"
+    };
+    for (auto* n : pairs)
+        themeNames.add (n);
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("uiTheme", "UI theme", themeNames, 1));
 
     return layout;
 }
@@ -184,6 +218,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsL
     layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("presence",    "Presence",    0.0f,  1.0f, 0.8f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.8f));
+    layout.add (std::make_unique<juce::AudioParameterInt> ("midiChannel", "MIDI Channel", 1, 16, 10));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",  1,     NUM_STEPS, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",      1,     NUM_STEPS, NUM_STEPS));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On", false));
@@ -242,7 +277,12 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
 BridgeProcessor::BridgeProcessor()
     : AudioProcessor (BusesProperties()
                         .withInput  ("Input",  juce::AudioChannelSet::stereo(), false)
-                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+                        .withOutput ("Main", juce::AudioChannelSet::stereo(), true)
+                        .withOutput ("Leader MIDI", juce::AudioChannelSet::disabled(), true)
+                        .withOutput ("Drums MIDI", juce::AudioChannelSet::disabled(), true)
+                        .withOutput ("Bass MIDI", juce::AudioChannelSet::disabled(), true)
+                        .withOutput ("Keys MIDI", juce::AudioChannelSet::disabled(), true)
+                        .withOutput ("Guitar MIDI", juce::AudioChannelSet::disabled(), true)),
       apvtsMain   (*this, nullptr, "BridgeMain", buildMainLayout()),
       apvtsDrums (*this, nullptr, kDrumsStateId, buildDrumsLayout()),
       apvtsBass (*this, nullptr, kBassStateId, makeMelodicLayout (1)),
@@ -277,9 +317,32 @@ BridgeProcessor::BridgeProcessor()
         if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
             ed->notifyGuitarPatternChanged();
     };
+
+    apvtsMain.addParameterListener ("loopStart", this);
+    apvtsMain.addParameterListener ("loopEnd", this);
+    apvtsMain.addParameterListener ("loopSpanLock", this);
+    apvtsMain.addParameterListener ("scale", this);
+    apvtsMain.addParameterListener ("rootNote", this);
+    apvtsMain.addParameterListener ("octave", this);
+    apvtsMain.addParameterListener ("uiTheme", this);
+
+    lastSpanLockStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+    lastSpanLockEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+
+    if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
+        bridge::theme::applyThemeChoiceIndex (p->getIndex());
 }
 
-BridgeProcessor::~BridgeProcessor() {}
+BridgeProcessor::~BridgeProcessor()
+{
+    apvtsMain.removeParameterListener ("loopStart", this);
+    apvtsMain.removeParameterListener ("loopEnd", this);
+    apvtsMain.removeParameterListener ("loopSpanLock", this);
+    apvtsMain.removeParameterListener ("scale", this);
+    apvtsMain.removeParameterListener ("rootNote", this);
+    apvtsMain.removeParameterListener ("octave", this);
+    apvtsMain.removeParameterListener ("uiTheme", this);
+}
 
 juce::AudioProcessorEditor* BridgeProcessor::createEditor()
 {
@@ -326,60 +389,243 @@ const DrumPattern& BridgeProcessor::getPatternForGrid() const
     return drumEngine.getPatternForGrid();
 }
 
-void BridgeProcessor::getDrumsLoopBounds (int& loopStart, int& loopEnd) const
+bool BridgeProcessor::playbackLoopEngaged() const noexcept
 {
-    // Leader override check
-    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
-    {
-        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
-    }
-    else
-    {
-        loopStart = (int) *apvtsDrums.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsDrums.getRawParameterValue ("loopEnd");
-    }
+    if (apvtsMain.getRawParameterValue ("playbackLoopOn") != nullptr
+        && apvtsMain.getRawParameterValue ("playbackLoopOn")->load() > 0.5f)
+        return true;
+    if (apvtsMain.getRawParameterValue ("loopOn") != nullptr
+        && apvtsMain.getRawParameterValue ("loopOn")->load() > 0.5f)
+        return true;
+    return false;
+}
 
-    // Limit and swap
-    loopStart = juce::jlimit (1, NUM_STEPS, loopStart);
-    loopEnd   = juce::jlimit (1, NUM_STEPS, loopEnd);
+void BridgeProcessor::getMainSelectionBounds (int numSteps, int& loopStart, int& loopEnd) const
+{
+    loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+    loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+    loopStart = juce::jlimit (1, numSteps, loopStart);
+    loopEnd   = juce::jlimit (1, numSteps, loopEnd);
     if (loopEnd < loopStart)
         std::swap (loopStart, loopEnd);
-    
-    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..NUM_STEPS
-    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsDrums.getRawParameterValue ("loopOn") <= 0.5f)
+}
+
+bool BridgeProcessor::isMainSelectionFullClip (int numSteps) const
+{
+    int a = 1, b = numSteps;
+    getMainSelectionBounds (numSteps, a, b);
+    return a == 1 && b == numSteps;
+}
+
+void BridgeProcessor::getDrumsPlaybackWrapBounds (int& loopStart, int& loopEnd) const
+{
+    if (playbackLoopEngaged())
+        getMainSelectionBounds (NUM_STEPS, loopStart, loopEnd);
+    else
     {
         loopStart = 1;
         loopEnd = NUM_STEPS;
     }
 }
 
-void BridgeProcessor::getBassLoopBounds (int& loopStart, int& loopEnd) const
+void BridgeProcessor::getBassPlaybackWrapBounds (int& loopStart, int& loopEnd) const
 {
-    // Leader override check
-    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
-    {
-        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
-    }
+    if (playbackLoopEngaged())
+        getMainSelectionBounds (BassPreset::NUM_STEPS, loopStart, loopEnd);
     else
-    {
-        loopStart = (int) *apvtsBass.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsBass.getRawParameterValue ("loopEnd");
-    }
-
-    // Limit and swap
-    loopStart = juce::jlimit (1, BassPreset::NUM_STEPS, loopStart);
-    loopEnd   = juce::jlimit (1, BassPreset::NUM_STEPS, loopEnd);
-    if (loopEnd < loopStart)
-        std::swap (loopStart, loopEnd);
-    
-    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..BassPreset::NUM_STEPS
-    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsBass.getRawParameterValue ("loopOn") <= 0.5f)
     {
         loopStart = 1;
         loopEnd = BassPreset::NUM_STEPS;
     }
+}
+
+void BridgeProcessor::getPianoPlaybackWrapBounds (int& loopStart, int& loopEnd) const
+{
+    if (playbackLoopEngaged())
+        getMainSelectionBounds (PianoPreset::NUM_STEPS, loopStart, loopEnd);
+    else
+    {
+        loopStart = 1;
+        loopEnd = PianoPreset::NUM_STEPS;
+    }
+}
+
+void BridgeProcessor::getGuitarPlaybackWrapBounds (int& loopStart, int& loopEnd) const
+{
+    if (playbackLoopEngaged())
+        getMainSelectionBounds (GuitarPreset::NUM_STEPS, loopStart, loopEnd);
+    else
+    {
+        loopStart = 1;
+        loopEnd = GuitarPreset::NUM_STEPS;
+    }
+}
+
+void BridgeProcessor::getDrumsLoopBounds (int& loopStart, int& loopEnd) const
+{
+    getMainSelectionBounds (NUM_STEPS, loopStart, loopEnd);
+}
+
+void BridgeProcessor::getBassLoopBounds (int& loopStart, int& loopEnd) const
+{
+    getMainSelectionBounds (BassPreset::NUM_STEPS, loopStart, loopEnd);
+}
+
+double BridgeProcessor::getMainPpqPerStep() const noexcept
+{
+    int idx = 3;
+    if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("timeDivision")))
+        idx = p->getIndex();
+    else if (auto* v = apvtsMain.getRawParameterValue ("timeDivision"))
+        idx = (int) v->load();
+
+    idx = juce::jlimit (0, 9, idx);
+    static constexpr double table[10] = {
+        0.0625,              // 1/64
+        0.125,               // 1/32
+        1.0 / 6.0,           // 1/24 T
+        0.25,                // 1/16
+        1.0 / 3.0,           // 1/12 T
+        0.5,                 // 1/8
+        2.0 / 3.0,           // 1/6 T
+        1.0,                 // 1/4
+        2.0,                 // 1/2
+        4.0                  // 1 bar
+    };
+    return table[(size_t) idx];
+}
+
+void BridgeProcessor::queueMelodicPreviewNote (int midiChannel, int noteNumber, int velocity)
+{
+    const juce::ScopedLock sl (previewLock);
+    PreviewNoteEvent ev;
+    ev.channel = juce::jlimit (1, 16, midiChannel);
+    ev.note = juce::jlimit (0, 127, noteNumber);
+    ev.velocity = juce::jlimit (1, 127, velocity);
+    ev.samplesRemaining = juce::jmax (1, samplesPerBlock);
+    ev.noteOnSent = false;
+    previewNotes.add (ev);
+}
+
+void BridgeProcessor::parameterChanged (const juce::String& parameterID, float newValue)
+{
+    juce::ignoreUnused (newValue);
+
+    if (parameterID == "uiTheme")
+    {
+        if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
+            bridge::theme::applyThemeChoiceIndex (p->getIndex());
+        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+            ed->repaint();
+        return;
+    }
+
+    if (parameterID == "scale" || parameterID == "rootNote" || parameterID == "octave")
+    {
+        const int oldBassBase = bassEngine.getRootMidiBase();
+        const int oldBassScale = bassEngine.getScale();
+        const int oldPianoBase = pianoEngine.getRootMidiBase();
+        const int oldPianoScale = pianoEngine.getScale();
+        const int oldGuitarBase = guitarEngine.getRootMidiBase();
+        const int oldGuitarScale = guitarEngine.getScale();
+
+        syncDrumsEngineFromAPVTS();
+        syncBassEngineFromAPVTS();
+        syncPianoEngineFromAPVTS();
+        syncGuitarEngineFromAPVTS();
+
+        bassEngine.remapPatternAfterTonalityChange (oldBassBase, oldBassScale);
+        pianoEngine.remapPatternAfterTonalityChange (oldPianoBase, oldPianoScale);
+        guitarEngine.remapPatternAfterTonalityChange (oldGuitarBase, oldGuitarScale);
+
+        drumEngine.rebuildGridPreview();
+        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+        {
+            ed->notifyDrumsPatternChanged();
+            ed->notifyBassPatternChanged();
+            ed->notifyPianoPatternChanged();
+            ed->notifyGuitarPatternChanged();
+        }
+        return;
+    }
+
+    if (parameterID != "loopStart" && parameterID != "loopEnd")
+    {
+        if (parameterID == "loopSpanLock")
+        {
+            lastSpanLockStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+            lastSpanLockEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+        }
+        return;
+    }
+
+    if (spanLockApplying)
+        return;
+
+    if (apvtsMain.getRawParameterValue ("loopSpanLock") == nullptr
+        || apvtsMain.getRawParameterValue ("loopSpanLock")->load() <= 0.5f)
+    {
+        lastSpanLockStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+        lastSpanLockEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+        return;
+    }
+
+    const int maxSteps = 16;
+    int curS = (int) *apvtsMain.getRawParameterValue ("loopStart");
+    int curE = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+    curS = juce::jlimit (1, maxSteps, curS);
+    curE = juce::jlimit (1, maxSteps, curE);
+
+    const int span = juce::jmax (1, lastSpanLockEnd - lastSpanLockStart + 1);
+
+    auto setIntParam = [] (juce::AudioProcessorValueTreeState& ap, const char* id, int v)
+    {
+        v = juce::jlimit (1, 16, v);
+        if (auto* p = ap.getParameter (id))
+            if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
+            {
+                ip->beginChangeGesture();
+                ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) v));
+                ip->endChangeGesture();
+            }
+    };
+
+    spanLockApplying = true;
+
+    if (parameterID == "loopStart")
+    {
+        int newE = curS + span - 1;
+        if (newE > maxSteps)
+        {
+            newE = maxSteps;
+            const int newS = juce::jmax (1, newE - span + 1);
+            setIntParam (apvtsMain, "loopStart", newS);
+            setIntParam (apvtsMain, "loopEnd", newE);
+        }
+        else
+        {
+            setIntParam (apvtsMain, "loopEnd", newE);
+        }
+    }
+    else if (parameterID == "loopEnd")
+    {
+        int newS = curE - span + 1;
+        if (newS < 1)
+        {
+            newS = 1;
+            const int newE = juce::jmin (maxSteps, newS + span - 1);
+            setIntParam (apvtsMain, "loopStart", newS);
+            setIntParam (apvtsMain, "loopEnd", newE);
+        }
+        else
+        {
+            setIntParam (apvtsMain, "loopStart", newS);
+        }
+    }
+
+    spanLockApplying = false;
+    lastSpanLockStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
+    lastSpanLockEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
 }
 
 void BridgeProcessor::syncDrumsEngineFromAPVTS()
@@ -430,6 +676,8 @@ void BridgeProcessor::syncDrumsEngineFromAPVTS()
         drumsTickerRate = drumsTickerRateForChoiceIndex ((int) *apvtsDrums.getRawParameterValue ("tickerSpeed"));
 
     drumEngine.setPhraseBars (4);
+
+    drumsMidiChannel = juce::jlimit (1, 16, (int) *apvtsDrums.getRawParameterValue ("midiChannel"));
 
     drumsAnySolo = false;
     for (int drum = 0; drum < NUM_DRUMS; ++drum)
@@ -506,15 +754,26 @@ void BridgeProcessor::randomizeDrumsSettings()
 
 void BridgeProcessor::triggerDrumsGenerate()
 {
-    randomizeDrumsSettings();
+    juce::Random r;
+    drumEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncDrumsEngineFromAPVTS();
-    drumEngine.generatePattern (drumsPerformMode);
+    if (isMainSelectionFullClip (NUM_STEPS))
+        drumEngine.generatePattern (drumsPerformMode);
+    else
+    {
+        int a = 1, b = NUM_STEPS;
+        getMainSelectionBounds (NUM_STEPS, a, b);
+        drumEngine.generatePatternRange (a - 1, b - 1, drumsPerformMode);
+    }
 }
 
 void BridgeProcessor::triggerDrumsFill (int fromStep)
 {
+    int a = 1, b = NUM_STEPS;
+    getMainSelectionBounds (NUM_STEPS, a, b);
+    const int clamped = juce::jlimit (a, b, fromStep);
     drumsFillQueued   = true;
-    drumsFillFromStep = fromStep;
+    drumsFillFromStep = clamped;
 }
 
 void BridgeProcessor::syncBassEngineFromAPVTS()
@@ -563,9 +822,17 @@ void BridgeProcessor::syncBassEngineFromAPVTS()
 
 void BridgeProcessor::triggerBassGenerate()
 {
-    randomizeBassSettings();
+    juce::Random r;
+    bassEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncBassEngineFromAPVTS();
-    bassEngine.generatePattern (bassPerformMode);
+    if (isMainSelectionFullClip (BassPreset::NUM_STEPS))
+        bassEngine.generatePattern (bassPerformMode);
+    else
+    {
+        int a = 1, b = BassPreset::NUM_STEPS;
+        getMainSelectionBounds (BassPreset::NUM_STEPS, a, b);
+        bassEngine.generatePatternRange (a - 1, b - 1, bassPerformMode);
+    }
 }
 
 void BridgeProcessor::applyBassStyleAndRegenerate (int styleIndex)
@@ -616,64 +883,20 @@ void BridgeProcessor::rebuildBassGridPreview()
 
 void BridgeProcessor::triggerBassFill (int fromStep)
 {
+    int a = 1, b = BassPreset::NUM_STEPS;
+    getMainSelectionBounds (BassPreset::NUM_STEPS, a, b);
     bassFillQueued   = true;
-    bassFillFromStep = fromStep;
+    bassFillFromStep = juce::jlimit (a, b, fromStep);
 }
 
 void BridgeProcessor::getPianoLoopBounds (int& loopStart, int& loopEnd) const
 {
-    // Leader override check
-    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
-    {
-        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
-    }
-    else
-    {
-        loopStart = (int) *apvtsPiano.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsPiano.getRawParameterValue ("loopEnd");
-    }
-
-    // Limit and swap
-    loopStart = juce::jlimit (1, PianoPreset::NUM_STEPS, loopStart);
-    loopEnd   = juce::jlimit (1, PianoPreset::NUM_STEPS, loopEnd);
-    if (loopEnd < loopStart)
-        std::swap (loopStart, loopEnd);
-    
-    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..PianoPreset::NUM_STEPS
-    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsPiano.getRawParameterValue ("loopOn") <= 0.5f)
-    {
-        loopStart = 1;
-        loopEnd = PianoPreset::NUM_STEPS;
-    }
+    getMainSelectionBounds (PianoPreset::NUM_STEPS, loopStart, loopEnd);
 }
 
 void BridgeProcessor::getGuitarLoopBounds (int& loopStart, int& loopEnd) const
 {
-    // Leader override check
-    if (*apvtsMain.getRawParameterValue ("loopOn") > 0.5f)
-    {
-        loopStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
-    }
-    else
-    {
-        loopStart = (int) *apvtsGuitar.getRawParameterValue ("loopStart");
-        loopEnd   = (int) *apvtsGuitar.getRawParameterValue ("loopEnd");
-    }
-
-    // Limit and swap
-    loopStart = juce::jlimit (1, GuitarPreset::NUM_STEPS, loopStart);
-    loopEnd   = juce::jlimit (1, GuitarPreset::NUM_STEPS, loopEnd);
-    if (loopEnd < loopStart)
-        std::swap (loopStart, loopEnd);
-    
-    // Instrument local toggle check -> if neither Leader nor Local is ON, it's 1..GuitarPreset::NUM_STEPS
-    if (*apvtsMain.getRawParameterValue ("loopOn") <= 0.5f && *apvtsGuitar.getRawParameterValue ("loopOn") <= 0.5f)
-    {
-        loopStart = 1;
-        loopEnd = GuitarPreset::NUM_STEPS;
-    }
+    getMainSelectionBounds (GuitarPreset::NUM_STEPS, loopStart, loopEnd);
 }
 
 void BridgeProcessor::syncPianoEngineFromAPVTS()
@@ -814,9 +1037,17 @@ void BridgeProcessor::randomizeGuitarSettings()
 
 void BridgeProcessor::triggerPianoGenerate()
 {
-    randomizePianoSettings();
+    juce::Random r;
+    pianoEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncPianoEngineFromAPVTS();
-    pianoEngine.generatePattern (pianoPerformMode);
+    if (isMainSelectionFullClip (PianoPreset::NUM_STEPS))
+        pianoEngine.generatePattern (pianoPerformMode);
+    else
+    {
+        int a = 1, b = PianoPreset::NUM_STEPS;
+        getMainSelectionBounds (PianoPreset::NUM_STEPS, a, b);
+        pianoEngine.generatePatternRange (a - 1, b - 1, pianoPerformMode);
+    }
 }
 
 void BridgeProcessor::applyPianoStyleAndRegenerate (int styleIndex)
@@ -839,15 +1070,25 @@ void BridgeProcessor::rebuildPianoGridPreview()
 
 void BridgeProcessor::triggerPianoFill (int fromStep)
 {
+    int a = 1, b = PianoPreset::NUM_STEPS;
+    getMainSelectionBounds (PianoPreset::NUM_STEPS, a, b);
     pianoFillQueued   = true;
-    pianoFillFromStep = fromStep;
+    pianoFillFromStep = juce::jlimit (a, b, fromStep);
 }
 
 void BridgeProcessor::triggerGuitarGenerate()
 {
-    randomizeGuitarSettings();
+    juce::Random r;
+    guitarEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncGuitarEngineFromAPVTS();
-    guitarEngine.generatePattern (guitarPerformMode);
+    if (isMainSelectionFullClip (GuitarPreset::NUM_STEPS))
+        guitarEngine.generatePattern (guitarPerformMode);
+    else
+    {
+        int a = 1, b = GuitarPreset::NUM_STEPS;
+        getMainSelectionBounds (GuitarPreset::NUM_STEPS, a, b);
+        guitarEngine.generatePatternRange (a - 1, b - 1, guitarPerformMode);
+    }
 }
 
 void BridgeProcessor::applyGuitarStyleAndRegenerate (int styleIndex)
@@ -870,8 +1111,10 @@ void BridgeProcessor::rebuildGuitarGridPreview()
 
 void BridgeProcessor::triggerGuitarFill (int fromStep)
 {
+    int a = 1, b = GuitarPreset::NUM_STEPS;
+    getMainSelectionBounds (GuitarPreset::NUM_STEPS, a, b);
     guitarFillQueued   = true;
-    guitarFillFromStep = fromStep;
+    guitarFillFromStep = juce::jlimit (a, b, fromStep);
 }
 
 void BridgeProcessor::flushPendingNoteOffs (juce::Array<PendingOff>& pending, juce::MidiBuffer& midi)
@@ -906,7 +1149,7 @@ void BridgeProcessor::scheduleDrumsNotesForStep (int globalStep, int wrappedStep
         float g = leaderMidiGain (apvtsMain);
         uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hits[(size_t) drum].velocity * g + 0.5f));
 
-        constexpr int midiChannel = 10;
+        const int midiChannel = drumsMidiChannel;
         midi.addEvent (juce::MidiMessage::noteOn  (midiChannel, midiNote, vel), finalOff);
 
         int64 offAt = midiSampleClock + finalOff + (int64)(sampleRate * 0.05);
@@ -943,19 +1186,18 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
     currentHostBpm.store (bpm);
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    double samplesPerStep = samplesPerBeat / 4.0;
+    const double ppqPerStep = getMainPpqPerStep();
+    double samplesPerStep = samplesPerBeat * ppqPerStep;
     drumEngine.setPlaybackSamplesPerStep (samplesPerStep);
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
 
-    constexpr double ppqPerStep = 0.25;
-
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getDrumsLoopBounds (ls, le);
+    getDrumsPlaybackWrapBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -985,7 +1227,12 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
             if (drumsPerformMode)
             {
                 syncDrumsEngineFromAPVTS();
-                drumEngine.generatePattern (true);
+                int a = 1, b = NUM_STEPS;
+                getMainSelectionBounds (NUM_STEPS, a, b);
+                if (a == 1 && b == NUM_STEPS)
+                    drumEngine.generatePattern (true);
+                else
+                    drumEngine.generatePatternRange (a - 1, b - 1, true);
             }
 
             if (drumsFillQueued)
@@ -1061,18 +1308,17 @@ void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::
     bassLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    double samplesPerStep = samplesPerBeat / 4.0;
+    const double ppqPerStep = getMainPpqPerStep();
+    double samplesPerStep = samplesPerBeat * ppqPerStep;
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
-
-    constexpr double ppqPerStep = 0.25;
 
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getBassLoopBounds (ls, le);
+    getBassPlaybackWrapBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -1102,7 +1348,12 @@ void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::
             if (bassPerformMode)
             {
                 syncBassEngineFromAPVTS();
-                bassEngine.generatePattern (true);
+                int a = 1, b = BassPreset::NUM_STEPS;
+                getMainSelectionBounds (BassPreset::NUM_STEPS, a, b);
+                if (a == 1 && b == BassPreset::NUM_STEPS)
+                    bassEngine.generatePattern (true);
+                else
+                    bassEngine.generatePatternRange (a - 1, b - 1, true);
             }
 
             if (bassFillQueued)
@@ -1178,18 +1429,17 @@ void BridgeProcessor::processPianoBlock (juce::AudioBuffer<float>& buffer, juce:
     pianoLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    double samplesPerStep = samplesPerBeat / 4.0;
+    const double ppqPerStep = getMainPpqPerStep();
+    double samplesPerStep = samplesPerBeat * ppqPerStep;
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
-
-    constexpr double ppqPerStep = 0.25;
 
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getPianoLoopBounds (ls, le);
+    getPianoPlaybackWrapBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -1219,7 +1469,12 @@ void BridgeProcessor::processPianoBlock (juce::AudioBuffer<float>& buffer, juce:
             if (pianoPerformMode)
             {
                 syncPianoEngineFromAPVTS();
-                pianoEngine.generatePattern (true);
+                int a = 1, b = PianoPreset::NUM_STEPS;
+                getMainSelectionBounds (PianoPreset::NUM_STEPS, a, b);
+                if (a == 1 && b == PianoPreset::NUM_STEPS)
+                    pianoEngine.generatePattern (true);
+                else
+                    pianoEngine.generatePatternRange (a - 1, b - 1, true);
             }
 
             if (pianoFillQueued)
@@ -1295,18 +1550,17 @@ void BridgeProcessor::processGuitarBlock (juce::AudioBuffer<float>& buffer, juce
     guitarLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    double samplesPerStep = samplesPerBeat / 4.0;
+    const double ppqPerStep = getMainPpqPerStep();
+    double samplesPerStep = samplesPerBeat * ppqPerStep;
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
-
-    constexpr double ppqPerStep = 0.25;
 
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
 
     int ls, le;
-    getGuitarLoopBounds (ls, le);
+    getGuitarPlaybackWrapBounds (ls, le);
     const int ls0 = ls - 1;
     const int le0 = le - 1;
     const int loopLen = le0 - ls0 + 1;
@@ -1336,7 +1590,12 @@ void BridgeProcessor::processGuitarBlock (juce::AudioBuffer<float>& buffer, juce
             if (guitarPerformMode)
             {
                 syncGuitarEngineFromAPVTS();
-                guitarEngine.generatePattern (true);
+                int a = 1, b = GuitarPreset::NUM_STEPS;
+                getMainSelectionBounds (GuitarPreset::NUM_STEPS, a, b);
+                if (a == 1 && b == GuitarPreset::NUM_STEPS)
+                    guitarEngine.generatePattern (true);
+                else
+                    guitarEngine.generatePatternRange (a - 1, b - 1, true);
             }
 
             if (guitarFillQueued)
@@ -1367,6 +1626,25 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     buffer.clear();
 
     const int numSamples = buffer.getNumSamples();
+
+    {
+        const juce::ScopedLock sl (previewLock);
+        for (int i = previewNotes.size() - 1; i >= 0; --i)
+        {
+            auto& ev = previewNotes.getReference (i);
+            if (! ev.noteOnSent)
+            {
+                midiMessages.addEvent (juce::MidiMessage::noteOn (ev.channel, ev.note, (juce::uint8) ev.velocity), 0);
+                ev.noteOnSent = true;
+            }
+            ev.samplesRemaining -= numSamples;
+            if (ev.samplesRemaining <= 0)
+            {
+                midiMessages.addEvent (juce::MidiMessage::noteOff (ev.channel, ev.note), juce::jmax (0, numSamples - 1));
+                previewNotes.remove (i);
+            }
+        }
+    }
 
     const auto mainEngineOn = [this] (const char* paramId) -> bool
     {
@@ -1444,7 +1722,7 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
 void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
 {
     juce::XmlElement root ("BridgeState");
-    root.setAttribute ("bridgeVersion", 4);
+    root.setAttribute ("bridgeVersion", 5);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
     if (auto xmlA = apvtsDrums.copyState().createXml())
@@ -1476,7 +1754,21 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
             for (auto* child : xml->getChildIterator())
             {
                 if (child->hasTagName (apvtsMain.state.getType()))
+                {
                     apvtsMain.replaceState (juce::ValueTree::fromXml (*child));
+                    if (bridgeVersion < 5)
+                    {
+                        if (apvtsMain.getRawParameterValue ("loopOn") != nullptr
+                            && apvtsMain.getRawParameterValue ("loopOn")->load() > 0.5f
+                            && apvtsMain.getRawParameterValue ("playbackLoopOn") != nullptr
+                            && apvtsMain.getRawParameterValue ("playbackLoopOn")->load() <= 0.5f)
+                        {
+                            if (auto* p = apvtsMain.getParameter ("playbackLoopOn"))
+                                if (auto* bp = dynamic_cast<juce::AudioParameterBool*> (p))
+                                    bp->setValueNotifyingHost (1.0f);
+                        }
+                    }
+                }
                 else if (child->hasTagName (apvtsDrums.state.getType()))
                     apvtsDrums.replaceState (juce::ValueTree::fromXml (*child));
                 else if (child->hasTagName (apvtsBass.state.getType()))
@@ -1486,6 +1778,9 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                 else if (child->hasTagName (apvtsGuitar.state.getType()))
                     apvtsGuitar.replaceState (juce::ValueTree::fromXml (*child));
             }
+
+            if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
+                bridge::theme::applyThemeChoiceIndex (p->getIndex());
         }
     }
 }

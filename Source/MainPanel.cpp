@@ -1,14 +1,14 @@
 #include "MainPanel.h"
+#include "BridgeAppleHIG.h"
 #include "MelodicGridLayout.h"
 #include "BridgePanelLayout.h"
+#include "BridgeInstrumentStripStyle.h"
 #include "BridgeInstrumentStyles.h"
-#include "BridgeInstrumentUI.h"
-#include "drums/DrumsStylePresets.h"
-#include "bass/BassStylePresets.h"
 
 MainPanel::MainPanel (BridgeProcessor& p)
     : proc (p),
-      bottomHalf (p.apvtsMain, laf, bridge::colors::accentLeader,
+      instrumentStrip (InstrumentControlBar::makeLeaderConfig (p)),
+      bottomHalf (p.apvtsMain, p.apvtsMain, laf, bridge::colors::accentLeader(),
                   [&p] { p.triggerDrumsGenerate(); p.triggerBassGenerate(); p.triggerPianoGenerate(); p.triggerGuitarGenerate(); },
                   [&p] (bool active) { 
                       p.drumEngine.setFillHoldActive(active); 
@@ -21,54 +21,50 @@ MainPanel::MainPanel (BridgeProcessor& p)
 
     proc.apvtsMain.state.addListener (this);
 
-    auto setupCombo = [&] (juce::Label& lbl, juce::ComboBox& box, const juce::String& title,
-                           juce::AudioProcessorValueTreeState& apvts, const juce::String& paramId)
-    {
-        lbl.setText (title, juce::dontSendNotification);
-        lbl.setColour (juce::Label::textColourId, bridge::colors::textSecondary);
-        addAndMakeVisible (lbl);
-        addAndMakeVisible (box);
-        if (apvts.getParameter(paramId))
-        {
-            if (title == "STYLE") styleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, paramId, box);
-            if (title == "ROOT") rootAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, paramId, box);
-            if (title == "SCALE") scaleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, paramId, box);
-            if (title == "OCT") octaveAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (apvts, paramId, box);
-        }
-    };
-
-    setupCombo (styleLabel, styleBox, "STYLE", proc.apvtsMain, "leaderStyle");
-    for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
-        styleBox.addItem (bridgeUnifiedStyleNames()[i], i + 1);
-
-    setupCombo (rootLabel, rootBox, "ROOT", proc.apvtsMain, "rootNote");
-    static const char* roots[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-    for (int i = 0; i < 12; ++i) rootBox.addItem (roots[i], i + 1);
-
-    setupCombo (scaleLabel, scaleBox, "SCALE", proc.apvtsMain, "scale");
-    for (int i = 0; i < BassPreset::NUM_SCALES; ++i) scaleBox.addItem (BassPreset::SCALE_NAMES[i], i + 1);
-
-    setupCombo (octaveLabel, octaveBox, "OCT", proc.apvtsMain, "octave");
-    for (int i = 1; i <= 4; ++i) octaveBox.addItem (juce::String (i), i);
+    addAndMakeVisible (instrumentStrip);
 
     setupRow (drumsRow,  "DRUMS",  StripPreview::Kind::drums,  "mainMuteDrums",  "mainSoloDrums");
     setupRow (bassRow,   "BASS",   StripPreview::Kind::bass,   "mainMuteBass",   "mainSoloBass");
     setupRow (pianoRow,  "PIANO",  StripPreview::Kind::piano,  "mainMutePiano",  "mainSoloPiano");
     setupRow (guitarRow, "GUITAR", StripPreview::Kind::guitar, "mainMuteGuitar", "mainSoloGuitar");
 
+    instrumentStrip.getMuteButton().setTooltip ("Mute Leader (arrangement off)");
+    instrumentStrip.getSoloButton().setTooltip ("Solo all tracks");
+
+    instrumentStrip.getMuteButton().onClick = [this]
+    {
+        const bool muted = instrumentStrip.getMuteButton().getToggleState();
+        if (auto* par = proc.apvtsMain.getParameter ("leaderTabOn"))
+            par->setValueNotifyingHost (muted ? 0.0f : 1.0f);
+    };
+
+    instrumentStrip.getSoloButton().onClick = [this]
+    {
+        const bool v = instrumentStrip.getSoloButton().getToggleState();
+        const float norm = v ? 1.0f : 0.0f;
+        for (const char* id : { "mainSoloDrums", "mainSoloBass", "mainSoloPiano", "mainSoloGuitar" })
+            if (auto* par = proc.apvtsMain.getParameter (id))
+                par->setValueNotifyingHost (norm);
+        syncSoloButtonColours();
+        syncPageSoloToggle();
+    };
+
     addAndMakeVisible (bottomHalf);
-    addAndMakeVisible (pagePower);
-    powerAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvtsMain, "leaderTabOn", pagePower);
     proc.apvtsMain.addParameterListener ("leaderTabOn", this);
+    for (const char* id : { "mainSoloDrums", "mainSoloBass", "mainSoloPiano", "mainSoloGuitar" })
+        proc.apvtsMain.addParameterListener (id, this);
 
     startTimerHz (30);
     syncSoloButtonColours();
+    syncPageSoloToggle();
     applyLeaderPageState();
 }
 
 MainPanel::~MainPanel()
 {
     proc.apvtsMain.removeParameterListener ("leaderTabOn", this);
+    for (const char* id : { "mainSoloDrums", "mainSoloBass", "mainSoloPiano", "mainSoloGuitar" })
+        proc.apvtsMain.removeParameterListener (id, this);
     proc.apvtsMain.state.removeListener (this);
     setLookAndFeel (nullptr);
 }
@@ -78,6 +74,21 @@ void MainPanel::parameterChanged (const juce::String& parameterID, float newValu
     juce::ignoreUnused (newValue);
     if (parameterID == "leaderTabOn")
         applyLeaderPageState();
+    else if (parameterID == "mainSoloDrums" || parameterID == "mainSoloBass"
+             || parameterID == "mainSoloPiano" || parameterID == "mainSoloGuitar")
+    {
+        syncPageSoloToggle();
+        syncSoloButtonColours();
+    }
+}
+
+void MainPanel::syncPageSoloToggle()
+{
+    const bool d = proc.apvtsMain.getRawParameterValue ("mainSoloDrums")->load() > 0.5f;
+    const bool b = proc.apvtsMain.getRawParameterValue ("mainSoloBass")->load() > 0.5f;
+    const bool p = proc.apvtsMain.getRawParameterValue ("mainSoloPiano")->load() > 0.5f;
+    const bool g = proc.apvtsMain.getRawParameterValue ("mainSoloGuitar")->load() > 0.5f;
+    instrumentStrip.getSoloButton().setToggleState (d && b && p && g, juce::dontSendNotification);
 }
 
 void MainPanel::applyLeaderPageState()
@@ -86,18 +97,7 @@ void MainPanel::applyLeaderPageState()
                         && proc.apvtsMain.getRawParameterValue ("leaderTabOn")->load() > 0.5f;
 
     bottomHalf.setEnabled (on);
-    styleLabel.setEnabled (on);
-    styleBox.setEnabled (on);
-    rootLabel.setEnabled (on);
-    rootBox.setEnabled (on);
-    scaleLabel.setEnabled (on);
-    scaleBox.setEnabled (on);
-    octaveLabel.setEnabled (on);
-    octaveBox.setEnabled (on);
-
-    pagePower.setEnabled (true);
-    pagePower.setToggleState (on, juce::dontSendNotification);
-    pagePower.setAlpha (1.0f);
+    instrumentStrip.setTrackPowered (on);
 
     const float dim = on ? 1.0f : 0.42f;
     auto dimRow = [&] (Row& row)
@@ -124,52 +124,64 @@ void MainPanel::setupRow (Row& row,
                           const char* soloId)
 {
     row.name.setText (rowName, juce::dontSendNotification);
-    row.name.setFont (juce::Font (juce::FontOptions().withHeight(12.0f).withStyle("Bold")));
-    row.name.setColour (juce::Label::textColourId, bridge::colors::textPrimary);
+    row.name.setFont (bridge::hig::uiFont (13.0f, "Bold"));
+    row.name.setColour (juce::Label::textColourId, bridge::colors::textPrimary());
     row.name.setJustificationType (juce::Justification::centredTop);
     addAndMakeVisible (row.name);
 
     row.preview = std::make_unique<StripPreview> (proc, previewKind);
     addAndMakeVisible (*row.preview);
 
-    auto setupToggle = [] (juce::TextButton& btn)
+    row.name.setFont (bridge::hig::uiFont (19.0f, "Bold"));
+
+    auto setupMute = [] (juce::TextButton& btn)
     {
         btn.setClickingTogglesState (true);
-        btn.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack);
-        btn.setColour (juce::TextButton::textColourOffId, bridge::colors::textDim);
-        btn.setColour (juce::TextButton::textColourOnId, bridge::colors::textPrimary);
+        btn.setConnectedEdges (0);
+        bridge::instrumentStripStyle::tagStripMute (btn);
+        btn.setColour (juce::TextButton::buttonColourId, bridge::instrumentStripStyle::fieldBg());
+        btn.setColour (juce::TextButton::buttonOnColourId, bridge::instrumentStripStyle::fieldBg());
+        btn.setColour (juce::TextButton::textColourOffId, bridge::instrumentStripStyle::msOffText());
+        btn.setColour (juce::TextButton::textColourOnId, bridge::instrumentStripStyle::muteOn());
+    };
+    auto setupSoloLane = [] (juce::TextButton& btn)
+    {
+        btn.setClickingTogglesState (true);
+        btn.setConnectedEdges (0);
+        bridge::instrumentStripStyle::tagStripSolo (btn);
+        btn.setColour (juce::TextButton::buttonColourId, bridge::instrumentStripStyle::fieldBg());
+        btn.setColour (juce::TextButton::buttonOnColourId, bridge::instrumentStripStyle::fieldBg());
+        btn.setColour (juce::TextButton::textColourOffId, bridge::instrumentStripStyle::msOffText());
+        btn.setColour (juce::TextButton::textColourOnId, bridge::instrumentStripStyle::soloOn());
     };
 
-    setupToggle (row.mute);
-    setupToggle (row.solo);
-    row.mute.setTooltip("Mute Track");
-    row.solo.setTooltip("Solo Track");
+    setupMute (row.mute);
+    setupSoloLane (row.solo);
+    row.mute.setTooltip ("Mute Track");
+    row.solo.setTooltip ("Solo Track");
     addAndMakeVisible (row.mute);
     addAndMakeVisible (row.solo);
 
     row.muteAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvtsMain, muteId, row.mute);
     row.soloAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvtsMain, soloId, row.solo);
 
-    row.solo.onClick = [this] { syncSoloButtonColours(); };
+    row.mute.onClick = [this] { syncSoloButtonColours(); };
+    row.solo.onClick = [this] { syncSoloButtonColours(); syncPageSoloToggle(); };
 }
 
 void MainPanel::syncSoloButtonColours()
 {
-    using namespace bridge::colors;
-    auto styleSolo = [] (juce::TextButton& b, bool isLit, juce::Colour accent)
+    auto styleSolo = [] (juce::TextButton& b)
     {
-        b.setColour (juce::TextButton::buttonOnColourId, isLit ? accent.withAlpha(0.7f) : knobTrack);
-        b.setColour (juce::TextButton::textColourOnId, isLit ? juce::Colours::white : textPrimary);
+        b.setColour (juce::TextButton::buttonColourId, bridge::instrumentStripStyle::fieldBg());
+        b.setColour (juce::TextButton::buttonOnColourId, bridge::instrumentStripStyle::fieldBg());
+        b.setColour (juce::TextButton::textColourOffId, bridge::instrumentStripStyle::msOffText());
+        b.setColour (juce::TextButton::textColourOnId, bridge::instrumentStripStyle::soloOn());
     };
-    bool dS = proc.apvtsMain.getRawParameterValue ("mainSoloDrums")->load() > 0.5f;
-    bool bS = proc.apvtsMain.getRawParameterValue ("mainSoloBass")->load() > 0.5f;
-    bool pS = proc.apvtsMain.getRawParameterValue ("mainSoloPiano")->load() > 0.5f;
-    bool gS = proc.apvtsMain.getRawParameterValue ("mainSoloGuitar")->load() > 0.5f;
-    
-    styleSolo (drumsRow.solo, dS, accentDrums);
-    styleSolo (bassRow.solo, bS, accentBass);
-    styleSolo (pianoRow.solo, pS, accentPiano);
-    styleSolo (guitarRow.solo, gS, accentGuitar);
+    styleSolo (drumsRow.solo);
+    styleSolo (bassRow.solo);
+    styleSolo (pianoRow.solo);
+    styleSolo (guitarRow.solo);
 }
 
 void MainPanel::valueTreePropertyChanged (juce::ValueTree& vt, const juce::Identifier& id)
@@ -189,37 +201,35 @@ void MainPanel::resized()
 {
     using namespace bridge::instrumentLayout;
 
-    const auto inner = getLocalBounds().reduced (16);
-    auto shell = bridge::panelLayout::splitInstrumentContent (inner, 42);
-
-    // ── Dropdowns (match Bass: Style, ROOT / SCALE / OCT, power) ──
-    auto dropdownRow = inner.withHeight (42);
-    bridge::panelLayout::layoutMelodicDropdownRow (dropdownRow, styleLabel, styleBox,
-                                                   rootLabel, rootBox, scaleLabel, scaleBox,
-                                                   octaveLabel, octaveBox, pagePower);
+    auto bounds = getLocalBounds();
+    auto stripRow = bounds.removeFromTop (kDropdownH);
+    instrumentStrip.setBounds (stripRow);
+    auto inner = bounds.reduced (16);
+    auto shell = bridge::panelLayout::splitInstrumentContent (inner, 0);
 
     // ── Mixer Lanes ──
     auto mixArea = shell.mainCard.reduced (10, 10);
     mixArea.removeFromTop (16); // step numbers (1..16) drawn in paint()
 
-    constexpr int laneGap = 6;
+    constexpr int laneGap = 4;
     const int laneH = (mixArea.getHeight() - laneGap * 3) / 4;
 
     auto layoutLane = [&] (Row& row, juce::Rectangle<int> b) {
         row.bounds = b;
-        
-        auto leftCol = b.removeFromLeft(90);
-        row.name.setBounds(leftCol.removeFromTop(20));
-        leftCol.removeFromTop(4);
-        
-        auto btnsRow = leftCol.removeFromTop(18);
-        row.mute.setBounds(btnsRow.removeFromLeft(20));
-        btnsRow.removeFromLeft(4);
-        row.solo.setBounds(btnsRow.removeFromLeft(20));
-        
-        btnsRow.removeFromLeft (10);
+
+        constexpr int kGutterW = 64;
+        constexpr int kBtn = 22;
+        constexpr int kBtnGap = 4;
+        auto gutter = b.removeFromLeft (kGutterW);
+        row.name.setBounds (gutter.removeFromTop (14));
+        gutter.removeFromTop (2);
+        auto btnStrip = gutter.removeFromTop (kBtn);
+        const int bx0 = (kGutterW - (kBtn * 2 + kBtnGap)) / 2;
+        row.mute.setBounds (btnStrip.getX() + bx0, btnStrip.getY(), kBtn, kBtn);
+        row.solo.setBounds (btnStrip.getX() + bx0 + kBtn + kBtnGap, btnStrip.getY(), kBtn, kBtn);
+
         b.removeFromLeft (8);
-        row.preview->setBounds(b);
+        row.preview->setBounds (b);
     };
 
     layoutLane (drumsRow, mixArea.removeFromTop (laneH));
@@ -230,23 +240,27 @@ void MainPanel::resized()
     mixArea.removeFromTop (laneGap);
     layoutLane (guitarRow, mixArea.removeFromTop (laneH));
 
-    bottomHalf.setBounds (shell.knobsCard.getUnion (shell.loopActionsCard));
+    bottomHalf.setBounds (shell.bottomStrip);
 }
 
 void MainPanel::paint (juce::Graphics& g)
 {
     using namespace bridge::instrumentLayout;
-    g.fillAll (bridge::colors::background);
+    g.fillAll (bridge::colors::background());
 
-    auto shell = bridge::panelLayout::splitInstrumentContent(getLocalBounds().reduced(16), 42);
-    
+    auto bounds = getLocalBounds();
+
+    bounds.removeFromTop (kDropdownH);
+    auto inner = bounds.reduced (16);
+    auto shell = bridge::panelLayout::splitInstrumentContent (inner, 0);
+
     auto drawCard = [&] (juce::Rectangle<int> r)
     {
         auto rf = r.toFloat();
-        g.setColour (bridge::colors::cardSurface);
-        g.fillRoundedRectangle (rf, (float) kCardRadius);
-        g.setColour (bridge::colors::cardOutline.withAlpha (0.35f));
-        g.drawRoundedRectangle (rf.reduced (0.5f), (float) kCardRadius, 1.0f);
+        g.setColour (bridge::colors::cardSurface());
+        g.fillRect (rf);
+        g.setColour (bridge::colors::cardOutline().withAlpha (0.35f));
+        g.drawRect (rf.reduced (0.5f), 1.0f);
     };
     drawCard (shell.mainCard);
 
@@ -254,13 +268,13 @@ void MainPanel::paint (juce::Graphics& g)
     {
         auto mixAreaP = shell.mainCard.reduced (10, 10);
         mixAreaP.removeFromTop (16);
-        constexpr int laneGap = 6;
+        constexpr int laneGap = 4;
         const int laneH = (mixAreaP.getHeight() - laneGap * 3) / 4;
         float y = (float) mixAreaP.getY();
         for (int lane = 0; lane < 3; ++lane)
         {
             y += (float) laneH;
-            g.setColour (bridge::colors::cardOutline.withAlpha (0.4f));
+            g.setColour (bridge::colors::cardOutline().withAlpha (0.4f));
             g.drawHorizontalLine (juce::roundToInt (y + (float) laneGap * 0.5f),
                                   (float) mixAreaP.getX(), (float) mixAreaP.getRight());
             y += (float) laneGap;
@@ -268,11 +282,12 @@ void MainPanel::paint (juce::Graphics& g)
     }
 
     // Draw 1..16 grid headers
-    g.setColour (bridge::colors::textDim);
-    g.setFont (10.0f);
+    g.setColour (bridge::colors::textDim());
+    g.setFont (bridge::hig::uiFont (11.0f));
     auto mixArea = shell.mainCard.reduced (10, 10);
     auto headerBox = mixArea.removeFromTop (16);
-    headerBox.removeFromLeft (98); // offset to match start of preview grids
+    // 64 (lane gutter) + 8 gap + 64 (strip inside preview) — align with melodic pages
+    headerBox.removeFromLeft (136);
     const float headerW = (float) headerBox.getWidth();
     const float cellW = headerW / 16.0f;
     const float x0 = (float) headerBox.getX();
@@ -289,50 +304,108 @@ void MainPanel::paint (juce::Graphics& g)
 
 void MainPanel::StripPreview::paint (juce::Graphics& g)
 {
-    auto b = getLocalBounds().toFloat();
-    const float cellW = b.getWidth() / 16.0f;
+    auto full = getLocalBounds().toFloat();
+    constexpr float kSide = 64.0f;
+    auto gridRect = full;
+    gridRect.removeFromLeft (kSide);
+
+    const float cellW = gridRect.getWidth() / 16.0f;
     const bool leaderOn = proc.apvtsMain.getRawParameterValue ("leaderTabOn") != nullptr
                               && proc.apvtsMain.getRawParameterValue ("leaderTabOn")->load() > 0.5f;
 
-    g.setColour (juce::Colour (0xff18141f));
+    g.setColour (bridge::hig::tertiaryGroupedBackground);
     g.fillAll();
 
-    g.setColour (juce::Colour (0xff3a3548).withAlpha (0.2f));
+    // Left strip: drum rack (rows) or mini keyboard (melodic)
+    {
+        auto strip = full.withWidth (kSide);
+        g.setColour (bridge::hig::tertiaryGroupedBackground);
+        g.fillRect (strip);
+        g.setColour (bridge::hig::separatorOpaque.withAlpha (0.45f));
+        g.drawVerticalLine (juce::roundToInt (strip.getRight()), strip.getY(), strip.getBottom());
+
+        if (kind == Kind::drums)
+        {
+            const float sh = strip.getHeight() / (float) NUM_DRUMS;
+            for (int i = 1; i < NUM_DRUMS; ++i)
+                g.drawHorizontalLine (juce::roundToInt (strip.getY() + (float) i * sh),
+                                      strip.getX(), strip.getRight());
+            g.setFont (bridge::hig::uiFont (9.0f, "Semibold"));
+            for (int vr = 0; vr < NUM_DRUMS; ++vr)
+            {
+                const int d = NUM_DRUMS - 1 - vr;
+                auto row = strip.withHeight (sh).withY (strip.getY() + (float) vr * sh);
+                g.setColour (bridge::colors::textDim());
+                g.drawText (juce::String (DRUM_NAMES[d]).substring (0, 2),
+                            row.reduced (2.0f, 0.0f), juce::Justification::centred, true);
+            }
+        }
+        else
+        {
+            auto paintMiniKeys = [&] (auto& engine)
+            {
+                int low = 60, high = 72;
+                bridge::setOneOctaveMelodicRange (engine, low, high);
+                const int nRows = bridge::kMelodicOctaveRows;
+                const float rowH = strip.getHeight() / (float) nRows;
+                for (int r = 0; r < nRows; ++r)
+                {
+                    const int midi = high - r;
+                    auto row = strip.withHeight (rowH).withY (strip.getY() + (float) r * rowH);
+                    const bool bk = (midi % 12 == 1 || midi % 12 == 3 || midi % 12 == 6
+                                    || midi % 12 == 8 || midi % 12 == 10);
+                    g.setColour (bk ? bridge::hig::systemBackground : bridge::hig::secondaryLabel);
+                    g.fillRect (row.reduced (0.0f, 0.5f));
+                }
+                g.setColour (bridge::hig::separatorOpaque.withAlpha (0.35f));
+                for (int i = 1; i < nRows; ++i)
+                    g.drawHorizontalLine (juce::roundToInt (strip.getY() + (float) i * rowH),
+                                          strip.getX(), strip.getRight());
+            };
+            if (kind == Kind::bass)   paintMiniKeys (proc.bassEngine);
+            else if (kind == Kind::piano) paintMiniKeys (proc.pianoEngine);
+            else                          paintMiniKeys (proc.guitarEngine);
+        }
+    }
+
+    auto gx0 = gridRect.getX();
+    g.setColour (bridge::hig::separatorOpaque.withAlpha (0.35f));
     for (int i = 1; i < 16; ++i)
-        g.drawVerticalLine (juce::roundToInt ((float) i * cellW), 0.0f, b.getHeight());
+        g.drawVerticalLine (juce::roundToInt (gx0 + (float) i * cellW), gridRect.getY(), gridRect.getBottom());
 
     if (kind == Kind::drums)
     {
-        const float cellH = b.getHeight() / 8.0f;
+        const float cellH = gridRect.getHeight() / (float) NUM_DRUMS;
         const auto& pat = proc.drumEngine.getPattern();
 
-        for (int i = 1; i < 8; ++i)
-            g.drawHorizontalLine (juce::roundToInt ((float) i * cellH), 0.0f, b.getWidth());
+        for (int i = 1; i < NUM_DRUMS; ++i)
+            g.drawHorizontalLine (juce::roundToInt (gridRect.getY() + (float) i * cellH),
+                                  gx0, gridRect.getRight());
 
         for (int step = 0; step < 16; ++step)
         {
             const auto si = (size_t) step;
-            for (int visualRow = 0; visualRow < 8; ++visualRow)
+            for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
             {
-                const int d = 7 - visualRow;
+                const int d = NUM_DRUMS - 1 - visualRow;
                 if (pat[si][(size_t) d].active)
                 {
                     const float vel = pat[si][(size_t) d].velocity / 127.0f;
-                    g.setColour (bridge::colors::accentDrums.withAlpha (0.6f + vel * 0.4f));
-                    g.fillRoundedRectangle ((float) step * cellW + 1.0f,
-                                            (float) visualRow * cellH + 1.0f,
-                                            cellW - 2.0f, cellH - 2.0f, 2.0f);
+                    g.setColour (bridge::colors::accentDrums().withAlpha (0.6f + vel * 0.4f));
+                    g.fillRect (gx0 + (float) step * cellW + 1.0f,
+                                gridRect.getY() + (float) visualRow * cellH + 1.0f,
+                                cellW - 2.0f, cellH - 2.0f);
                 }
             }
         }
         const int cur = proc.drumsCurrentVisualStep.load();
         if (leaderOn && cur >= 0 && cur < 16)
         {
-            const float x = (float) cur * cellW;
+            const float x = gx0 + (float) cur * cellW;
             g.setColour (juce::Colours::white.withAlpha (0.2f));
-            g.fillRect (x, 0.0f, cellW, b.getHeight());
+            g.fillRect (x, gridRect.getY(), cellW, gridRect.getHeight());
             g.setColour (juce::Colours::white.withAlpha (0.7f));
-            g.fillRect (x, 0.0f, 2.0f, b.getHeight());
+            g.fillRect (x, gridRect.getY(), 2.0f, gridRect.getHeight());
         }
     }
     else
@@ -345,10 +418,11 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
             bridge::setOneOctaveMelodicRange (engine, minMidi, maxMidi);
             const int nRows = bridge::kMelodicOctaveRows;
 
-            const float cellH = b.getHeight() / (float) nRows;
+            const float cellH = gridRect.getHeight() / (float) nRows;
 
             for (int i = 1; i < nRows; ++i)
-                g.drawHorizontalLine (juce::roundToInt ((float) i * cellH), 0.0f, b.getWidth());
+                g.drawHorizontalLine (juce::roundToInt (gridRect.getY() + (float) i * cellH),
+                                      gx0, gridRect.getRight());
 
             for (int i = 0; i < 16; ++i)
             {
@@ -359,29 +433,29 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
                     int displayRow = maxMidi - midi;
                     displayRow = juce::jlimit (0, nRows - 1, displayRow);
 
-                    const float y = (float) displayRow * cellH;
+                    const float y = gridRect.getY() + (float) displayRow * cellH;
                     g.setColour (col.withAlpha (0.6f + (grid[gi].velocity / 127.0f) * 0.4f));
 
-                    auto block = juce::Rectangle<float> ((float) i * cellW, y, cellW, cellH)
+                    auto block = juce::Rectangle<float> (gx0 + (float) i * cellW, y, cellW, cellH)
                                        .reduced (1.0f, cellH * 0.2f);
-                    g.fillRoundedRectangle (block, 3.0f);
+                    g.fillRect (block);
                 }
             }
             if (leaderOn && curStep >= 0 && curStep < 16)
             {
-                const float x = (float) curStep * cellW;
+                const float x = gx0 + (float) curStep * cellW;
                 g.setColour (juce::Colours::white.withAlpha (0.2f));
-                g.fillRect (x, 0.0f, cellW, b.getHeight());
+                g.fillRect (x, gridRect.getY(), cellW, gridRect.getHeight());
                 g.setColour (juce::Colours::white.withAlpha (0.7f));
-                g.fillRect (x, 0.0f, 2.0f, b.getHeight());
+                g.fillRect (x, gridRect.getY(), 2.0f, gridRect.getHeight());
             }
         };
 
         if (kind == Kind::bass)
-            drawMelodic (proc.bassEngine, bridge::colors::accentBass, proc.bassCurrentVisualStep.load());
+            drawMelodic (proc.bassEngine, bridge::colors::accentBass(), proc.bassCurrentVisualStep.load());
         else if (kind == Kind::piano)
-            drawMelodic (proc.pianoEngine, bridge::colors::accentPiano, proc.pianoCurrentVisualStep.load());
+            drawMelodic (proc.pianoEngine, bridge::colors::accentPiano(), proc.pianoCurrentVisualStep.load());
         else if (kind == Kind::guitar)
-            drawMelodic (proc.guitarEngine, bridge::colors::accentGuitar, proc.guitarCurrentVisualStep.load());
+            drawMelodic (proc.guitarEngine, bridge::colors::accentGuitar(), proc.guitarCurrentVisualStep.load());
     }
 }

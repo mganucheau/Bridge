@@ -30,6 +30,7 @@ public:
 
     // ── Generation ─────────────────────────────────────────────────────────
     void generatePattern(bool seamlessPerform = false);
+    void generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform = false);
     void generateFill (int fromStep = 12);
 
     // ── Pattern access ─────────────────────────────────────────────────────
@@ -79,6 +80,11 @@ public:
     uint32 getSeed      () const { return seed; }
     int   getPhraseBars () const { return phraseBars; }
 
+    int  getRootMidiBase () const { return rootMidiBase(); }
+
+    /** Re-map existing pattern when global root / scale / octave changes (preserves user edits). */
+    void remapPatternAfterTonalityChange (int previousRootMidiBase, int previousScaleIndex);
+
     // Swing offset in samples for a given step
     int  getSwingOffset (int step, double samplesPerStep) const;
 
@@ -125,6 +131,7 @@ private:
     int   phraseBars  = 4;
 
     int   rootMidiBase() const;            // = rootNote + (octave + 1) * 12
+    int   snapMidiToCurrentScale (int midi) const;
     float sampleProb (float p) const;
     uint8 sampleVelocity (int step, bool ghost, bool accent) const;
     int   chooseDegreeProbabilistic (int step, int preferredDegree) const;

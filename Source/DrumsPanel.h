@@ -3,8 +3,10 @@
 #include <JuceHeader.h>
 #include "BridgeProcessor.h"
 #include "BridgeBottomHalf.h"
+#include "BridgeLoopRangeStrip.h"
 #include "BridgeLookAndFeel.h"
-#include "BridgeInstrumentUI.h"
+#include "InstrumentControlBar.h"
+#include "drums/DrumsStylePresets.h"
 #include "drums/DrumsLookAndFeel.h"
 
 class DrumGridComponent : public juce::Component
@@ -21,8 +23,8 @@ private:
     BridgeProcessor& proc;
     int currentStep = -1;
 
-    juce::OwnedArray<juce::ToggleButton> muteButtons;
-    juce::OwnedArray<juce::ToggleButton> soloButtons;
+    juce::OwnedArray<juce::TextButton> muteButtons;
+    juce::OwnedArray<juce::TextButton> soloButtons;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> muteAttachments;
     juce::OwnedArray<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAttachments;
 
@@ -55,18 +57,14 @@ private:
     BridgeProcessor& proc;
     BridgeLookAndFeel laf;
 
-
     BridgeBottomHalf bottomHalf;
+    InstrumentControlBar instrumentStrip;
+    BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffff7f5c), NUM_STEPS };
     DrumGridComponent drumGrid;
 
     bool updatingLoopParams = false;
     int  lockedLoopWidth    = NUM_STEPS;
     
-    juce::Label    styleLabel;
-    juce::ComboBox styleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
-
-
     struct StepTimer : public juce::Timer
     {
         DrumsPanel& panel;
@@ -78,8 +76,6 @@ private:
     int  lastAnimStep = -1;
     uint32_t performBlinkTick = 0;
 
-    PagePowerButton pagePower { bridge::colors::accentDrums };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttach;
     void applyDrumsPageState();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrumsPanel)

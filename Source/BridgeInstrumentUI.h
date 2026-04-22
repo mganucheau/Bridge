@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "BridgeLookAndFeel.h"
 
 /** Circular power toggle: accent fill when on, gray when off. */
 class PagePowerButton : public juce::ToggleButton
@@ -25,7 +26,7 @@ public:
         auto b = getLocalBounds().toFloat().reduced (1.0f);
         const bool on = getToggleState();
 
-        const auto offFill = juce::Colour (0xff3a3842);
+        const auto offFill = bridge::hig::quaternaryFill;
         const auto onFill  = accent.withAlpha (0.85f);
         g.setColour (on ? onFill : offFill);
         g.fillEllipse (b);

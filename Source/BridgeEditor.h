@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include <JuceHeader.h>
 #include "BridgeProcessor.h"
 #include "MainPanel.h"
@@ -8,8 +10,9 @@
 #include "PianoPanel.h"
 #include "GuitarPanel.h"
 
+class BridgeHeaderBar;
+
 class BridgeEditor : public juce::AudioProcessorEditor,
-                     private juce::ValueTree::Listener,
                      private juce::Timer
 {
 public:
@@ -17,6 +20,7 @@ public:
     ~BridgeEditor() override;
 
     void paint (juce::Graphics&) override;
+    void paintOverChildren (juce::Graphics&) override;
     void resized() override;
 
     void notifyDrumsPatternChanged();
@@ -28,30 +32,16 @@ public:
 
 private:
     void showTab (int index);
-    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
+    void activateTab (int tabIndex);
+    void syncTabTileSelection();
+    void bringHeaderToFront();
     void timerCallback() override;
-    void updateTabStripFromParams();
     void updateBpmDisplay();
 
     BridgeProcessor& proc;
 
-    // ── Header transport ───────────────────────────────────────────────────
-    juce::Label      logoLabel;
-    juce::Label      bpmValueLabel;
-    juce::Label      bpmUnitLabel;
-    juce::ShapeButton gearButton { "Settings", juce::Colours::transparentBlack, juce::Colours::transparentBlack, juce::Colours::transparentBlack };
-    juce::ShapeButton playButton { "Play", juce::Colour(0xffeae2d5), juce::Colour(0xffeae2d5), juce::Colour(0xff6ee7a0) };
-    juce::ShapeButton stopButton { "Stop", juce::Colour(0xffeae2d5), juce::Colour(0xffeae2d5), juce::Colour(0xff6ee7a0) };
-    juce::TextButton hostSyncButton { "HOST SYNC" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hostSyncAttach;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> transportAttach;
-
-    // ── Tab strip ──────────────────────────────────────────────────────────
-    juce::TextButton tabMain   { "LEADER" };
-    juce::TextButton tabDrums { "DRUMS" };
-    juce::TextButton tabBass { "BASS" };
-    juce::TextButton tabPiano { "PIANO" };
-    juce::TextButton tabGuitar   { "GUITAR" };
+    /** Full 54px top bar (branding, transport, tabs, settings). */
+    std::unique_ptr<BridgeHeaderBar> headerBar;
 
     MainPanel   mainPanel;
     DrumsPanel drumsPanel;

@@ -1,88 +1,72 @@
 #pragma once
 #include <JuceHeader.h>
+#include "BridgeLookAndFeel.h"
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Material Design 3 — dark colour scheme, amber/gold primary for Piano
-// Primary seed: deep amber (#FF6F00 family) — warm, funky, bass energy
-// ─────────────────────────────────────────────────────────────────────────────
-namespace PianoM3
+namespace PianoHIG
 {
-    // Core surfaces (neutral dark)
-    inline const juce::Colour surface                { 0xFF1C1A14 };
-    inline const juce::Colour surfaceDim             { 0xFF141209 };
-    inline const juce::Colour surfaceBright          { 0xFF2C2A1F };
-    inline const juce::Colour surfaceContainerLowest { 0xFF100F07 };
-    inline const juce::Colour surfaceContainerLow    { 0xFF1E1C14 };
-    inline const juce::Colour surfaceContainer       { 0xFF231F16 };
-    inline const juce::Colour surfaceContainerHigh   { 0xFF2D2A1E };
-    inline const juce::Colour surfaceContainerHighest{ 0xFF38341F };
+    inline const juce::Colour& surface                 = bridge::hig::secondaryGroupedBackground;
+    inline const juce::Colour& surfaceDim              = bridge::hig::systemBackground;
+    inline const juce::Colour& surfaceBright         = bridge::hig::tertiaryGroupedBackground;
+    inline const juce::Colour& surfaceContainerLowest  = bridge::hig::systemBackground;
+    inline const juce::Colour& surfaceContainerLow     = bridge::hig::secondaryGroupedBackground;
+    inline const juce::Colour& surfaceContainer        = bridge::hig::secondaryGroupedBackground;
+    inline const juce::Colour& surfaceContainerHigh    = bridge::hig::tertiaryGroupedBackground;
+    inline const juce::Colour& surfaceContainerHighest = bridge::hig::quaternaryFill;
 
-    // Content
-    inline const juce::Colour onSurface              { 0xFFEAE2D5 };
-    inline const juce::Colour onSurfaceVariant       { 0xFFCEC5AF };
-    inline const juce::Colour outline                { 0xFF9A9080 };
-    inline const juce::Colour outlineVariant         { 0xFF4D4738 };
+    inline const juce::Colour& onSurface               = bridge::hig::label;
+    inline const juce::Colour& onSurfaceVariant        = bridge::hig::secondaryLabel;
+    inline const juce::Colour& outline                 = bridge::hig::separatorOpaque;
+    inline const juce::Colour& outlineVariant          = bridge::hig::quaternaryFill;
 
-    // Primary — deep amber / gold (bass energy)
-    inline const juce::Colour primary                { 0xFFFFB84D };
-    inline const juce::Colour onPrimary              { 0xFF3D2700 };
-    inline const juce::Colour primaryContainer       { 0xFF5A3A00 };
-    inline const juce::Colour onPrimaryContainer     { 0xFFFFDC9F };
+    inline juce::Colour primary()               { return bridge::colors::accentPiano(); }
+    inline const juce::Colour& onPrimary        = bridge::hig::label;
+    inline juce::Colour primaryContainer()     { return bridge::hig::accentFillSubdued (bridge::colors::accentPiano()); }
+    inline const juce::Colour& onPrimaryContainer = bridge::hig::label;
 
-    // Secondary — warm brown
-    inline const juce::Colour secondaryContainer     { 0xFF4D3E28 };
-    inline const juce::Colour onSecondaryContainer   { 0xFFEDDEC4 };
+    inline juce::Colour secondaryContainer()
+    {
+        return bridge::hig::tertiaryGroupedBackground.interpolatedWith (bridge::colors::accentPiano(), 0.32f);
+    }
+    inline const juce::Colour& onSecondaryContainer = bridge::hig::label;
 
-    // Tertiary — teal accent (contrast for note degree highlights)
-    inline const juce::Colour tertiary               { 0xFF72D4C0 };
-    inline const juce::Colour tertiaryContainer      { 0xFF2A4B44 };
-    inline const juce::Colour onTertiaryContainer    { 0xFFBEF2E8 };
+    inline juce::Colour tertiary()               { return bridge::colors::accentPiano(); }
+    inline juce::Colour tertiaryContainer()      { return bridge::hig::accentFillSubdued (bridge::colors::accentPiano()); }
+    inline const juce::Colour& onTertiaryContainer = bridge::hig::label;
 
-    // State overlays
-    inline juce::Colour stateHover   (juce::Colour base) { return base.interpolatedWith (juce::Colours::white, 0.08f); }
-    inline juce::Colour statePressed (juce::Colour base) { return base.interpolatedWith (juce::Colours::white, 0.12f); }
+    inline juce::Colour stateHover   (juce::Colour base) { return bridge::hig::stateHover (base); }
+    inline juce::Colour statePressed (juce::Colour base) { return bridge::hig::statePressed (base); }
 
-    // Shape tokens (corner radius)
     inline constexpr float cornerNone        = 0.0f;
-    inline constexpr float cornerExtraSmall  = 4.0f;
-    inline constexpr float cornerSmall       = 8.0f;
-    inline constexpr float cornerMedium      = 12.0f;
-    inline constexpr float cornerLarge       = 16.0f;
-    inline constexpr float cornerExtraLarge  = 28.0f;
+    inline constexpr float cornerExtraSmall  = 0.0f;
+    inline constexpr float cornerSmall       = 0.0f;
+    inline constexpr float cornerMedium      = 0.0f;
+    inline constexpr float cornerLarge       = 0.0f;
+    inline constexpr float cornerExtraLarge  = 0.0f;
 
     inline void drawShadow (juce::Graphics& g, juce::Rectangle<float> bounds,
                             float cornerRadius, int elevationLevel)
     {
-        if (elevationLevel <= 0 || cornerRadius <= 0.0f) return;
-
-        const float yOff  = 1.0f + 0.6f  * (float)elevationLevel;
-        const float alpha = jlimit (0.04f, 0.22f, 0.06f + 0.035f * (float)elevationLevel);
-
-        juce::Path p;
-        p.addRoundedRectangle (bounds.translated (0.0f, yOff), cornerRadius);
-        g.setColour (juce::Colours::black.withAlpha (alpha));
-        g.fillPath (p);
+        bridge::hig::drawElevatedShadow (g, bounds, cornerRadius, elevationLevel);
     }
 
     inline void fillSurface (juce::Graphics& g, juce::Rectangle<float> bounds,
                              juce::Colour fill, float cornerRadius)
     {
-        g.setColour (fill);
-        g.fillRoundedRectangle (bounds, cornerRadius);
+        bridge::hig::fillRounded (g, bounds, fill, cornerRadius);
     }
 }
 
 // ─── Legacy alias tokens ─────────────────────────────────────────────────────
 namespace PianoColors
 {
-    inline const juce::Colour& Background  = PianoM3::surface;
-    inline const juce::Colour& Panel       = PianoM3::surfaceContainer;
-    inline const juce::Colour& Border      = PianoM3::outlineVariant;
-    inline const juce::Colour& Accent      = PianoM3::primary;
-    inline const juce::Colour& AccentBright= PianoM3::onPrimaryContainer;
-    inline const juce::Colour& TextPrimary = PianoM3::onSurface;
-    inline const juce::Colour& TextDim     = PianoM3::onSurfaceVariant;
-    inline const juce::Colour& ActiveStep  = PianoM3::primary;
+    inline const juce::Colour& Background  = PianoHIG::surface;
+    inline const juce::Colour& Panel       = PianoHIG::surfaceContainer;
+    inline const juce::Colour& Border      = PianoHIG::outlineVariant;
+    inline juce::Colour Accent() { return PianoHIG::primary(); }
+    inline const juce::Colour& AccentBright= PianoHIG::onPrimaryContainer;
+    inline const juce::Colour& TextPrimary = PianoHIG::onSurface;
+    inline const juce::Colour& TextDim     = PianoHIG::onSurfaceVariant;
+    inline juce::Colour ActiveStep() { return PianoHIG::primary(); }
 
     // Per-degree colours for the bass grid
     // 0=Root(amber), 1=m3(coral), 2=P4(mint), 3=P5(sky), 4=m7(violet), 5=Oct(gold), 6=Approach(pink), 7=Sub(deep)
@@ -104,20 +88,20 @@ class PianoLookAndFeel : public juce::LookAndFeel_V4
 public:
     PianoLookAndFeel()
     {
-        using namespace PianoM3;
+        using namespace PianoHIG;
 
         setColour (juce::ResizableWindow::backgroundColourId, surface);
 
-        setColour (juce::Slider::thumbColourId,                primary);
+        setColour (juce::Slider::thumbColourId,                primary());
         setColour (juce::Slider::trackColourId,                outlineVariant);
         setColour (juce::Slider::backgroundColourId,           surfaceContainerHigh);
-        setColour (juce::Slider::rotarySliderFillColourId,     primary);
+        setColour (juce::Slider::rotarySliderFillColourId,     primary());
         setColour (juce::Slider::rotarySliderOutlineColourId,  outlineVariant);
 
         setColour (juce::Label::textColourId, onSurface);
 
         setColour (juce::TextButton::buttonColourId,   surfaceContainerHigh);
-        setColour (juce::TextButton::buttonOnColourId, secondaryContainer);
+        setColour (juce::TextButton::buttonOnColourId, secondaryContainer());
         setColour (juce::TextButton::textColourOffId,  onSurfaceVariant);
         setColour (juce::TextButton::textColourOnId,   onSecondaryContainer);
 
@@ -127,29 +111,39 @@ public:
 
         setColour (juce::PopupMenu::backgroundColourId,            surfaceContainerHigh);
         setColour (juce::PopupMenu::textColourId,                  onSurface);
-        setColour (juce::PopupMenu::highlightedBackgroundColourId, primaryContainer);
+        setColour (juce::PopupMenu::highlightedBackgroundColourId, primaryContainer());
         setColour (juce::PopupMenu::highlightedTextColourId,       onPrimaryContainer);
 
         setColour (juce::ToggleButton::textColourId,       onSurfaceVariant);
-        setColour (juce::ToggleButton::tickColourId,       primary);
+        setColour (juce::ToggleButton::tickColourId,       primary());
         setColour (juce::ToggleButton::tickDisabledColourId, outlineVariant);
     }
 
     juce::Font getLabelFont (juce::Label&) override
     {
-        return juce::Font (juce::FontOptions().withHeight (12.0f));
+        return bridge::hig::uiFont (13.0f);
     }
 
     juce::Font getTextButtonFont (juce::TextButton&, int) override
     {
-        return juce::Font (juce::FontOptions().withHeight (12.0f).withStyle ("Semibold"));
+        return bridge::hig::uiFont (13.0f, "Semibold");
+    }
+
+    void positionComboBoxText (juce::ComboBox& box, juce::Label& label) override
+    {
+        if (box.getProperties()["bridgeInstrumentStrip"] || box.getProperties()["bridgeHeaderStrip"])
+        {
+            BridgeLookAndFeel().positionComboBoxText (box, label);
+            return;
+        }
+        juce::LookAndFeel_V4::positionComboBoxText (box, label);
     }
 
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPosProportional, float rotaryStartAngle,
                            float rotaryEndAngle, juce::Slider& slider) override
     {
-        using namespace PianoM3;
+        using namespace PianoHIG;
 
         auto  bounds = juce::Rectangle<float> ((float)x, (float)y, (float)width, (float)height).reduced (6.0f);
         float radius = jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
@@ -166,7 +160,7 @@ public:
         float angle = rotaryStartAngle + sliderPosProportional * (rotaryEndAngle - rotaryStartAngle);
         juce::Path valueArc;
         valueArc.addCentredArc (cx, cy, radius - 2, radius - 2, 0.0f, rotaryStartAngle, angle, true);
-        g.setColour (primary);
+        g.setColour (primary());
         g.strokePath (valueArc, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
         // Knob body
@@ -180,7 +174,7 @@ public:
         // Handle dot
         float hx = cx + std::sin (angle) * (knobR * 0.55f);
         float hy = cy - std::cos (angle) * (knobR * 0.55f);
-        g.setColour (primary);
+        g.setColour (primary());
         g.fillEllipse (hx - 4.0f, hy - 4.0f, 8.0f, 8.0f);
 
         juce::ignoreUnused (slider);
@@ -190,7 +184,7 @@ public:
                            float sliderPos, float minSliderPos, float maxSliderPos,
                            const juce::Slider::SliderStyle style, juce::Slider& slider) override
     {
-        using namespace PianoM3;
+        using namespace PianoHIG;
 
         auto track = juce::Rectangle<float> ((float)x, (float)y, (float)width, (float)height);
 
@@ -202,12 +196,12 @@ public:
             g.drawRoundedRectangle (r, cornerExtraSmall, 1.0f);
 
             float xFill = jmap (sliderPos, minSliderPos, maxSliderPos, r.getX(), r.getRight());
-            fillSurface (g, r.withRight (xFill), primaryContainer, cornerExtraSmall);
+            fillSurface (g, r.withRight (xFill), primaryContainer(), cornerExtraSmall);
 
             float thumbX = jmap (sliderPos, minSliderPos, maxSliderPos, r.getX(), r.getRight());
             auto thumb = juce::Rectangle<float> (thumbX - 6.0f, r.getCentreY() - 10.0f, 12.0f, 20.0f);
             drawShadow (g, thumb, cornerSmall, 1);
-            fillSurface (g, thumb, primary, cornerSmall);
+            fillSurface (g, thumb, primary(), cornerSmall);
         }
         else
         {
@@ -219,7 +213,13 @@ public:
                        int buttonX, int buttonY, int buttonW, int buttonH,
                        juce::ComboBox& box) override
     {
-        using namespace PianoM3;
+        if (box.getProperties()["bridgeInstrumentStrip"] || box.getProperties()["bridgeHeaderStrip"])
+        {
+            BridgeLookAndFeel().drawComboBox (g, width, height, isButtonDown, buttonX, buttonY, buttonW, buttonH, box);
+            return;
+        }
+
+        using namespace PianoHIG;
 
         auto bounds = juce::Rectangle<float> (0.0f, 0.0f, (float)width, (float)height);
         fillSurface (g, bounds.reduced (0.5f), surfaceContainerHigh, cornerSmall);
@@ -241,7 +241,7 @@ public:
                                const juce::Colour&, bool shouldDrawButtonAsHighlighted,
                                bool shouldDrawButtonAsDown) override
     {
-        using namespace PianoM3;
+        using namespace PianoHIG;
 
         auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
         const float rad = cornerSmall;
@@ -257,12 +257,12 @@ public:
 
             if (isPrimaryFilled)
             {
-                fill   = primaryContainer;
+                fill   = primaryContainer();
                 stroke = juce::Colours::transparentBlack;
             }
             else if (isToggleStyle && tb->getToggleState())
             {
-                fill   = secondaryContainer;
+                fill   = secondaryContainer();
                 stroke = juce::Colours::transparentBlack;
             }
             else if (isToggleStyle && !tb->getToggleState())
@@ -286,7 +286,7 @@ public:
                                  : (isToggleStyle && tb->getToggleState()) ? onSecondaryContainer
                                  : onSurface;
             g.setColour (content);
-            g.setFont   (juce::Font (juce::FontOptions().withHeight (12.0f).withStyle ("Semibold")));
+            g.setFont   (bridge::hig::uiFont (13.0f, "Semibold"));
             g.drawFittedText (text, button.getLocalBounds(), juce::Justification::centred, 1);
             return;
         }

@@ -19,7 +19,7 @@ namespace PianoPreset
 static constexpr int NUM_STEPS   = 16;
 static constexpr int NUM_STYLES  = 8;
 static constexpr int NUM_DEGREES = 8;   // see degree index table below
-static constexpr int NUM_SCALES  = 5;
+static constexpr int NUM_SCALES  = 10;
 
 // ─── Degree index → semitone offset from root ─────────────────────────────────
 // Indices used in BASS_PREFERRED_DEGREE:
@@ -41,16 +41,22 @@ static const char* DEGREE_NAMES[NUM_DEGREES] = {
 
 // ─── Scale mode index → interval set ─────────────────────────────────────────
 // Used for fill note selection and degree resolution when scale != Dorian
-static constexpr int SCALE_TONE_COUNT[NUM_SCALES]    = { 7, 5, 6, 5, 7 };
+static constexpr int SCALE_TONE_COUNT[NUM_SCALES]    = { 7, 7, 7, 5, 6, 5, 7, 7, 7, 7 };
 static constexpr int SCALE_INTERVALS[NUM_SCALES][7] = {
-    { 0,  2,  3,  5,  7,  9, 10 },   // 0  Dorian          (m7, M6 — funk standard)
-    { 0,  3,  5,  7, 10, -1, -1 },   // 1  Minor Pentatonic (5-note, no 2/6)
-    { 0,  3,  5,  6,  7, 10, -1 },   // 2  Blues            (b5 blue note)
-    { 0,  2,  4,  7,  9, -1, -1 },   // 3  Major Pentatonic (bright)
-    { 0,  2,  4,  5,  7,  9, 10 },   // 4  Mixolydian       (b7, M3 — gospel/R&B)
+    { 0,  2,  3,  5,  7,  9, 10 },
+    { 0,  2,  3,  5,  7,  8, 10 },
+    { 0,  2,  4,  5,  7,  9, 11 },
+    { 0,  3,  5,  7, 10, -1, -1 },
+    { 0,  3,  5,  6,  7, 10, -1 },
+    { 0,  2,  4,  7,  9, -1, -1 },
+    { 0,  2,  4,  5,  7,  9, 10 },
+    { 0,  1,  3,  5,  7,  8, 10 },
+    { 0,  2,  4,  6,  7,  9, 11 },
+    { 0,  2,  3,  5,  7,  8, 11 },
 };
 static const char* SCALE_NAMES[NUM_SCALES] = {
-    "Dorian", "Min Pent", "Blues", "Maj Pent", "Mixolyd"
+    "Dorian", "Natural Minor", "Major", "Minor Penta", "Blues",
+    "Major Penta", "Mixolydian", "Phrygian", "Lydian", "Harmonic Minor"
 };
 
 static const char* STYLE_NAMES[NUM_STYLES] = {

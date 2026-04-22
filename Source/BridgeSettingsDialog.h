@@ -2,21 +2,27 @@
 
 #include <JuceHeader.h>
 
-/** Settings: MIDI device placeholders + app / copyright info. */
+class BridgeProcessor;
+
+/** Settings: theme, MIDI routing note, placeholders. */
 class BridgeSettingsDialog : public juce::Component
 {
 public:
-    BridgeSettingsDialog();
+    explicit BridgeSettingsDialog (BridgeProcessor& processor);
 
     void paint (juce::Graphics& g) override;
     void resized() override;
 
 private:
+    BridgeProcessor& proc;
+
     juce::Label title { {}, "Bridge Settings" };
-    juce::Label midiInLabel  { {}, "MIDI input" };
-    juce::Label midiOutLabel { {}, "MIDI output" };
-    juce::ComboBox midiInBox;
-    juce::ComboBox midiOutBox;
+    juce::Label themeLabel { {}, "UI theme" };
+    juce::ComboBox themeBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> themeAttach;
+
+    juce::Label midiRoutingLabel { {}, "MIDI outputs" };
+    juce::TextEditor midiRoutingBody;
 
     juce::Label aboutLabel;
     juce::TextEditor aboutBody;

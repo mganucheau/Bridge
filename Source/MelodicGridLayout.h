@@ -14,6 +14,10 @@ namespace bridge
 {
 
 inline constexpr int kMelodicOctaveRows = 12;
+/** Left column: piano roll (melodic) or drum lane labels + M/S (drums). */
+inline constexpr int kMelodicKeyStripWidth = 64;
+/** Loop + step division strip under the instrument control bar. */
+inline constexpr int kLoopRangeStripHeightPx = 18;
 
 inline void setOneOctaveMelodicRange (const BassEngine& engine, int& minMidi, int& maxMidi)
 {

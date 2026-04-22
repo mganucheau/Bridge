@@ -1,11 +1,16 @@
 #include "BridgeLoopRangeStrip.h"
+#include "BridgeLookAndFeel.h"
+#include "BridgeAppleHIG.h"
 #include <cmath>
 
 namespace
 {
-static juce::Rectangle<float> trackBounds (juce::Rectangle<float> b)
+static juce::Rectangle<float> trackBounds (juce::Rectangle<float> b, int labelGutterLeft)
 {
-    return b.reduced (2.0f, 5.0f);
+    auto r = b.reduced (2.0f, 3.0f);
+    if (labelGutterLeft > 0)
+        r.removeFromLeft ((float) labelGutterLeft);
+    return r;
 }
 }
 
@@ -37,7 +42,7 @@ void BridgeLoopRangeStrip::writeIntParam (juce::AudioProcessorValueTreeState& ap
 
 int BridgeLoopRangeStrip::xToStep (float x) const
 {
-    auto b = trackBounds (getLocalBounds().toFloat());
+    auto b = trackBounds (getLocalBounds().toFloat(), stepLabelGutterLeft);
     float t = (x - b.getX()) / juce::jmax (1.0f, b.getWidth());
     int s = 1 + (int) (t * (float) numSteps);
     return juce::jlimit (1, numSteps, s);
@@ -78,7 +83,7 @@ void BridgeLoopRangeStrip::syncFromMouse (const juce::MouseEvent& e, bool isDrag
 
 void BridgeLoopRangeStrip::mouseDown (const juce::MouseEvent& e)
 {
-    auto b = trackBounds (getLocalBounds().toFloat());
+    auto b = trackBounds (getLocalBounds().toFloat(), stepLabelGutterLeft);
     const float cell = b.getWidth() / (float) numSteps;
     int ls = readIntParam (apvts, "loopStart", 1);
     int le = readIntParam (apvts, "loopEnd", numSteps);
@@ -112,10 +117,20 @@ void BridgeLoopRangeStrip::mouseUp (const juce::MouseEvent& e)
 void BridgeLoopRangeStrip::paint (juce::Graphics& g)
 {
     auto full = getLocalBounds().toFloat();
-    auto b    = trackBounds (full);
+    auto b    = trackBounds (full, stepLabelGutterLeft);
 
-    g.setColour (juce::Colour (0xff14121a));
-    g.fillRoundedRectangle (b, 5.0f);
+    g.setColour (bridge::colors::background());
+    g.fillRect (full);
+
+    if (stepLabelGutterLeft > 0)
+    {
+        auto gutter = full.withWidth ((float) stepLabelGutterLeft);
+        g.setColour (bridge::hig::tertiaryGroupedBackground);
+        g.fillRect (gutter);
+    }
+
+    g.setColour (bridge::colors::background());
+    g.fillRect (b);
 
     int ls = readIntParam (apvts, "loopStart", 1);
     int le = readIntParam (apvts, "loopEnd", numSteps);
@@ -130,11 +145,14 @@ void BridgeLoopRangeStrip::paint (juce::Graphics& g)
 
     const float cell = b.getWidth() / (float) numSteps;
 
-    g.setColour (accent.withAlpha (0.28f));
+    g.setColour (accent.withAlpha (0.52f));
     g.fillRect (b.getX() + (float) (ls - 1) * cell, b.getY(),
                 (float) (le - ls + 1) * cell, b.getHeight());
+    g.setColour (accent.brighter (0.12f).withAlpha (0.55f));
+    g.drawRect (b.getX() + (float) (ls - 1) * cell, b.getY(),
+                (float) (le - ls + 1) * cell, b.getHeight(), 1.0f);
 
-    g.setColour (juce::Colours::white.withAlpha (0.07f));
+    g.setColour (juce::Colours::white.withAlpha (0.14f));
     for (int i = 1; i < numSteps; ++i)
     {
         float x = b.getX() + (float) i * cell;
@@ -168,6 +186,17 @@ void BridgeLoopRangeStrip::paint (juce::Graphics& g)
     drawHandle (ls, true);
     drawHandle (le, false);
 
+    g.setFont (bridge::hig::uiFont (10.5f, "Semibold"));
+    for (int i = 0; i < numSteps; ++i)
+    {
+        float cx = b.getX() + (float) i * cell;
+        auto rc = juce::Rectangle<float> (cx, b.getY(), cell, b.getHeight());
+        g.setColour (juce::Colours::black.withAlpha (0.55f));
+        g.drawText (juce::String (i + 1), rc.translated (0.5f, 0.5f), juce::Justification::centred, false);
+        g.setColour (juce::Colours::white.withAlpha (0.95f));
+        g.drawText (juce::String (i + 1), rc, juce::Justification::centred, false);
+    }
+
     g.setColour (juce::Colours::black.withAlpha (0.35f));
-    g.drawRoundedRectangle (b, 5.0f, 1.0f);
+    g.drawRect (b, 1.0f);
 }

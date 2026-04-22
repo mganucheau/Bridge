@@ -15,6 +15,10 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
+    void setAccent (juce::Colour c) { accent = c; repaint(); }
+    /** Reserve this many pixels on the left (piano / drum lane column); step labels align from here. */
+    void setStepLabelGutter (int px) { stepLabelGutterLeft = px; repaint(); }
+
 private:
     static int readIntParam (juce::AudioProcessorValueTreeState& ap, const juce::String& id, int fallback);
     static void writeIntParam (juce::AudioProcessorValueTreeState& ap, const juce::String& id, int v, int maxStep);
@@ -25,5 +29,6 @@ private:
     juce::AudioProcessorValueTreeState& apvts;
     juce::Colour accent;
     int numSteps = 16;
+    int stepLabelGutterLeft = 0;
     int dragMode = 0; // 0 none, 1 start, 2 end
 };

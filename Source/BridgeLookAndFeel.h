@@ -1,24 +1,25 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "BridgeAppleHIG.h"
+#include "BridgeTheme.h"
 
 namespace bridge::colors
 {
-    const juce::Colour background        (0xFF141219);
-    const juce::Colour cardSurface       (0xFF1B1823);
-    const juce::Colour cardOutline       (0xFF2E2937);
-    
-    const juce::Colour textPrimary       (0xFFEAE2D5);
-    const juce::Colour textSecondary     (0xFFB0A8C4);
-    const juce::Colour textDim           (0xFF6A6578);
+    /** Window / canvas — driven by apvtsMain uiTheme (see BridgeTheme.cpp). */
+    inline juce::Colour background()    { return bridge::theme::background(); }
+    inline juce::Colour cardSurface()   { return bridge::theme::cardSurface(); }
+    inline juce::Colour cardOutline()   { return bridge::theme::cardOutline(); }
+    inline juce::Colour textPrimary()   { return bridge::theme::textPrimary(); }
+    inline juce::Colour textSecondary() { return bridge::theme::textSecondary(); }
+    inline juce::Colour textDim()       { return bridge::theme::textDim(); }
+    inline juce::Colour knobTrack()     { return bridge::theme::knobTrack(); }
 
-    const juce::Colour accentDrums       (0xFFE07A5A);
-    const juce::Colour accentBass        (0xFF5CB8A8);
-    const juce::Colour accentPiano       (0xFFB88CFF);
-    const juce::Colour accentGuitar      (0xFF6EB3FF);
-    const juce::Colour accentLeader      (0xFFD4A84B);
-
-    const juce::Colour knobTrack         (0xFF25212E);
+    inline juce::Colour accentLeader()  { return bridge::theme::accentLeader(); }
+    inline juce::Colour accentDrums()   { return bridge::theme::accentDrums(); }
+    inline juce::Colour accentBass()    { return bridge::theme::accentBass(); }
+    inline juce::Colour accentPiano()   { return bridge::theme::accentPiano(); }
+    inline juce::Colour accentGuitar()  { return bridge::theme::accentGuitar(); }
 }
 
 class BridgeLookAndFeel : public juce::LookAndFeel_V4

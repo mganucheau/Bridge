@@ -42,10 +42,17 @@ target_include_directories(Bridge PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 target_sources(Bridge PRIVATE
     Source/BridgeProcessor.cpp
     Source/BridgeEditor.cpp
+    Source/BridgeHeaderBar.cpp
+    Source/BridgeEditorChromeLookAndFeel.cpp
+    Source/BridgeInstrumentTabTile.cpp
+    Source/BridgeInstrumentTabRail.cpp
     Source/BridgeBottomHalf.cpp
     Source/BridgeLoopRangeStrip.cpp
+    Source/BridgeXYPad.cpp
     Source/BridgeSettingsDialog.cpp
     Source/BridgeLookAndFeel.cpp
+    Source/BridgeTheme.cpp
+    Source/InstrumentControlBar.cpp
     Source/MainPanel.cpp
     Source/DrumsPanel.cpp
     Source/BassPanel.cpp

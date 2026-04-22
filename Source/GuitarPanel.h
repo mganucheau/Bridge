@@ -5,8 +5,10 @@
 #include "guitar/GuitarStylePresets.h"
 #include "BridgeLookAndFeel.h"
 #include "BridgeBottomHalf.h"
-#include "BridgeInstrumentUI.h"
+#include "BridgeLoopRangeStrip.h"
+#include "InstrumentControlBar.h"
 #include "guitar/GuitarLookAndFeel.h"
+#include "guitar/GuitarStylePresets.h"
 
 class GuitarPanel;
 class FillHoldListener;
@@ -16,6 +18,7 @@ class GuitarPianoRollComponent : public juce::Component
 public:
     explicit GuitarPianoRollComponent (BridgeProcessor& p);
     void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent& e) override;
 
 private:
     BridgeProcessor& proc;
@@ -77,6 +80,8 @@ private:
     BridgeProcessor& proc;
     BridgeLookAndFeel laf;
     BridgeBottomHalf bottomHalf;
+    InstrumentControlBar instrumentStrip;
+    BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xff0a84ff), GuitarPreset::NUM_STEPS };
     bool updatingLoopParams = false;
     
 
@@ -84,22 +89,6 @@ private:
 
         GuitarPianoRollComponent pianoRoll { proc };
     GuitarGridComponent grid { proc };
-    
-    juce::Label    styleLabel;
-    juce::ComboBox styleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> styleAttach;
-    juce::Label  rootLabel;
-    juce::ComboBox rootBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> rootAttach;
-    
-    juce::Label  scaleLabel;
-    juce::ComboBox scaleBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> scaleAttach;
-    
-    juce::Label  octaveLabel;
-    juce::ComboBox octaveBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> octaveAttach;
-
 
     struct StepTimer : public juce::Timer
     {
@@ -111,8 +100,6 @@ private:
     void updateStepAnimation();
     int  lastAnimStep = -1;
 
-    PagePowerButton pagePower { bridge::colors::accentGuitar };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> powerAttach;
     void applyGuitarPageState();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GuitarPanel)

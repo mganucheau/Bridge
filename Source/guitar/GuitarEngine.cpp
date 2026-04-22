@@ -60,26 +60,34 @@ int GuitarEngine::nearestDegreeForMidi (int midi, int prevMidi) const
 // ─────────────────────────────────────────────────────────────────────────────
 // generatePattern
 // ─────────────────────────────────────────────────────────────────────────────
-void GuitarEngine::generatePattern(bool seamlessPerform)
+void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform)
 {
     if (locked) return;
 
+    fromStep0 = juce::jlimit (0, NUM_STEPS - 1, fromStep0);
+    toStep0   = juce::jlimit (0, NUM_STEPS - 1, toStep0);
+    if (toStep0 < fromStep0)
+        std::swap (fromStep0, toStep0);
+
     std::array<GuitarHit, NUM_STEPS> previous = pattern;
 
-    for (int step = 0; step < patternLen; ++step)
+    for (int step = fromStep0; step <= toStep0; ++step)
     {
+        if (step >= patternLen)
+            break;
+
         bool mutateThisStep = true;
         if (seamlessPerform)
         {
             float mutateProb = 0.15f + 0.20f * (complexity + (1.0f - density));
-            if (previous[(size_t)step].active == false) mutateProb *= 1.2f;
+            if (previous[(size_t) step].active == false) mutateProb *= 1.2f;
             mutateProb *= std::pow (1.0f, 1.0f / temperature);
             mutateThisStep = sampleProb (mutateProb);
         }
 
-        if (!mutateThisStep)
+        if (! mutateThisStep)
         {
-            pattern[(size_t)step] = previous[(size_t)step];
+            pattern[(size_t) step] = previous[(size_t) step];
             continue;
         }
 
@@ -89,7 +97,7 @@ void GuitarEngine::generatePattern(bool seamlessPerform)
         prob  = jlimit (0.0f, 1.0f, prob);
 
         bool active = sampleProb (prob);
-        pattern[(size_t)step] = GuitarHit{};  // clear
+        pattern[(size_t) step] = GuitarHit{};
 
         if (active)
         {
@@ -103,7 +111,7 @@ void GuitarEngine::generatePattern(bool seamlessPerform)
 
             int midi = degreeToMidiNote (deg, -1);
 
-            pattern[(size_t)step].active    = true;
+            pattern[(size_t) step].active    = true;
             pattern[step].velocity  = vel;
             pattern[step].midiNote  = midi;
             pattern[step].degree    = deg;
@@ -111,17 +119,20 @@ void GuitarEngine::generatePattern(bool seamlessPerform)
         }
     }
 
-    // Mute steps beyond patternLen
     for (int step = patternLen; step < NUM_STEPS; ++step)
-        pattern[(size_t)step] = GuitarHit{};
+        pattern[(size_t) step] = GuitarHit{};
 
-    // Post-pass: resolve approach notes now that all degrees are set
     resolveApproachNotes();
 
     if (onPatternChanged)
         onPatternChanged();
 
     rebuildGridPreview();
+}
+
+void GuitarEngine::generatePattern (bool seamlessPerform)
+{
+    generatePatternRange (0, patternLen - 1, seamlessPerform);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -421,4 +432,75 @@ bool GuitarEngine::shouldTriggerFill()
     const int gridBars = jmax (1, phraseBars);
     float prob = fillRate * (1.0f + (barCount % gridBars == 0 ? 0.5f : 0.0f));
     return roll < prob * 0.25f;
+}
+
+int GuitarEngine::snapMidiToCurrentScale (int midi) const
+{
+    const int* iv = SCALE_INTERVALS[scale];
+    const int n = SCALE_TONE_COUNT[scale];
+    const int base = rootMidiBase();
+    int best = juce::jlimit (12, 127, midi);
+    int bestDist = 1000;
+
+    for (int oct = -3; oct <= 3; ++oct)
+    {
+        for (int t = 0; t < n; ++t)
+        {
+            if (iv[t] < 0)
+                continue;
+            const int note = base + oct * 12 + iv[t];
+            if (note < 1 || note > 127)
+                continue;
+            const int d = std::abs (note - midi);
+            if (d < bestDist)
+            {
+                bestDist = d;
+                best = note;
+            }
+        }
+    }
+    return juce::jlimit (12, 127, best);
+}
+
+void GuitarEngine::remapPatternAfterTonalityChange (int oldRootMidiBase, int oldScaleIdx)
+{
+    const int newBase = rootMidiBase();
+    const int delta = newBase - oldRootMidiBase;
+    const bool scaleChanged = (oldScaleIdx != scale);
+
+    for (int step = 0; step < patternLen; ++step)
+    {
+        auto& h = pattern[(size_t) step];
+        if (! h.active)
+            continue;
+        h.midiNote = juce::jlimit (0, 127, h.midiNote + delta);
+    }
+
+    if (scaleChanged)
+    {
+        for (int step = 0; step < patternLen; ++step)
+        {
+            auto& h = pattern[(size_t) step];
+            if (! h.active)
+                continue;
+            h.midiNote = snapMidiToCurrentScale (h.midiNote);
+        }
+    }
+
+    int prev = -1;
+    for (int step = 0; step < patternLen; ++step)
+    {
+        auto& h = pattern[(size_t) step];
+        if (! h.active)
+            continue;
+        h.degree = nearestDegreeForMidi (h.midiNote, prev);
+        h.midiNote = degreeToMidiNote (h.degree, prev);
+        prev = h.midiNote;
+    }
+
+    resolveApproachNotes();
+    rebuildGridPreview();
+
+    if (onPatternChanged)
+        onPatternChanged();
 }
