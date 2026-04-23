@@ -94,6 +94,8 @@ void MainPanel::parameterChanged (const juce::String& parameterID, float newValu
              || parameterID == "leaderStyle" || parameterID == "scale"
              || parameterID == "rootNote" || parameterID == "octave")
     {
+        if (parameterID == "density" || parameterID == "complexity")
+            proc.morphAllEnginesToMainSelection();
         leaderStripPreviewPending = true;
     }
 }

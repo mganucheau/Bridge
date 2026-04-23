@@ -116,6 +116,30 @@ void BridgeLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& b
                                               bool shouldDrawButtonAsDown)
 {
     auto bounds = button.getLocalBounds().toFloat();
+    const auto stripTag = button.getProperties()["bridgeStripTag"].toString();
+
+    if (stripTag == "loop" || stripTag == "spanLock")
+    {
+        const bool on = button.getToggleState();
+        juce::Colour fill = bridge::instrumentStripStyle::fieldBg();
+        juce::Colour border = juce::Colour (0xff444444);
+
+        if (on)
+        {
+            fill = bridge::instrumentStripStyle::goldAccent();
+            border = bridge::instrumentStripStyle::goldAccent();
+        }
+
+        if (! on && (shouldDrawButtonAsHighlighted || shouldDrawButtonAsDown))
+            fill = bridge::instrumentStripStyle::fieldHoverBg();
+
+        g.setColour (fill);
+        g.fillRect (bounds);
+        g.setColour (border);
+        g.drawRect (bounds.reduced (1.0f), 2);
+        return;
+    }
+
     const auto ms = button.getProperties()["bridgeStripMs"].toString();
 
     if (ms.isNotEmpty())
@@ -171,7 +195,9 @@ void BridgeLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& but
                                         bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
     juce::ignoreUnused (shouldDrawButtonAsHighlighted, shouldDrawButtonAsDown);
-    if (button.getProperties()["bridgeStripMs"].toString().isNotEmpty())
+    const auto stripTag = button.getProperties()["bridgeStripTag"].toString();
+    if (button.getProperties()["bridgeStripMs"].toString().isNotEmpty()
+        || stripTag == "loop" || stripTag == "spanLock")
     {
         g.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
         g.setColour (juce::Colours::white);

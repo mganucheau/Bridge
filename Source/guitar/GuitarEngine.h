@@ -44,7 +44,7 @@ public:
 
     void setFillHoldActive (bool on) { fillHoldActive = on; }
     void rebuildGridPreview();
-    void morphPatternForDensityAndComplexity();
+    void morphPatternForDensityAndComplexity (int rangeFromStep0 = -1, int rangeToStep0 = -1);
     void adaptPatternToNewStyle (int newStyleIndex);
     void evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml);
 
@@ -146,6 +146,7 @@ private:
     float sampleProb (float p) const;
     uint8 sampleVelocity (int step, bool ghost, bool accent) const;
     int   chooseDegreeProbabilistic (int step, int preferredDegree) const;
+    int   chooseDegreeForMorphAdd (int step, int preferredDegree, int prevMidi) const;
     int   resolveApproachNote (int step) const;  // looks ahead for chromatic approach
     void  resolveApproachNotes();                 // post-pass: fix approach degrees
     float complexityMod (int step) const;

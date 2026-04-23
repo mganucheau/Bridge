@@ -44,8 +44,9 @@ public:
 
     void setFillHoldActive (bool on) { fillHoldActive = on; }
     void rebuildGridPreview();
-    /** Adjust which steps are on/off from current density/complexity without a full regen. */
-    void morphPatternForDensityAndComplexity();
+    /** Adjust which steps are on/off from current density/complexity without a full regen.
+        If rangeFromStep0 or rangeToStep0 is negative, uses the full pattern (0 .. patternLen-1). */
+    void morphPatternForDensityAndComplexity (int rangeFromStep0 = -1, int rangeToStep0 = -1);
     /** Re-voice active steps toward a new style while keeping the rhythmic skeleton where possible. */
     void adaptPatternToNewStyle (int newStyleIndex);
     /** Similarity-biased partial regen for Jam (selection range only). */
@@ -149,6 +150,8 @@ private:
     float sampleProb (float p) const;
     uint8 sampleVelocity (int step, bool ghost, bool accent) const;
     int   chooseDegreeProbabilistic (int step, int preferredDegree) const;
+    /** Morph add / complexity contour: low complexity stays near preferred; high allows deviation. */
+    int   chooseDegreeForMorphAdd (int step, int preferredDegree, int prevMidi) const;
     int   resolveApproachNote (int step) const;  // looks ahead for chromatic approach
     void  resolveApproachNotes();                 // post-pass: fix approach degrees
     float complexityMod (int step) const;

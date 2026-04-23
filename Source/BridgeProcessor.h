@@ -117,6 +117,9 @@ public:
     void randomizeGuitarSettings();
     void getGuitarLoopBounds (int& loopStart, int& loopEnd) const;
 
+    /** Leader / QA: morph every engine using main loop selection (1-based APVTS → 0-based engines). */
+    void morphAllEnginesToMainSelection();
+
     BridgeMLManager* getMLManager() const noexcept { return mlManager.get(); }
 
     /** At most one automatic check per 24h (tracked in APVTS); silent on network failure. */

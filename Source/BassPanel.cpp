@@ -1,10 +1,12 @@
 #include "BassPanel.h"
+#include <cmath>
 #include "BridgeAppleHIG.h"
 #include "BridgeLookAndFeel.h"
 #include "BridgePanelLayout.h"
 #include "BridgeInstrumentStyles.h"
 #include "MelodicGridLayout.h"
 #include "BridgeScaleHighlight.h"
+#include "bass/BassStylePresets.h"
 
 namespace
 {
@@ -48,32 +50,39 @@ private:
 
 // ─── BassMelodicBody ───────────────────────────────────────────────────────────
 
-BassMelodicBody::BassMelodicBody (BridgeProcessor& processor)
-    : roll (processor), grid (processor), proc (processor)
+BassMelodicBody::BassMelodicBody (BassPanel& panel, BridgeProcessor& processor)
+    : roll (processor), grid (panel, processor)
 {
     addAndMakeVisible (roll);
     addAndMakeVisible (grid);
 }
 
+void BassMelodicBody::setMelodicCellSize (float cellW, float cellH)
+{
+    layoutCellW = cellW;
+    layoutCellH = cellH;
+}
+
 void BassMelodicBody::resized()
 {
-    const int w = juce::jmax (1, getWidth());
-    int minMidi = 60, maxMidi = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (proc.bassEngine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int strip = (int) bridge::kMelodicKeyStripWidth;
-    const int gridW = juce::jmax (1, w - strip);
-    const float cellW = (float) gridW / (float) juce::jmax (1, BassPreset::NUM_STEPS);
-    const float cellH = juce::jmin (cellW, 50.0f);
-    const int bodyH = juce::jmax (1, juce::roundToInt (cellH * (float) nRows));
-
-    roll.setBounds (0, 0, strip, bodyH);
-    grid.setBounds (strip, 0, gridW, bodyH);
+    const int h       = juce::jmax (1, getHeight());
+    const int gridW   = juce::jmax (1, getWidth() - strip);
+    roll.setCellSize (layoutCellW, layoutCellH);
+    grid.setCellSize (layoutCellW, layoutCellH);
+    roll.setBounds (0, 0, strip, h);
+    grid.setBounds (strip, 0, gridW, h);
 }
 
 // ─── BassPianoRollComponent ───────────────────────────────────────────────────────
 
 BassPianoRollComponent::BassPianoRollComponent (BridgeProcessor& p) : proc (p) {}
+
+void BassPianoRollComponent::setCellSize (float w, float h)
+{
+    storedCellW = w;
+    storedCellH = h;
+}
 
 void BassPianoRollComponent::mouseDown (const juce::MouseEvent& e)
 {
@@ -81,7 +90,7 @@ void BassPianoRollComponent::mouseDown (const juce::MouseEvent& e)
     int low = 60, high = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
     const int nRows = juce::jmax (1, high - low + 1);
-    const float rowH = (float) getHeight() / (float) nRows;
+    const float rowH = storedCellH > 0.01f ? storedCellH : ((float) getHeight() / (float) nRows);
     const int row = (int) (e.position.y / juce::jmax (1.0f, rowH));
     const int idx = juce::jlimit (0, nRows - 1, row);
     const int midi = high - idx;
@@ -112,7 +121,7 @@ void BassPianoRollComponent::paint (juce::Graphics& g)
     int low = 60, high = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
     const int nRows = juce::jmax (1, high - low + 1);
-    float rowH = full.getHeight() / (float) nRows;
+    const float rowH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
     
     const juce::String names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
@@ -152,9 +161,30 @@ void BassPianoRollComponent::paint (juce::Graphics& g)
 
 // ─── BassGridComponent ────────────────────────────────────────────────────────
 
-BassGridComponent::BassGridComponent (BridgeProcessor& p)
-    : proc (p)
+BassGridComponent::BassGridComponent (BassPanel& panel, BridgeProcessor& p)
+    : parentPanel (panel), proc (p)
 {}
+
+void BassGridComponent::setCellSize (float w, float h)
+{
+    storedCellW = w;
+    storedCellH = h;
+}
+
+void BassGridComponent::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+    {
+        if (e.mods.isShiftDown())
+            parentPanel.adjustZoomX (wheel.deltaY);
+        else
+            parentPanel.adjustZoomY (wheel.deltaY);
+    }
+    else if (auto* vp = findParentComponentOfClass<juce::Viewport>())
+    {
+        vp->mouseWheelMove (e.getEventRelativeTo (vp), wheel);
+    }
+}
 
 void BassGridComponent::paint (juce::Graphics& g)
 {
@@ -176,8 +206,8 @@ void BassGridComponent::paint (juce::Graphics& g)
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = BassPreset::NUM_STEPS;
 
-    float cellW = full.getWidth() / (float)nSteps;
-    float cellH = full.getHeight() / (float)nRows;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
+    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
     const int scaleIdx = proc.apvtsMain.getRawParameterValue ("scale") != nullptr
                              ? (int) proc.apvtsMain.getRawParameterValue ("scale")->load()
@@ -265,8 +295,8 @@ void BassGridComponent::mouseDown (const juce::MouseEvent& e)
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = BassPreset::NUM_STEPS;
-    float cellW = full.getWidth() / (float)nSteps;
-    float cellH = full.getHeight() / (float)nRows;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
+    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
     int step = (int)(e.x / cellW);
     int row  = (int)(e.y / cellH);
@@ -303,8 +333,8 @@ void BassGridComponent::mouseDrag (const juce::MouseEvent& e)
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = BassPreset::NUM_STEPS;
-    float cellW = full.getWidth() / (float)nSteps;
-    float cellH = full.getHeight() / (float)nRows;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
+    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
     int step = (int)(e.x / cellW);
     int row  = (int)(e.y / cellH);
@@ -343,7 +373,7 @@ void BassGridComponent::mouseDoubleClick (const juce::MouseEvent& e)
     auto& engine = proc.bassEngine;
     auto full = getLocalBounds().toFloat();
     const int nSteps = BassPreset::NUM_STEPS;
-    float cellW = full.getWidth() / (float)nSteps;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
     int step = (int)(e.x / cellW);
     
     if (step >= 0 && step < nSteps)
@@ -389,7 +419,7 @@ BassPanel::BassPanel (BridgeProcessor& p)
 
     addAndMakeVisible (melodicViewport);
     melodicViewport.setViewedComponent (&melodicBody, false);
-    melodicViewport.setScrollBarsShown (true, false);
+    melodicViewport.setScrollBarsShown (true, true);
     melodicViewport.setScrollBarThickness (10);
     melodicViewport.getVerticalScrollBar().setLookAndFeel (&laf);
 
@@ -414,6 +444,7 @@ BassPanel::BassPanel (BridgeProcessor& p)
 
 BassPanel::~BassPanel()
 {
+    melodicViewport.getVerticalScrollBar().setLookAndFeel (nullptr);
     proc.apvtsMain.removeParameterListener ("bassOn", this);
     proc.apvtsMain.removeParameterListener ("scale", this);
     proc.apvtsMain.removeParameterListener ("rootNote", this);
@@ -464,6 +495,40 @@ void BassPanel::applyBassPageState()
     bottomHalf.setAlpha (dim);
 }
 
+void BassPanel::fitPatternInView()
+{
+    zoomX = 1.0f;
+    zoomY = 1.0f;
+    resized();
+    melodicViewport.setViewPosition (0, 0);
+}
+
+void BassPanel::adjustZoomX (float wheelDeltaY)
+{
+    const int oldX = melodicViewport.getViewPositionX();
+    const int oldY = melodicViewport.getViewPositionY();
+    auto* body     = melodicViewport.getViewedComponent();
+    const int oldBw = body != nullptr ? body->getWidth() : 1;
+    const int oldBh = body != nullptr ? body->getHeight() : 1;
+
+    zoomX = juce::jlimit (0.5f, 8.0f, zoomX * (1.0f + wheelDeltaY * 0.25f));
+    resized();
+    bridge::melodicViewportPreserveCentreAfterBodyResize (melodicViewport, oldX, oldY, oldBw, oldBh);
+}
+
+void BassPanel::adjustZoomY (float wheelDeltaY)
+{
+    const int oldX = melodicViewport.getViewPositionX();
+    const int oldY = melodicViewport.getViewPositionY();
+    auto* body     = melodicViewport.getViewedComponent();
+    const int oldBw = body != nullptr ? body->getWidth() : 1;
+    const int oldBh = body != nullptr ? body->getHeight() : 1;
+
+    zoomY = juce::jlimit (0.5f, 8.0f, zoomY * (1.0f + wheelDeltaY * 0.25f));
+    resized();
+    bridge::melodicViewportPreserveCentreAfterBodyResize (melodicViewport, oldX, oldY, oldBw, oldBh);
+}
+
 void BassPanel::resized()
 {
     using namespace bridge::instrumentLayout;
@@ -480,15 +545,24 @@ void BassPanel::resized()
 
     melodicViewport.setBounds (card);
     const int viewW = juce::jmax (1, melodicViewport.getMaximumVisibleWidth());
+    const int viewH = juce::jmax (1, melodicViewport.getHeight());
+
     int minMidi = 60, maxMidi = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (proc.bassEngine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int strip = (int) bridge::kMelodicKeyStripWidth;
-    const int gridW = juce::jmax (1, viewW - strip);
-    const float cellW = (float) gridW / (float) juce::jmax (1, BassPreset::NUM_STEPS);
-    const float cellH = juce::jmin (cellW, 50.0f);
-    const int bodyH = juce::jmax (1, juce::roundToInt (cellH * (float) nRows));
-    melodicBody.setSize (viewW, bodyH);
+    const int nRows  = juce::jmax (1, maxMidi - minMidi + 1);
+    const int nSteps = BassPreset::NUM_STEPS;
+    const int strip  = (int) bridge::kMelodicKeyStripWidth;
+
+    const float baseCellW = (float) (viewW - strip) / (float) juce::jmax (1, nSteps);
+    const float baseCellH = (float) viewH / (float) nRows;
+    const float cellW     = baseCellW * zoomX;
+    const float cellH     = baseCellH * zoomY;
+
+    const int bodyW = strip + (int) std::lround (cellW * (float) nSteps);
+    const int bodyH = juce::jmax (1, (int) std::lround (cellH * (float) nRows));
+
+    melodicBody.setMelodicCellSize (cellW, cellH);
+    melodicBody.setSize (bodyW, bodyH);
 
     bottomHalf.setBounds (shell.bottomStrip);
 }
@@ -545,7 +619,10 @@ void BassPanel::parameterChanged (const juce::String& parameterID, float newValu
     if (parameterID == "density" || parameterID == "complexity")
     {
         proc.syncBassEngineFromAPVTS();
-        proc.bassEngine.morphPatternForDensityAndComplexity();
+        int ls = 1, le = BassPreset::NUM_STEPS;
+        proc.getBassLoopBounds (ls, le);
+        proc.bassEngine.morphPatternForDensityAndComplexity (
+            ls - 1, juce::jmin (le - 1, proc.bassEngine.getPatternLen() - 1));
         triggerAsyncUpdate();
         return;
     }
@@ -557,7 +634,7 @@ void BassPanel::parameterChanged (const juce::String& parameterID, float newValu
             bridgeMelodicEngineStyleIndex (currentUnifiedStyleChoiceIndex (proc.apvtsBass)));
         proc.refreshChordsBassHintFromBass();
         triggerAsyncUpdate();
-        resized();
+        fitPatternInView();
         return;
     }
 
@@ -581,6 +658,7 @@ void BassPanel::flushDeferredBassGridPreviewRebuild()
         return;
     deferredBassGridPreviewRebuild = false;
     proc.rebuildBassGridPreview();
+    fitPatternInView();
 }
 
 void BassPanel::updateStepAnimation()

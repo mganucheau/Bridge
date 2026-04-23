@@ -1,4 +1,5 @@
 #include <JuceHeader.h>
+#include <cmath>
 #include "BridgeProcessor.h"
 
 namespace
@@ -85,6 +86,40 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         expectNoParam (*this, proc.apvtsBass, "presence");
         expectNoParam (*this, proc.apvtsPiano, "presence");
         expectNoParam (*this, proc.apvtsGuitar, "presence");
+
+        beginTest ("Fresh processor: groove-style floats default to 0, density and complexity to 0.5");
+
+        auto near = [this] (float a, float b, const char* label)
+        {
+            expect (std::abs (a - b) < 1.0e-4f, juce::String (label) + " default mismatch");
+        };
+
+        near ((float) *proc.apvtsMain.getRawParameterValue ("humanize"), 0.f, "main humanize");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("hold"), 0.f, "main hold");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("velocity"), 0.f, "main velocity");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("ghostAmount"), 0.f, "main ghostAmount");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("fillRate"), 0.f, "main fillRate");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("density"), 0.5f, "main density");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("complexity"), 0.5f, "main complexity");
+
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("humanize"), 0.f, "drums humanize");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("velocity"), 0.f, "drums velocity");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("fillRate"), 0.f, "drums fillRate");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("hold"), 0.f, "drums hold");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("ghostAmount"), 0.f, "drums ghostAmount");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("intensity"), 0.f, "drums intensity");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("density"), 0.5f, "drums density");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("complexity"), 0.5f, "drums complexity");
+
+        near ((float) *proc.apvtsBass.getRawParameterValue ("humanize"), 0.f, "bass humanize");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("velocity"), 0.f, "bass velocity");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("fillRate"), 0.f, "bass fillRate");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("hold"), 0.f, "bass hold");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("ghostAmount"), 0.f, "bass ghostAmount");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("staccato"), 0.f, "bass staccato");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("intensity"), 0.f, "bass intensity");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("density"), 0.5f, "bass density");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("complexity"), 0.5f, "bass complexity");
     }
 };
 

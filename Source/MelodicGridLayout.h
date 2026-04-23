@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <JuceHeader.h>
 #include "bass/BassEngine.h"
 #include "bass/BassStylePresets.h"
@@ -13,6 +14,30 @@
 
 namespace bridge
 {
+/** After zoom changes body dimensions, keep the same relative scroll position (centre-stable). */
+inline void melodicViewportPreserveCentreAfterBodyResize (juce::Viewport& vp,
+                                                          int oldViewX,
+                                                          int oldViewY,
+                                                          int oldBodyW,
+                                                          int oldBodyH)
+{
+    auto* body = vp.getViewedComponent();
+    if (body == nullptr || oldBodyW < 1 || oldBodyH < 1)
+        return;
+
+    const int vpW = juce::jmax (1, vp.getWidth());
+    const int vpH = juce::jmax (1, vp.getHeight());
+    const float relX = ((float) oldViewX + 0.5f * (float) vpW) / (float) oldBodyW;
+    const float relY = ((float) oldViewY + 0.5f * (float) vpH) / (float) oldBodyH;
+    const int newBodyW = body->getWidth();
+    const int newBodyH = body->getHeight();
+    int newX = (int) std::lround (relX * (float) newBodyW - 0.5f * (float) vpW);
+    int newY = (int) std::lround (relY * (float) newBodyH - 0.5f * (float) vpH);
+    const int maxX = juce::jmax (0, newBodyW - vpW);
+    const int maxY = juce::jmax (0, newBodyH - vpH);
+    vp.setViewPosition (juce::jlimit (0, maxX, newX), juce::jlimit (0, maxY, newY));
+}
+
 
 /** Legacy default row count when callers still assume a single-octave window. */
 inline constexpr int kMelodicOctaveRows = 12;

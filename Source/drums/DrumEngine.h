@@ -40,7 +40,7 @@ public:
     const DrumPattern& getPatternForGrid() const { return gridPreview; }
 
     void rebuildGridPreview();
-    void morphPatternForDensityAndComplexity();
+    void morphPatternForDensityAndComplexity (int rangeFromStep0 = -1, int rangeToStep0 = -1);
     void adaptPatternToNewStyle (int newStyleIndex);
     void evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml);
 

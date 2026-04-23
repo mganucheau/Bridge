@@ -1,7 +1,32 @@
 #include "BridgeBottomHalf.h"
 #include "BridgeAppleHIG.h"
-#include "BridgeIconPaths.h"
+#include "BridgeInstrumentStripStyle.h"
 #include "BridgePanelLayout.h"
+
+namespace
+{
+static void setupStripLoopToggle (juce::TextButton& b)
+{
+    b.setClickingTogglesState (true);
+    b.setConnectedEdges (0);
+    bridge::instrumentStripStyle::tagStripLoop (b);
+    b.setColour (juce::TextButton::buttonColourId, bridge::instrumentStripStyle::fieldBg());
+    b.setColour (juce::TextButton::buttonOnColourId, bridge::instrumentStripStyle::fieldBg());
+    b.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    b.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+}
+
+static void setupStripSpanLockToggle (juce::TextButton& b)
+{
+    b.setClickingTogglesState (true);
+    b.setConnectedEdges (0);
+    bridge::instrumentStripStyle::tagStripSpanLock (b);
+    b.setColour (juce::TextButton::buttonColourId, bridge::instrumentStripStyle::fieldBg());
+    b.setColour (juce::TextButton::buttonOnColourId, bridge::instrumentStripStyle::fieldBg());
+    b.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    b.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+}
+} // namespace
 
 LabelledKnob::LabelledKnob (const juce::String& paramId, const juce::String& name,
                             juce::AudioProcessorValueTreeState& apvts, BridgeLookAndFeel::KnobStyle style, juce::Colour accent,
@@ -99,36 +124,16 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
     addAndMakeVisible (knobLoopStart);
     addAndMakeVisible (knobLoopEnd);
 
-    {
-        const float iconS = 16.0f;
-        auto loopBounds = juce::Rectangle<float> (0.0f, 0.0f, iconS, iconS);
-        juce::Path loopPath = bridge::icons::lucideRepeatFilled (loopBounds);
-        loopPlaybackButton.setShape (loopPath, true, true, false);
-        loopPlaybackButton.setClickingTogglesState (true);
-        loopPlaybackButton.shouldUseOnColours (true);
-        loopPlaybackButton.setColours (bridge::colors::knobTrack(), bridge::colors::knobTrack(), bridge::colors::knobTrack());
-        loopPlaybackButton.setOnColours (groupAccent.withAlpha (0.75f), groupAccent.brighter (0.1f), groupAccent);
-        loopPlaybackButton.setOutline (bridge::colors::cardOutline(), 1.0f);
-        loopPlaybackButton.setTooltip ("Playback loop (wrap transport in selection)");
-        loopPlaybackButton.setWantsKeyboardFocus (false);
-        loopPlaybackButton.setMouseClickGrabsKeyboardFocus (false);
-        if (mainApvts.getParameter ("playbackLoopOn") != nullptr)
-            loopPlaybackAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
-                mainApvts, "playbackLoopOn", loopPlaybackButton);
-        addAndMakeVisible (loopPlaybackButton);
-    }
+    setupStripLoopToggle (loopPlaybackButton);
+    loopPlaybackButton.setTooltip ("Playback loop (wrap transport in selection)");
+    loopPlaybackButton.setWantsKeyboardFocus (false);
+    loopPlaybackButton.setMouseClickGrabsKeyboardFocus (false);
+    if (mainApvts.getParameter ("playbackLoopOn") != nullptr)
+        loopPlaybackAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            mainApvts, "playbackLoopOn", loopPlaybackButton);
+    addAndMakeVisible (loopPlaybackButton);
 
-    {
-        const float iconS = 16.0f;
-        auto syncBounds = juce::Rectangle<float> (0.0f, 0.0f, iconS, iconS);
-        juce::Path syncGlyph = bridge::icons::lucideLockFilled (syncBounds);
-        syncIconButton.setShape (syncGlyph, true, true, false);
-    }
-    syncIconButton.setClickingTogglesState (true);
-    syncIconButton.shouldUseOnColours (true);
-    syncIconButton.setColours (bridge::colors::knobTrack(), bridge::colors::knobTrack(), bridge::colors::knobTrack());
-    syncIconButton.setOnColours (groupAccent.withAlpha (0.75f), groupAccent.brighter (0.1f), groupAccent);
-    syncIconButton.setOutline (bridge::colors::cardOutline(), 1.0f);
+    setupStripSpanLockToggle (syncIconButton);
     syncIconButton.setTooltip ("Lock loop width: moving start or end keeps the same span");
     syncIconButton.setWantsKeyboardFocus (false);
     syncIconButton.setMouseClickGrabsKeyboardFocus (false);
@@ -196,7 +201,7 @@ void BridgeBottomHalf::resized()
     constexpr int kTopGap = 12;
     constexpr int kMargin = 16;
     constexpr int kPadXY = 160;
-    constexpr int kLoopBtnSide = 26;
+    constexpr int kLoopBtnSide = 28;
     constexpr int kBtnPairGap = 4;
     constexpr int kOuterGap = 8;
     constexpr int kKnobW = 48;

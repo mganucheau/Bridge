@@ -61,9 +61,9 @@ private:
     juce::Label selectorsLabel;
     LabelledKnob knobLoopStart;
     LabelledKnob knobLoopEnd;
-    juce::ShapeButton loopPlaybackButton { "Loop", juce::Colours::transparentBlack, juce::Colours::transparentBlack, juce::Colours::transparentBlack };
+    juce::TextButton loopPlaybackButton { "L" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopPlaybackAttach;
-    juce::ShapeButton syncIconButton { "Sync", juce::Colours::transparentBlack, juce::Colours::transparentBlack, juce::Colours::transparentBlack };
+    juce::TextButton syncIconButton { "S" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> syncAttach;
 
     juce::Label actionsLabel;

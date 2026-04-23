@@ -19,9 +19,12 @@ public:
     explicit PianoPianoRollComponent (BridgeProcessor& p);
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent& e) override;
+    void setCellSize (float w, float h);
 
 private:
     BridgeProcessor& proc;
+    float storedCellW = 1.0f;
+    float storedCellH = 1.0f;
 
     static bool isBlackKey (int midiNote);
 };
@@ -29,17 +32,22 @@ private:
 class PianoGridComponent : public juce::Component
 {
 public:
-    PianoGridComponent (BridgeProcessor& p);
+    PianoGridComponent (PianoPanel& panel, BridgeProcessor& p);
 
     void paint    (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
     void resized  () override;
     void update   (int activeStep);
+    void setCellSize (float w, float h);
 
 private:
+    PianoPanel&      parentPanel;
     BridgeProcessor& proc;
+    float storedCellW = 1.0f;
+    float storedCellH = 1.0f;
     int currentStep = -1;
     int dragOriginStep = -1;
 };
@@ -47,14 +55,16 @@ private:
 /** Piano roll + step grid sized to the committed pattern pitch span (scrolls vertically). */
 struct PianoMelodicBody : public juce::Component
 {
-    explicit PianoMelodicBody (BridgeProcessor& p);
+    explicit PianoMelodicBody (PianoPanel& panel, BridgeProcessor& p);
     void resized() override;
+    void setMelodicCellSize (float cellW, float cellH);
 
     PianoPianoRollComponent roll;
     PianoGridComponent grid;
 
 private:
-    BridgeProcessor& proc;
+    float layoutCellW = 1.0f;
+    float layoutCellH = 1.0f;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PianoMelodicBody)
 };
 
@@ -84,6 +94,13 @@ public:
     void resized () override;
     void handleAsyncUpdate() override;
 
+    float zoomX = 1.0f;
+    float zoomY = 1.0f;
+
+    void adjustZoomX (float wheelDeltaY);
+    void adjustZoomY (float wheelDeltaY);
+    void fitPatternInView();
+
 private:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     void parameterChanged (const juce::String& parameterID, float newValue) override;
@@ -92,7 +109,7 @@ private:
                                      const juce::String& id, int value);
 
     BridgeProcessor& proc;
-    PianoMelodicBody melodicBody { proc };
+    PianoMelodicBody melodicBody { *this, proc };
     BridgeLookAndFeel laf;
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;

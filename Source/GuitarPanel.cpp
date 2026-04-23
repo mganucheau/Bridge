@@ -1,4 +1,5 @@
 #include "GuitarPanel.h"
+#include <cmath>
 #include "BridgeAppleHIG.h"
 #include "BridgeLookAndFeel.h"
 #include "BridgePanelLayout.h"
@@ -50,32 +51,39 @@ private:
 
 // ─── GuitarMelodicBody ───────────────────────────────────────────────────────────
 
-GuitarMelodicBody::GuitarMelodicBody (BridgeProcessor& processor)
-    : roll (processor), grid (processor), proc (processor)
+GuitarMelodicBody::GuitarMelodicBody (GuitarPanel& panel, BridgeProcessor& processor)
+    : roll (processor), grid (panel, processor)
 {
     addAndMakeVisible (roll);
     addAndMakeVisible (grid);
 }
 
+void GuitarMelodicBody::setMelodicCellSize (float cellW, float cellH)
+{
+    layoutCellW = cellW;
+    layoutCellH = cellH;
+}
+
 void GuitarMelodicBody::resized()
 {
-    const int w = juce::jmax (1, getWidth());
-    int minMidi = 60, maxMidi = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (proc.guitarEngine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int strip = (int) bridge::kMelodicKeyStripWidth;
-    const int gridW = juce::jmax (1, w - strip);
-    const float cellW = (float) gridW / (float) juce::jmax (1, GuitarPreset::NUM_STEPS);
-    const float cellH = juce::jmin (cellW, 50.0f);
-    const int bodyH = juce::jmax (1, juce::roundToInt (cellH * (float) nRows));
-
-    roll.setBounds (0, 0, strip, bodyH);
-    grid.setBounds (strip, 0, gridW, bodyH);
+    const int h       = juce::jmax (1, getHeight());
+    const int gridW   = juce::jmax (1, getWidth() - strip);
+    roll.setCellSize (layoutCellW, layoutCellH);
+    grid.setCellSize (layoutCellW, layoutCellH);
+    roll.setBounds (0, 0, strip, h);
+    grid.setBounds (strip, 0, gridW, h);
 }
 
 // ─── GuitarPianoRollComponent ───────────────────────────────────────────────────────
 
 GuitarPianoRollComponent::GuitarPianoRollComponent (BridgeProcessor& p) : proc (p) {}
+
+void GuitarPianoRollComponent::setCellSize (float w, float h)
+{
+    storedCellW = w;
+    storedCellH = h;
+}
 
 void GuitarPianoRollComponent::mouseDown (const juce::MouseEvent& e)
 {
@@ -83,7 +91,7 @@ void GuitarPianoRollComponent::mouseDown (const juce::MouseEvent& e)
     int low = 60, high = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
     const int nRows = juce::jmax (1, high - low + 1);
-    const float rowH = (float) getHeight() / (float) nRows;
+    const float rowH = storedCellH > 0.01f ? storedCellH : ((float) getHeight() / (float) nRows);
     const int row = (int) (e.position.y / juce::jmax (1.0f, rowH));
     const int idx = juce::jlimit (0, nRows - 1, row);
     const int midi = high - idx;
@@ -113,7 +121,7 @@ void GuitarPianoRollComponent::paint (juce::Graphics& g)
     int low = 60, high = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
     const int nRows = juce::jmax (1, high - low + 1);
-    float rowH = full.getHeight() / (float) nRows;
+    const float rowH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
     
     const juce::String names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
 
@@ -153,9 +161,30 @@ void GuitarPianoRollComponent::paint (juce::Graphics& g)
 
 // ─── GuitarGridComponent ────────────────────────────────────────────────────────
 
-GuitarGridComponent::GuitarGridComponent (BridgeProcessor& p)
-    : proc (p)
+GuitarGridComponent::GuitarGridComponent (GuitarPanel& panel, BridgeProcessor& p)
+    : parentPanel (panel), proc (p)
 {}
+
+void GuitarGridComponent::setCellSize (float w, float h)
+{
+    storedCellW = w;
+    storedCellH = h;
+}
+
+void GuitarGridComponent::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
+    {
+        if (e.mods.isShiftDown())
+            parentPanel.adjustZoomX (wheel.deltaY);
+        else
+            parentPanel.adjustZoomY (wheel.deltaY);
+    }
+    else if (auto* vp = findParentComponentOfClass<juce::Viewport>())
+    {
+        vp->mouseWheelMove (e.getEventRelativeTo (vp), wheel);
+    }
+}
 
 void GuitarGridComponent::paint (juce::Graphics& g)
 {
@@ -177,8 +206,8 @@ void GuitarGridComponent::paint (juce::Graphics& g)
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = GuitarPreset::NUM_STEPS;
 
-    float cellW = full.getWidth() / (float)nSteps;
-    float cellH = full.getHeight() / (float)nRows;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
+    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
     const int scaleIdx = proc.apvtsMain.getRawParameterValue ("scale") != nullptr
                              ? (int) proc.apvtsMain.getRawParameterValue ("scale")->load()
@@ -266,8 +295,8 @@ void GuitarGridComponent::mouseDown (const juce::MouseEvent& e)
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = GuitarPreset::NUM_STEPS;
-    float cellW = full.getWidth() / (float)nSteps;
-    float cellH = full.getHeight() / (float)nRows;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
+    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
     int step = (int)(e.x / cellW);
     int row  = (int)(e.y / cellH);
@@ -304,8 +333,8 @@ void GuitarGridComponent::mouseDrag (const juce::MouseEvent& e)
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = GuitarPreset::NUM_STEPS;
-    float cellW = full.getWidth() / (float)nSteps;
-    float cellH = full.getHeight() / (float)nRows;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
+    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
     int step = (int)(e.x / cellW);
     int row  = (int)(e.y / cellH);
@@ -344,7 +373,7 @@ void GuitarGridComponent::mouseDoubleClick (const juce::MouseEvent& e)
     auto& engine = proc.guitarEngine;
     auto full = getLocalBounds().toFloat();
     const int nSteps = GuitarPreset::NUM_STEPS;
-    float cellW = full.getWidth() / (float)nSteps;
+    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
     int step = (int)(e.x / cellW);
     
     if (step >= 0 && step < nSteps)
@@ -390,7 +419,7 @@ GuitarPanel::GuitarPanel (BridgeProcessor& p)
 
     addAndMakeVisible (melodicViewport);
     melodicViewport.setViewedComponent (&melodicBody, false);
-    melodicViewport.setScrollBarsShown (true, false);
+    melodicViewport.setScrollBarsShown (true, true);
     melodicViewport.setScrollBarThickness (10);
     melodicViewport.getVerticalScrollBar().setLookAndFeel (&laf);
 
@@ -466,6 +495,40 @@ void GuitarPanel::applyGuitarPageState()
     bottomHalf.setAlpha (dim);
 }
 
+void GuitarPanel::fitPatternInView()
+{
+    zoomX = 1.0f;
+    zoomY = 1.0f;
+    resized();
+    melodicViewport.setViewPosition (0, 0);
+}
+
+void GuitarPanel::adjustZoomX (float wheelDeltaY)
+{
+    const int oldX = melodicViewport.getViewPositionX();
+    const int oldY = melodicViewport.getViewPositionY();
+    auto* body     = melodicViewport.getViewedComponent();
+    const int oldBw = body != nullptr ? body->getWidth() : 1;
+    const int oldBh = body != nullptr ? body->getHeight() : 1;
+
+    zoomX = juce::jlimit (0.5f, 8.0f, zoomX * (1.0f + wheelDeltaY * 0.25f));
+    resized();
+    bridge::melodicViewportPreserveCentreAfterBodyResize (melodicViewport, oldX, oldY, oldBw, oldBh);
+}
+
+void GuitarPanel::adjustZoomY (float wheelDeltaY)
+{
+    const int oldX = melodicViewport.getViewPositionX();
+    const int oldY = melodicViewport.getViewPositionY();
+    auto* body     = melodicViewport.getViewedComponent();
+    const int oldBw = body != nullptr ? body->getWidth() : 1;
+    const int oldBh = body != nullptr ? body->getHeight() : 1;
+
+    zoomY = juce::jlimit (0.5f, 8.0f, zoomY * (1.0f + wheelDeltaY * 0.25f));
+    resized();
+    bridge::melodicViewportPreserveCentreAfterBodyResize (melodicViewport, oldX, oldY, oldBw, oldBh);
+}
+
 void GuitarPanel::resized()
 {
     using namespace bridge::instrumentLayout;
@@ -482,15 +545,24 @@ void GuitarPanel::resized()
 
     melodicViewport.setBounds (card);
     const int viewW = juce::jmax (1, melodicViewport.getMaximumVisibleWidth());
+    const int viewH = juce::jmax (1, melodicViewport.getHeight());
+
     int minMidi = 60, maxMidi = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (proc.guitarEngine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int strip = (int) bridge::kMelodicKeyStripWidth;
-    const int gridW = juce::jmax (1, viewW - strip);
-    const float cellW = (float) gridW / (float) juce::jmax (1, GuitarPreset::NUM_STEPS);
-    const float cellH = juce::jmin (cellW, 50.0f);
-    const int bodyH = juce::jmax (1, juce::roundToInt (cellH * (float) nRows));
-    melodicBody.setSize (viewW, bodyH);
+    const int nRows  = juce::jmax (1, maxMidi - minMidi + 1);
+    const int nSteps = GuitarPreset::NUM_STEPS;
+    const int strip  = (int) bridge::kMelodicKeyStripWidth;
+
+    const float baseCellW = (float) (viewW - strip) / (float) juce::jmax (1, nSteps);
+    const float baseCellH = (float) viewH / (float) nRows;
+    const float cellW     = baseCellW * zoomX;
+    const float cellH     = baseCellH * zoomY;
+
+    const int bodyW = strip + (int) std::lround (cellW * (float) nSteps);
+    const int bodyH = juce::jmax (1, (int) std::lround (cellH * (float) nRows));
+
+    melodicBody.setMelodicCellSize (cellW, cellH);
+    melodicBody.setSize (bodyW, bodyH);
 
     bottomHalf.setBounds (shell.bottomStrip);
 }
@@ -547,7 +619,10 @@ void GuitarPanel::parameterChanged (const juce::String& parameterID, float newVa
     if (parameterID == "density" || parameterID == "complexity")
     {
         proc.syncGuitarEngineFromAPVTS();
-        proc.guitarEngine.morphPatternForDensityAndComplexity();
+        int ls = 1, le = GuitarPreset::NUM_STEPS;
+        proc.getGuitarLoopBounds (ls, le);
+        proc.guitarEngine.morphPatternForDensityAndComplexity (
+            ls - 1, juce::jmin (le - 1, proc.guitarEngine.getPatternLen() - 1));
         triggerAsyncUpdate();
         return;
     }
@@ -557,7 +632,7 @@ void GuitarPanel::parameterChanged (const juce::String& parameterID, float newVa
         proc.guitarEngine.adaptPatternToNewStyle (
             bridgeMelodicEngineStyleIndex (currentUnifiedStyleChoiceIndex (proc.apvtsGuitar)));
         triggerAsyncUpdate();
-        resized();
+        fitPatternInView();
         return;
     }
 
@@ -581,6 +656,7 @@ void GuitarPanel::flushDeferredGuitarGridPreviewRebuild()
         return;
     deferredGuitarGridPreviewRebuild = false;
     proc.rebuildGuitarGridPreview();
+    fitPatternInView();
 }
 
 void GuitarPanel::updateStepAnimation()

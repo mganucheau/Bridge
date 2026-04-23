@@ -66,7 +66,7 @@ struct StateMigrationTests final : public juce::UnitTest
         expectWithinAbsoluteError ((double) *proc2.apvtsPiano.getRawParameterValue ("hold"), 0.37, 0.02);
         expectWithinAbsoluteError ((double) *proc2.apvtsPiano.getRawParameterValue ("sustain"), 0.88, 0.02);
 
-        beginTest ("v10 piano: legacy pocket / presence in XML are not migrated (hold/sustain stay at defaults)");
+        beginTest ("v10 piano: legacy pocket / presence in XML are not migrated (hold/sustain stay at layout defaults)");
 
         BridgeProcessor procFresh;
         juce::MemoryBlock mb2;
@@ -86,7 +86,7 @@ struct StateMigrationTests final : public juce::UnitTest
 
         BridgeProcessor proc3;
         proc3.setStateInformation (patched2.getData(), (int) patched2.getSize());
-        expectWithinAbsoluteError ((double) *proc3.apvtsPiano.getRawParameterValue ("hold"), 0.5, 0.06);
+        expectWithinAbsoluteError ((double) *proc3.apvtsPiano.getRawParameterValue ("hold"), 0.0, 0.06);
         expectWithinAbsoluteError ((double) *proc3.apvtsPiano.getRawParameterValue ("sustain"), 0.0, 0.02);
 
         beginTest ("v9 main: legacy pocket maps to hold");

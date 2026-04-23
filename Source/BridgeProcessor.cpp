@@ -135,11 +135,11 @@ static std::array<float, 10> readMainMLPersonalityKnobs10 (juce::AudioProcessorV
 
 struct LeaderEffective
 {
-    float hold = 0.50f;
-    float density = 0.70f;
+    float hold = 0.0f;
+    float density = 0.5f;
     float swing = 0.0f;
-    float humanize = 0.20f;
-    float complexity = 0.50f;
+    float humanize = 0.0f;
+    float complexity = 0.5f;
 };
 
 static LeaderEffective getLeaderEffective (juce::AudioProcessorValueTreeState& m)
@@ -153,11 +153,11 @@ static LeaderEffective getLeaderEffective (juce::AudioProcessorValueTreeState& m
 
     auto j = [] (float x) { return juce::jlimit (0.f, 1.f, x); };
     LeaderEffective L;
-    L.hold       = j (readMain01 (m, "hold", 0.50f) + bias.hold + bias.tight);
-    L.humanize   = j (readMain01 (m, "humanize",  0.20f) + bias.unity);
+    L.hold       = j (readMain01 (m, "hold", 0.0f) + bias.hold + bias.tight);
+    L.humanize   = j (readMain01 (m, "humanize",  0.0f) + bias.unity);
     L.swing      = j (readMain01 (m, "swing",     0.0f) + bias.breath);
     L.complexity = j (readMain01 (m, "complexity",0.50f) + bias.spark);
-    L.density    = readMain01 (m, "density", 0.70f);
+    L.density    = readMain01 (m, "density", 0.5f);
     return L;
 }
 
@@ -288,14 +288,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
         leaderStyleNames.add (LEADER_STYLE_NAMES[i]);
     layout.add (std::make_unique<juce::AudioParameterChoice> ("leaderStyle", "Arrangement", leaderStyleNames, 0));
 
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("density", "Density", 0.f, 1.f, 0.70f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("density", "Density", 0.f, 1.f, 0.50f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing", "Swing", 0.f, 1.f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize", "Humanize", 0.f, 1.f, 0.20f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("hold", "Hold", 0.f, 1.f, 0.50f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity", "Velocity", 0.f, 1.f, 0.85f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate", "Fill Rate", 0.f, 1.f, 0.15f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize", "Humanize", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("hold", "Hold", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity", "Velocity", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate", "Fill Rate", 0.f, 1.f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity", "Complexity", 0.f, 1.f, 0.50f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost", 0.f, 1.f, 0.70f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost", 0.f, 1.f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart", "Loop Start", 1, 16, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd", "Loop End", 1, 16, 16));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On (legacy)", false));
@@ -386,15 +386,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsL
         styleNames.add (bridgeUnifiedStyleNames()[i]);
 
     layout.add (std::make_unique<juce::AudioParameterChoice> ("style", "Style", styleNames, 0));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.9f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.2f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.85f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.15f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("hold",        "Hold",        0.0f,  1.0f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.8f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("hold",        "Hold",        0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterInt> ("midiChannel", "MIDI Channel", 1, 16, 10));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",  1,     NUM_STEPS, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",      1,     NUM_STEPS, NUM_STEPS));
@@ -446,17 +446,17 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
         layout.add (std::make_unique<juce::AudioParameterChoice> ("jamInterval", "Jam", jamChoices, 0));
     }
     layout.add (std::make_unique<juce::AudioParameterFloat> ("temperature", "Temperature", 0.01f, 2.0f, 1.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.90f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.20f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("hold",        "Hold",        0.0f,  1.0f, 0.50f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.85f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.15f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("hold",        "Hold",        0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.50f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.70f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("staccato",    "Staccato",    0.0f,  1.0f, 0.20f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("staccato",    "Staccato",    0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("sustain",     "Sustain",     0.0f,  1.0f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.8f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("patternLen",  "Pattern Len", 4,     16,   16));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("locked",      "Locked",      false));
     layout.add (std::make_unique<juce::AudioParameterInt> ("midiChannel",  "MIDI Channel", 1, 16, defaultMidiChannel));
@@ -793,6 +793,7 @@ void BridgeProcessor::parameterChanged (const juce::String& parameterID, float n
             ed->notifyBassPatternChanged();
             ed->notifyPianoPatternChanged();
             ed->notifyGuitarPatternChanged();
+            ed->repaint();
         }
         return;
     }
@@ -1152,6 +1153,39 @@ void BridgeProcessor::getPianoLoopBounds (int& loopStart, int& loopEnd) const
 void BridgeProcessor::getGuitarLoopBounds (int& loopStart, int& loopEnd) const
 {
     getMainSelectionBounds (GuitarPreset::NUM_STEPS, loopStart, loopEnd);
+}
+
+void BridgeProcessor::morphAllEnginesToMainSelection()
+{
+    syncDrumsEngineFromAPVTS();
+    syncBassEngineFromAPVTS();
+    syncPianoEngineFromAPVTS();
+    syncGuitarEngineFromAPVTS();
+
+    int ls = 1, le = 1;
+    getMainSelectionBounds (NUM_STEPS, ls, le);
+    drumEngine.morphPatternForDensityAndComplexity (
+        ls - 1, juce::jmin (le - 1, drumEngine.getPatternLen() - 1));
+
+    getMainSelectionBounds (BassPreset::NUM_STEPS, ls, le);
+    bassEngine.morphPatternForDensityAndComplexity (
+        ls - 1, juce::jmin (le - 1, bassEngine.getPatternLen() - 1));
+
+    getMainSelectionBounds (PianoPreset::NUM_STEPS, ls, le);
+    pianoEngine.morphPatternForDensityAndComplexity (
+        ls - 1, juce::jmin (le - 1, pianoEngine.getPatternLen() - 1));
+
+    getMainSelectionBounds (GuitarPreset::NUM_STEPS, ls, le);
+    guitarEngine.morphPatternForDensityAndComplexity (
+        ls - 1, juce::jmin (le - 1, guitarEngine.getPatternLen() - 1));
+
+    if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+    {
+        ed->notifyDrumsPatternChanged();
+        ed->notifyBassPatternChanged();
+        ed->notifyPianoPatternChanged();
+        ed->notifyGuitarPatternChanged();
+    }
 }
 
 void BridgeProcessor::syncPianoEngineFromAPVTS()

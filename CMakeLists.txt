@@ -163,6 +163,7 @@ target_sources(BridgeTests PRIVATE
     Tests/GridPatternParityTests.cpp
     Tests/SharedLayoutConstantsTests.cpp
     Tests/UnifiedStyleRegistryTests.cpp
+    Tests/MorphRangeTests.cpp
 )
 if (BRIDGE_ENABLE_QA_HOOKS)
     target_compile_definitions(BridgeTests PRIVATE BRIDGE_ENABLE_QA_HOOKS=1)

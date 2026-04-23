@@ -27,6 +27,20 @@ static uint32_t melodicPreviewParamSalt (float density, float swing, float human
            ^ (q (velocityMul) << 4) ^ (q (fillRate) << 5) ^ (q (complexity) << 6)
            ^ (q (ghostAmount) << 7) ^ (q (temperature) << 8) ^ (q (staccato) << 9);
 }
+
+static float probabilityAfterDensity (float base, float density)
+{
+    float prob;
+    if (density <= 0.5f)
+        prob = base * (density * 2.0f);
+    else
+    {
+        const float fill = (density - 0.5f) * 2.0f;
+        prob = base * (0.5f + 0.5f * fill);
+        prob += (1.0f - base) * base * fill * 0.25f;
+    }
+    return juce::jlimit (0.0f, 1.0f, prob);
+}
 } // namespace
 
 GuitarEngine::GuitarEngine()
@@ -121,30 +135,41 @@ void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamle
         }
 
         float base = BASS_NOTE_PROBS[style][step];
-        float prob = base + complexityMod (step);
-        prob *= density;
-        prob  = jlimit (0.0f, 1.0f, prob);
+        float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step));
+        prob = probabilityAfterDensity (prob, density);
 
         bool active = sampleProb (prob);
-        pattern[(size_t) step] = GuitarHit{};
+        const GuitarHit& prev = previous[(size_t) step];
 
-        if (active)
+        if (! active)
         {
-            int   prefDeg = BASS_PREFERRED_DEGREE[style][step];
-            int   deg     = chooseDegreeProbabilistic (step, prefDeg);
+            pattern[(size_t) step] = GuitarHit{};
+            continue;
+        }
 
-            float ghostTend  = BASS_GHOST_TENDENCY[style][step] * ghostAmount;
-            bool  isGhost    = (deg != 6) && sampleProb (ghostTend);
-            bool  isAccent   = (step % 4 == 0) && !isGhost;
-            uint8 vel        = sampleVelocity (step, isGhost, isAccent);
+        int   prefDeg = BASS_PREFERRED_DEGREE[style][step];
+        int   deg     = chooseDegreeProbabilistic (step, prefDeg);
 
-            int midi = degreeToMidiNote (deg, -1);
+        float ghostTend  = BASS_GHOST_TENDENCY[style][step] * ghostAmount;
+        bool  isGhost    = (deg != 6) && sampleProb (ghostTend);
+        bool  isAccent   = (step % 4 == 0) && ! isGhost;
+        int midi = degreeToMidiNote (deg, -1);
 
-            pattern[(size_t) step].active    = true;
-            pattern[step].velocity  = vel;
-            pattern[step].midiNote  = midi;
-            pattern[step].degree    = deg;
-            pattern[step].isGhost   = isGhost;
+        pattern[(size_t) step].active    = true;
+        pattern[(size_t) step].degree    = deg;
+        pattern[(size_t) step].midiNote  = midi;
+
+        if (prev.active)
+        {
+            pattern[(size_t) step].velocity  = prev.velocity;
+            pattern[(size_t) step].isGhost   = prev.isGhost;
+            pattern[(size_t) step].timeShift = prev.timeShift;
+        }
+        else
+        {
+            pattern[(size_t) step].velocity  = sampleVelocity (step, isGhost, isAccent);
+            pattern[(size_t) step].isGhost   = isGhost;
+            pattern[(size_t) step].timeShift = 0;
         }
     }
 
@@ -153,8 +178,9 @@ void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamle
 
     resolveApproachNotes();
 
+    const bool partialRegenWindow = (fromStep0 > 0 || toStep0 < patternLen - 1);
     std::vector<float> melOut;
-    if (ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::MelodyModel))
+    if (! partialRegenWindow && ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::MelodyModel))
     {
         const std::array<float, 3> tonal {
             static_cast<float> (juce::jlimit (0, 11, rootNote)) / 11.0f,
@@ -163,12 +189,15 @@ void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamle
         };
         melOut = ml->generateMelody (mlPersonalityKnobs, tonal, mlNoteContext, mlRhythmicGrid);
     }
-    mergePatternFromML (melOut);
+    if (! partialRegenWindow)
+    {
+        mergePatternFromML (melOut);
 
-    if (ml == nullptr || ! ml->hasModel (BridgeMLManager::ModelType::MelodyModel))
-        mergeStrumFromML (ml);
+        if (ml == nullptr || ! ml->hasModel (BridgeMLManager::ModelType::MelodyModel))
+            mergeStrumFromML (ml);
 
-    applyGuitarInertiaML (ml);
+        applyGuitarInertiaML (ml);
+    }
 
     if (onPatternChanged)
         onPatternChanged();
@@ -338,30 +367,45 @@ void GuitarEngine::rebuildGridPreview()
     }
 }
 
-void GuitarEngine::morphPatternForDensityAndComplexity()
+void GuitarEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int rangeToStep0)
 {
     if (locked)
         return;
 
-    float meanProb = 0.f;
-    for (int s = 0; s < patternLen; ++s)
-        meanProb += BASS_NOTE_PROBS[style][s];
-    meanProb /= (float) juce::jmax (1, patternLen);
+    int r0 = rangeFromStep0;
+    int r1 = rangeToStep0;
+    if (r0 < 0 || r1 < 0)
+    {
+        r0 = 0;
+        r1 = patternLen - 1;
+    }
+    r0 = juce::jlimit (0, patternLen - 1, r0);
+    r1 = juce::jlimit (0, patternLen - 1, r1);
+    if (r1 < r0)
+        std::swap (r0, r1);
 
-    const float densDrive = juce::jmap (density, 0.f, 1.f, 0.25f, 1.05f);
-    int target = (int) std::lround (densDrive * meanProb * (float) patternLen * (0.5f + 0.45f * complexity));
-    target = juce::jlimit (0, patternLen, target);
+    const int rangeLen = r1 - r0 + 1;
+    const int minTarget  = (density <= 0.001f ? 0 : juce::jmax (0, (int) std::lround ((float) rangeLen * 0.07f)));
+    const int maxTarget  = rangeLen;
+    int targetInRange = (density >= 0.999f ? maxTarget
+                                          : (int) std::lround (juce::jmap (density, 0.f, 1.f, (float) minTarget, (float) maxTarget)));
+    targetInRange = juce::jlimit (0, rangeLen, targetInRange);
 
-    int active = 0;
-    for (int s = 0; s < patternLen; ++s)
-        if (pattern[(size_t) s].active)
-            ++active;
+    auto countActiveInRange = [&] {
+        int c = 0;
+        for (int s = r0; s <= r1; ++s)
+            if (pattern[(size_t) s].active)
+                ++c;
+        return c;
+    };
 
-    while (active > target)
+    int activeInRange = countActiveInRange();
+
+    while (activeInRange > targetInRange)
     {
         int bestS = -1;
         float bestScore = 1e9f;
-        for (int s = 0; s < patternLen; ++s)
+        for (int s = r0; s <= r1; ++s)
         {
             if (! pattern[(size_t) s].active)
                 continue;
@@ -376,14 +420,14 @@ void GuitarEngine::morphPatternForDensityAndComplexity()
         if (bestS < 0)
             break;
         pattern[(size_t) bestS] = GuitarHit{};
-        --active;
+        --activeInRange;
     }
 
-    while (active < target)
+    while (activeInRange < targetInRange)
     {
         int bestS = -1;
         float bestScore = -1.f;
-        for (int s = 0; s < patternLen; ++s)
+        for (int s = r0; s <= r1; ++s)
         {
             if (pattern[(size_t) s].active)
                 continue;
@@ -398,10 +442,6 @@ void GuitarEngine::morphPatternForDensityAndComplexity()
             break;
         const int step = bestS;
         const int prefDeg = BASS_PREFERRED_DEGREE[style][step];
-        const int deg = chooseDegreeProbabilistic (step, prefDeg);
-        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][step] * ghostAmount);
-        const bool ghost = (deg != 6) && sampleProb (ghostT);
-        const bool accent = (step % 4 == 0) && ! ghost;
         int prevMidi = -1;
         for (int ps = step - 1; ps >= 0; --ps)
         {
@@ -411,13 +451,44 @@ void GuitarEngine::morphPatternForDensityAndComplexity()
                 break;
             }
         }
+        const int deg = chooseDegreeForMorphAdd (step, prefDeg, prevMidi);
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][step] * ghostAmount);
+        const bool ghost = (deg != 6) && sampleProb (ghostT);
+        const bool accent = (step % 4 == 0) && ! ghost;
         pattern[(size_t) step].active = true;
         pattern[(size_t) step].degree = deg;
         pattern[(size_t) step].midiNote = degreeToMidiNote (deg, prevMidi);
         pattern[(size_t) step].velocity = sampleVelocity (step, ghost, accent);
         pattern[(size_t) step].isGhost = ghost;
         pattern[(size_t) step].timeShift = 0;
-        ++active;
+        ++activeInRange;
+    }
+
+    for (int s = r0; s <= r1; ++s)
+    {
+        if (! pattern[(size_t) s].active)
+            continue;
+        int prevMidi = -1;
+        for (int ps = s - 1; ps >= 0; --ps)
+            if (pattern[(size_t) ps].active)
+            {
+                prevMidi = pattern[(size_t) ps].midiNote;
+                break;
+            }
+        const float roll = (const_cast<GuitarEngine*> (this)->rng() / float (std::mt19937::max()));
+        if (roll < complexity * 0.14f)
+        {
+            const int prefDeg = BASS_PREFERRED_DEGREE[style][s];
+            const int deg = chooseDegreeProbabilistic (s, prefDeg);
+            pattern[(size_t) s].degree = deg;
+            pattern[(size_t) s].midiNote = degreeToMidiNote (deg, prevMidi);
+        }
+        else if (complexity < 0.32f && roll < 0.18f)
+        {
+            const int prefDeg = BASS_PREFERRED_DEGREE[style][s];
+            pattern[(size_t) s].degree = prefDeg;
+            pattern[(size_t) s].midiNote = degreeToMidiNote (prefDeg, prevMidi);
+        }
     }
 
     resolveApproachNotes();
@@ -485,41 +556,52 @@ void GuitarEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeM
         }
 
         float base = BASS_NOTE_PROBS[style][step];
-        float prob = base + complexityMod (step);
-        prob *= density;
-        prob = jlimit (0.0f, 1.0f, prob);
+        float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step));
+        prob = probabilityAfterDensity (prob, density);
         const bool active = sampleProb (prob);
-        pattern[(size_t) step] = GuitarHit{};
 
-        if (active)
+        if (! active)
         {
-            const int prefDeg = BASS_PREFERRED_DEGREE[style][step];
-            const int deg = chooseDegreeProbabilistic (step, prefDeg);
-            const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][step] * ghostAmount);
-            const bool isGhost = (deg != 6) && sampleProb (ghostT);
-            const bool isAccent = (step % 4 == 0) && ! isGhost;
-            int prevMidi = -1;
-            for (int ps = step - 1; ps >= 0; --ps)
+            pattern[(size_t) step] = GuitarHit{};
+            continue;
+        }
+
+        const int prefDeg = BASS_PREFERRED_DEGREE[style][step];
+        const int deg = chooseDegreeProbabilistic (step, prefDeg);
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][step] * ghostAmount);
+        const bool isGhost = (deg != 6) && sampleProb (ghostT);
+        const bool isAccent = (step % 4 == 0) && ! isGhost;
+        int prevMidi = -1;
+        for (int ps = step - 1; ps >= 0; --ps)
+        {
+            if (pattern[(size_t) ps].active)
             {
-                if (pattern[(size_t) ps].active)
+                prevMidi = pattern[(size_t) ps].midiNote;
+                break;
+            }
+        }
+        if (prevMidi < 0)
+            for (int ps = step - 1; ps >= 0; --ps)
+                if (previous[(size_t) ps].active)
                 {
-                    prevMidi = pattern[(size_t) ps].midiNote;
+                    prevMidi = previous[(size_t) ps].midiNote;
                     break;
                 }
-            }
-            if (prevMidi < 0)
-                for (int ps = step - 1; ps >= 0; --ps)
-                    if (previous[(size_t) ps].active)
-                    {
-                        prevMidi = previous[(size_t) ps].midiNote;
-                        break;
-                    }
 
-            pattern[(size_t) step].active = true;
-            pattern[(size_t) step].degree = deg;
-            pattern[(size_t) step].midiNote = degreeToMidiNote (deg, prevMidi);
-            pattern[(size_t) step].velocity = sampleVelocity (step, isGhost, isAccent);
-            pattern[(size_t) step].isGhost = isGhost;
+        pattern[(size_t) step].active = true;
+        pattern[(size_t) step].degree = deg;
+        pattern[(size_t) step].midiNote = degreeToMidiNote (deg, prevMidi);
+
+        if (previous[(size_t) step].active)
+        {
+            pattern[(size_t) step].velocity  = previous[(size_t) step].velocity;
+            pattern[(size_t) step].isGhost   = previous[(size_t) step].isGhost;
+            pattern[(size_t) step].timeShift = previous[(size_t) step].timeShift;
+        }
+        else
+        {
+            pattern[(size_t) step].velocity  = sampleVelocity (step, isGhost, isAccent);
+            pattern[(size_t) step].isGhost   = isGhost;
             pattern[(size_t) step].timeShift = 0;
         }
     }
@@ -634,6 +716,19 @@ uint8 GuitarEngine::sampleVelocity (int step, bool ghost, bool accent) const
     return (uint8)jlimit (1, 127, vel);
 }
 
+int GuitarEngine::chooseDegreeForMorphAdd (int step, int preferredDegree, int prevMidi) const
+{
+    if (prevMidi < 0)
+        return chooseDegreeProbabilistic (step, preferredDegree);
+
+    const float stayProb = juce::jmap (complexity, 0.f, 1.f, 0.90f, 0.20f);
+    const float roll = (const_cast<GuitarEngine*> (this)->rng() / float (std::mt19937::max()));
+    if (roll < stayProb)
+        return preferredDegree;
+
+    return chooseDegreeProbabilistic (step, preferredDegree);
+}
+
 int GuitarEngine::chooseDegreeProbabilistic (int step, int preferredDegree) const
 {
     // At low complexity, almost always use the preferred degree.
@@ -660,12 +755,10 @@ int GuitarEngine::chooseDegreeProbabilistic (int step, int preferredDegree) cons
 
 float GuitarEngine::complexityMod (int step) const
 {
-    if (complexity < 0.5f) return 0.0f;
-
-    float extra  = (complexity - 0.5f) * 0.35f;  // up to +0.175 probability
-    bool offBeat = (step % 2 != 0);
-
-    return extra * (offBeat ? 1.5f : 0.5f);
+    const bool offBeat = (step % 2 != 0);
+    const float mod    = (complexity - 0.5f) * 0.5f;
+    const float weight = offBeat ? 1.4f : 0.4f;
+    return mod * weight;
 }
 
 void GuitarEngine::resolveApproachNotes()

@@ -33,6 +33,19 @@ inline void tagStripCombo (juce::ComboBox& box)
 inline void tagStripMute (juce::TextButton& b) { b.getProperties().set ("bridgeStripMs", "mute"); }
 inline void tagStripSolo (juce::TextButton& b) { b.getProperties().set ("bridgeStripMs", "solo"); }
 
+/** Bottom-half loop / span-lock toggles: same chrome as M/S, single-letter label. */
+inline void tagStripLoop (juce::TextButton& b)
+{
+    b.getProperties().remove ("bridgeStripMs");
+    b.getProperties().set ("bridgeStripTag", "loop");
+}
+
+inline void tagStripSpanLock (juce::TextButton& b)
+{
+    b.getProperties().remove ("bridgeStripMs");
+    b.getProperties().set ("bridgeStripTag", "spanLock");
+}
+
 inline void applyStripComboColours (juce::ComboBox& box)
 {
     tagStripCombo (box);

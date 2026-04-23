@@ -1,6 +1,25 @@
 #include "DrumEngine.h"
 #include "ml/BridgeMLManager.h"
 #include <cmath>
+#include <tuple>
+#include <vector>
+
+namespace
+{
+static float probabilityAfterDensity (float base, float density)
+{
+    float prob;
+    if (density <= 0.5f)
+        prob = base * (density * 2.0f);
+    else
+    {
+        const float fill = (density - 0.5f) * 2.0f;
+        prob = base * (0.5f + 0.5f * fill);
+        prob += (1.0f - base) * base * fill * 0.25f;
+    }
+    return juce::jlimit (0.0f, 1.0f, prob);
+}
+} // namespace
 
 DrumEngine::DrumEngine()
     : rng (std::random_device{}())
@@ -20,9 +39,8 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
     captureMLContext();
 
-    DrumPattern previous {};
-    if (seamlessPerform)
-        previous = pattern;
+    const DrumPattern previous = pattern;
+    std::vector<std::tuple<int, int, int>> restoreTimeShift;
 
     for (int step = from0; step <= to0; ++step)
     {
@@ -43,27 +61,39 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
             if (! mutateThisStep)
             {
                 pattern[step][drum] = previous[step][drum];
+                if (pattern[step][drum].active)
+                    restoreTimeShift.emplace_back (step, drum, previous[step][drum].timeShift);
                 continue;
             }
 
             float base = blendedStyleBase (step, drum);
-            float prob = base + complexityMod (step, drum);
-            prob *= density;
-            prob = jlimit (0.0f, 1.0f, prob);
+            float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step, drum));
+            prob = probabilityAfterDensity (prob, density);
 
             bool active = sampleProb (prob);
-            uint8 vel   = 0;
 
-            if (active)
+            if (! active)
             {
-                const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
-                bool ghost = (base < ghostThresh);
-                vel = sampleVelocity (step, drum, ghost);
+                pattern[step][drum] = {};
+                continue;
             }
 
-            pattern[step][drum].active    = active;
-            pattern[step][drum].velocity  = vel;
-            pattern[step][drum].timeShift = 0;
+            const auto& prev = previous[step][drum];
+            pattern[step][drum].active = true;
+
+            if (prev.active)
+            {
+                pattern[step][drum].velocity  = prev.velocity;
+                pattern[step][drum].timeShift = prev.timeShift;
+                restoreTimeShift.emplace_back (step, drum, prev.timeShift);
+            }
+            else
+            {
+                const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
+                const bool ghost = (base < ghostThresh);
+                pattern[step][drum].velocity  = sampleVelocity (step, drum, ghost);
+                pattern[step][drum].timeShift = 0;
+            }
         }
     }
 
@@ -71,8 +101,9 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
             pattern[step][drum].active = false;
 
+    const bool partialRegenWindow = (from0 > 0 || to0 < patternLen - 1);
     std::vector<float> mlOut;
-    if (ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::DrumHumanizer))
+    if (! partialRegenWindow && ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::DrumHumanizer))
     {
         const std::array<float, 4> groove {
             juce::jlimit (0.0f, 1.0f, swing),
@@ -82,8 +113,12 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
         };
         mlOut = ml->generateDrums (mlPersonalityKnobs, mlPriorHits, groove);
     }
-    mergePatternFromML (mlOut);
+    if (! partialRegenWindow)
+        mergePatternFromML (mlOut);
     applyHumanize (playbackSamplesPerStep);
+
+    for (const auto& t : restoreTimeShift)
+        pattern[(size_t) std::get<0> (t)][(size_t) std::get<1> (t)].timeShift = std::get<2> (t);
 
     if (onPatternChanged)
         onPatternChanged();
@@ -329,9 +364,8 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
     for (int drum = 0; drum < NUM_DRUMS; ++drum)
     {
         float base = blendedStyleBase (wrappedStep, drum);
-        float prob = base + complexityMod (wrappedStep, drum);
-        prob *= density;
-        prob = juce::jlimit (0.0f, 1.0f, prob);
+        float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (wrappedStep, drum));
+        prob = probabilityAfterDensity (prob, density);
 
         const uint32_t salt = seed ^ ((uint32_t) globalStep * 2654435761u)
                                     ^ ((uint32_t) drum * 1597334677u);
@@ -360,8 +394,10 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
         {
             float base = blendedStyleBase (wrappedStep, drum);
-            float prob = (0.18f + 0.55f * base) * density * (0.5f + fillRate);
+            const float fillMix = (0.18f + 0.55f * base) * (0.5f + fillRate);
+            float prob = probabilityAfterDensity (juce::jlimit (0.0f, 1.0f, fillMix), density);
             if (drum == 1 || drum >= 4) prob *= 1.35f;
+            prob = juce::jlimit (0.0f, 1.0f, prob);
 
             const uint32_t salt = seed ^ ((uint32_t) globalStep * 2246822519u)
                                         ^ ((uint32_t) drum * 3266489917u) ^ 0xF111u;
@@ -421,17 +457,12 @@ uint8 DrumEngine::sampleVelocity (int step, int drum, bool ghost) const
 
 float DrumEngine::complexityMod (int step, int drum) const
 {
-    if (complexity < 0.5f) return 0.0f;
-
-    float extra = (complexity - 0.5f) * 0.4f; // up to +0.2 probability
-
-    // Off-beat 16th notes (1, 3, 5, 7…) benefit most from complexity
-    bool offBeat = (step % 2 != 0);
-    // Toms and crashes appear more with complexity
-    bool isAccent = (drum >= 4 && drum <= 7);
-
-    float mod = extra * (offBeat ? 1.5f : 0.5f) * (isAccent ? 1.2f : 1.0f);
-    return mod;
+    const bool offBeat = (step % 2 != 0);
+    const float mod    = (complexity - 0.5f) * 0.5f;
+    float weight       = offBeat ? 1.4f : 0.4f;
+    if (drum >= 4 && drum <= 7)
+        weight *= 1.2f;
+    return mod * weight;
 }
 
 // Groove invariant: humanize shifts are deterministic from seed + step + drum (no per-block RNG).
@@ -550,11 +581,109 @@ void DrumEngine::rebuildGridPreview()
             gridPreview[(size_t) s][(size_t) d] = {};
 }
 
-void DrumEngine::morphPatternForDensityAndComplexity()
+void DrumEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int rangeToStep0)
 {
     if (patternLen < 1)
         return;
-    generatePatternRange (0, patternLen - 1, true, nullptr);
+
+    int r0 = rangeFromStep0;
+    int r1 = rangeToStep0;
+    if (r0 < 0 || r1 < 0)
+    {
+        r0 = 0;
+        r1 = patternLen - 1;
+    }
+    r0 = juce::jlimit (0, patternLen - 1, r0);
+    r1 = juce::jlimit (0, patternLen - 1, r1);
+    if (r1 < r0)
+        std::swap (r0, r1);
+
+    const int rangeSteps = r1 - r0 + 1;
+    const int totalSlots = rangeSteps * NUM_DRUMS;
+    const int minTarget  = (density <= 0.001f ? 0
+                                               : juce::jmax (0, (int) std::lround ((float) totalSlots * 0.07f)));
+    const int maxTarget  = totalSlots;
+    int targetActive = (density >= 0.999f ? maxTarget
+                                          : (int) std::lround (juce::jmap (density, 0.f, 1.f,
+                                                                           (float) minTarget, (float) maxTarget)));
+    targetActive = juce::jlimit (0, maxTarget, targetActive);
+
+    auto countActiveInRange = [&] {
+        int c = 0;
+        for (int s = r0; s <= r1; ++s)
+            for (int d = 0; d < NUM_DRUMS; ++d)
+                if (pattern[(size_t) s][(size_t) d].active)
+                    ++c;
+        return c;
+    };
+
+    int activeInRange = countActiveInRange();
+
+    while (activeInRange > targetActive)
+    {
+        int bestS = -1, bestD = -1;
+        float bestScore = 1e9f;
+        for (int s = r0; s <= r1; ++s)
+        {
+            for (int d = 0; d < NUM_DRUMS; ++d)
+            {
+                if (! pattern[(size_t) s][(size_t) d].active)
+                    continue;
+                const float base = blendedStyleBase (s, d);
+                const float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (s, d));
+                const float downProt = (s % 4 == 0 && d == 0) ? 0.35f : 0.f;
+                const float score = prob + downProt;
+                if (score < bestScore)
+                {
+                    bestScore = score;
+                    bestS = s;
+                    bestD = d;
+                }
+            }
+        }
+        if (bestS < 0)
+            break;
+        pattern[(size_t) bestS][(size_t) bestD] = {};
+        --activeInRange;
+    }
+
+    while (activeInRange < targetActive)
+    {
+        int bestS = -1, bestD = -1;
+        float bestScore = -1.f;
+        for (int s = r0; s <= r1; ++s)
+        {
+            for (int d = 0; d < NUM_DRUMS; ++d)
+            {
+                if (pattern[(size_t) s][(size_t) d].active)
+                    continue;
+                const float base = blendedStyleBase (s, d);
+                const float score = (base + complexityMod (s, d)) * (1.0f + 0.18f * complexity);
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestS = s;
+                    bestD = d;
+                }
+            }
+        }
+        if (bestS < 0)
+            break;
+
+        const int s = bestS;
+        const int d = bestD;
+        const float base = blendedStyleBase (s, d);
+        const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
+        const bool ghost = (base < ghostThresh);
+        pattern[(size_t) s][(size_t) d].active    = true;
+        pattern[(size_t) s][(size_t) d].velocity  = sampleVelocity (s, d, ghost);
+        pattern[(size_t) s][(size_t) d].timeShift = 0;
+        ++activeInRange;
+    }
+
+    rebuildGridPreview();
+    if (onPatternChanged)
+        onPatternChanged();
 }
 
 void DrumEngine::adaptPatternToNewStyle (int newStyleIndex)
@@ -568,11 +697,65 @@ void DrumEngine::adaptPatternToNewStyle (int newStyleIndex)
 
 void DrumEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml)
 {
+    juce::ignoreUnused (ml);
     if (patternLen < 1)
         return;
     fromStep0 = juce::jlimit (0, patternLen - 1, fromStep0);
     toStep0   = juce::jlimit (0, patternLen - 1, toStep0);
     if (toStep0 < fromStep0)
         std::swap (fromStep0, toStep0);
-    generatePatternRange (fromStep0, toStep0, true, ml);
+
+    DrumPattern previous = pattern;
+    std::vector<std::tuple<int, int, int>> restoreTimeShift;
+
+    for (int step = fromStep0; step <= toStep0; ++step)
+    {
+        for (int drum = 0; drum < NUM_DRUMS; ++drum)
+        {
+            const float t = pseudoRandom01 (seed ^ (uint32_t) step * 2654435761u
+                                            ^ (uint32_t) drum * 3266489917u ^ 0xE9010001u);
+            if (t < 0.66f && previous[step][drum].active)
+            {
+                pattern[step][drum] = previous[step][drum];
+                restoreTimeShift.emplace_back (step, drum, previous[step][drum].timeShift);
+                continue;
+            }
+
+            float base = blendedStyleBase (step, drum);
+            float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step, drum));
+            prob = probabilityAfterDensity (prob, density);
+            const bool active = sampleProb (prob);
+
+            if (! active)
+            {
+                pattern[step][drum] = {};
+                continue;
+            }
+
+            const auto& prev = previous[step][drum];
+            pattern[step][drum].active = true;
+
+            if (prev.active)
+            {
+                pattern[step][drum].velocity  = prev.velocity;
+                pattern[step][drum].timeShift = prev.timeShift;
+                restoreTimeShift.emplace_back (step, drum, prev.timeShift);
+            }
+            else
+            {
+                const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
+                const bool ghost = (base < ghostThresh);
+                pattern[step][drum].velocity  = sampleVelocity (step, drum, ghost);
+                pattern[step][drum].timeShift = 0;
+            }
+        }
+    }
+
+    applyHumanize (playbackSamplesPerStep);
+    for (const auto& t : restoreTimeShift)
+        pattern[(size_t) std::get<0> (t)][(size_t) std::get<1> (t)].timeShift = std::get<2> (t);
+
+    rebuildGridPreview();
+    if (onPatternChanged)
+        onPatternChanged();
 }
