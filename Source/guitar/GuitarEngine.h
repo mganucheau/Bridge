@@ -5,6 +5,9 @@
 #include <array>
 #include <random>
 #include <functional>
+#include <vector>
+
+class BridgeMLManager;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GuitarHit — one 16th-note slot in the generated bass line
@@ -29,8 +32,8 @@ public:
     GuitarEngine();
 
     // ── Generation ─────────────────────────────────────────────────────────
-    void generatePattern(bool seamlessPerform = false);
-    void generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform = false);
+    void generatePattern (bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
+    void generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
     void generateFill (int fromStep = 12);
 
     // ── Pattern access ─────────────────────────────────────────────────────
@@ -81,7 +84,14 @@ public:
     int   getPhraseBars () const { return phraseBars; }
 
     int  getRootMidiBase () const { return rootMidiBase(); }
+
+    void setHostSampleRate (double sr) { hostSampleRate = juce::jmax (1.0, sr); }
+
     void remapPatternAfterTonalityChange (int previousRootMidiBase, int previousScaleIndex);
+
+    void setMLPersonalityKnobs (const std::array<float, 10>& k) { mlPersonalityKnobs = k; }
+    void captureMLContext();
+    void mergePatternFromML (const std::vector<float>& mlOutput);
 
     // Swing offset in samples for a given step
     int  getSwingOffset (int step, double samplesPerStep) const;
@@ -137,4 +147,12 @@ private:
     void  resolveApproachNotes();                 // post-pass: fix approach degrees
     float complexityMod (int step) const;
     void  applyHumanize (double samplesPerStep);
+    void  mergeStrumFromML (BridgeMLManager* ml);
+    void  applyGuitarInertiaML (BridgeMLManager* ml);
+
+    std::array<float, 10> mlPersonalityKnobs {};
+    std::array<float, 16> mlNoteContext {};
+    std::array<float, 16> mlRhythmicGrid {};
+
+    double hostSampleRate = 44100.0;
 };

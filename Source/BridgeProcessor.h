@@ -1,12 +1,15 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <memory>
 #include "drums/DrumEngine.h"
 #include "bass/BassEngine.h"
 #include "piano/PianoEngine.h"
 #include "guitar/GuitarEngine.h"
+#include "BridgeUpdateChecker.h"
 
 class BridgeEditor;
+class BridgeMLManager;
 
 class BridgeProcessor : public juce::AudioProcessor,
                          private juce::AudioProcessorValueTreeState::Listener
@@ -109,6 +112,15 @@ public:
     void randomizeGuitarSettings();
     void getGuitarLoopBounds (int& loopStart, int& loopEnd) const;
 
+    BridgeMLManager* getMLManager() const noexcept { return mlManager.get(); }
+
+    /** At most one automatic check per 24h (tracked in APVTS); silent on network failure. */
+    void requestAutomaticModelUpdateCheckIfDue();
+    void requestManualModelUpdateCheck();
+
+    juce::String getPendingModelUpdateVersion() const noexcept { return mlPendingModelUpdateVersion; }
+    juce::String getPendingModelUpdateUrl() const noexcept { return mlPendingModelUpdateUrl; }
+
     /** Preview note from UI (audio thread drains). */
     void queueMelodicPreviewNote (int midiChannel, int noteNumber, int velocity);
 
@@ -118,6 +130,14 @@ public:
     std::atomic<int> guitarCurrentVisualStep { -1 };
 
 private:
+    void handleModelUpdateCheckResult (BridgeUpdateChecker::UpdateInfo info);
+
+    void refreshBassKickHintFromDrums();
+    void refreshChordsBassHintFromBass();
+    void syncDrumsMLPersonalityToEngine();
+    void syncChordsMLPersonalityToEngine();
+    void syncMelodyMLPersonalityToEngine();
+
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
     void getDrumsPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
@@ -227,6 +247,11 @@ private:
     };
     juce::Array<PreviewNoteEvent> previewNotes;
     juce::CriticalSection previewLock;
+
+    std::unique_ptr<BridgeMLManager> mlManager;
+    BridgeUpdateChecker modelUpdateChecker;
+    juce::String mlPendingModelUpdateVersion;
+    juce::String mlPendingModelUpdateUrl;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BridgeProcessor)
 };

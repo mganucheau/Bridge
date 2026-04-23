@@ -1,0 +1,21 @@
+# Bridge ML training environment (Colab or local venv). Not shipped with the plugin.
+# Magenta pulls TensorFlow; use Python 3.10–3.11 for best compatibility.
+
+tensorflow>=2.14,<2.17
+# Magenta: install from pip or follow https://github.com/magenta/magenta
+magenta>=2.1.4
+note-seq>=0.0.5
+pretty_midi>=0.2.10
+music21>=9.1.0
+
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+
+torch>=2.1
+onnx>=1.15
+onnxruntime>=1.16
+
+jupyter>=1.0
+ipywidgets>=8.0
+matplotlib>=3.7

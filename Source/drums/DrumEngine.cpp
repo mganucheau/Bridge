@@ -1,20 +1,24 @@
 #include "DrumEngine.h"
+#include "ml/BridgeMLManager.h"
 #include <cmath>
 
 DrumEngine::DrumEngine()
     : rng (std::random_device{}())
 {
-    generatePattern (false);
+    mlPersonalityKnobs.fill (0.5f);
+    generatePattern (false, nullptr);
 }
 
 // ─── Core generation ──────────────────────────────────────────────────────────
 
-void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform)
+void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform, BridgeMLManager* ml)
 {
     from0 = juce::jlimit (0, NUM_STEPS - 1, from0);
     to0   = juce::jlimit (0, NUM_STEPS - 1, to0);
     if (to0 < from0)
         std::swap (from0, to0);
+
+    captureMLContext();
 
     DrumPattern previous {};
     if (seamlessPerform)
@@ -67,15 +71,27 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform)
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
             pattern[step][drum].active = false;
 
+    std::vector<float> mlOut;
+    if (ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::DrumHumanizer))
+    {
+        const std::array<float, 4> groove {
+            juce::jlimit (0.0f, 1.0f, swing),
+            juce::jlimit (0.0f, 1.0f, density),
+            juce::jlimit (0.0f, 1.0f, velocityMul * 0.85f + fillRate * 0.15f),
+            juce::jlimit (0.0f, 1.0f, complexity * 0.65f + humanize * 0.35f),
+        };
+        mlOut = ml->generateDrums (mlPersonalityKnobs, mlPriorHits, groove);
+    }
+    mergePatternFromML (mlOut);
     applyHumanize (playbackSamplesPerStep);
 
     if (onPatternChanged)
         onPatternChanged();
 }
 
-void DrumEngine::generatePattern (bool seamlessPerform)
+void DrumEngine::generatePattern (bool seamlessPerform, BridgeMLManager* ml)
 {
-    generatePatternRange (0, patternLen - 1, seamlessPerform);
+    generatePatternRange (0, patternLen - 1, seamlessPerform, ml);
 }
 
 void DrumEngine::generateFill (int fromStep)
@@ -431,6 +447,59 @@ void DrumEngine::applyHumanize (double samplesPerStep)
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
             if (pattern[step][drum].active)
                 pattern[step][drum].timeShift = dist (rng);
+}
+
+void DrumEngine::captureMLContext()
+{
+    static constexpr int mlVoices = 8;
+    const int last = patternLen > 0 ? patternLen - 1 : 0;
+    for (int v = 0; v < mlVoices; ++v)
+        for (int t = 0; t < 4; ++t)
+        {
+            const int step = juce::jlimit (0, last, last - t);
+            const auto& h = pattern[(size_t) step][(size_t) v];
+            mlPriorHits[(size_t) (v * 4 + t)] =
+                h.active ? juce::jlimit (0.0f, 1.0f, (float) h.velocity / 127.0f) : 0.0f;
+        }
+}
+
+void DrumEngine::mergePatternFromML (const std::vector<float>& mlOutput)
+{
+    if (mlOutput.size() < 32)
+        return;
+
+    static constexpr int mlVoices = 8;
+    const int startMerge = juce::jmax (0, patternLen - 4);
+    for (int t = 0; t < 4; ++t)
+    {
+        const int step = startMerge + t;
+        if (step >= patternLen)
+            break;
+
+        for (int v = 0; v < mlVoices && v < NUM_DRUMS; ++v)
+        {
+            const float p = mlOutput[(size_t) (v * 4 + t)];
+            auto& hit = pattern[(size_t) step][(size_t) v];
+
+            if (p >= 0.45f)
+            {
+                if (! hit.active)
+                {
+                    hit.active = true;
+                    hit.velocity = sampleVelocity (step, v, false);
+                    hit.timeShift = 0;
+                }
+                hit.velocity = (uint8) juce::jlimit (
+                    1, 127, (int) ((float) hit.velocity * (0.75f + 0.5f * p)));
+            }
+            else if (p < 0.2f)
+            {
+                hit.active = false;
+                hit.velocity = 0;
+                hit.timeShift = 0;
+            }
+        }
+    }
 }
 
 int DrumEngine::getSwingOffset (int step, double samplesPerStep) const

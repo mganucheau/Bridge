@@ -6,6 +6,11 @@
 #include "bass/BassStylePresets.h"
 #include "piano/PianoStylePresets.h"
 #include "guitar/GuitarStylePresets.h"
+#include "ml/BridgeMLManager.h"
+#include "BridgeUpdateChecker.h"
+#include "PersonalityPresets.h"
+#include <array>
+#include <vector>
 
 namespace
 {
@@ -31,6 +36,46 @@ static float readMain01 (juce::AudioProcessorValueTreeState& m, const char* id, 
     if (auto* v = m.getRawParameterValue (id))
         return juce::jlimit (0.f, 1.f, v->load());
     return defV;
+}
+
+static void syncBassMLPersonalityToEngine (juce::AudioProcessorValueTreeState& main, BassEngine& bass)
+{
+    static constexpr const char* ids[10] = {
+        "mlPersRhythmTight",
+        "mlPersDynamicRange",
+        "mlPersTimbreTexture",
+        "mlPersTensionArc",
+        "mlPersTempoVolatility",
+        "mlPersEmotionalTemp",
+        "mlPersHarmAdventure",
+        "mlPersStructPredict",
+        "mlPersShowmanship",
+        "mlPersGenreLoyalty",
+    };
+    std::vector<float> k (10, 0.5f);
+    for (int i = 0; i < 10; ++i)
+        k[(size_t) i] = readMain01 (main, ids[i], 0.5f);
+    bass.setBassMLPersonalityKnobs (k);
+}
+
+static std::array<float, 10> readMainMLPersonalityKnobs10 (juce::AudioProcessorValueTreeState& main)
+{
+    static constexpr const char* ids[10] = {
+        "mlPersRhythmTight",
+        "mlPersDynamicRange",
+        "mlPersTimbreTexture",
+        "mlPersTensionArc",
+        "mlPersTempoVolatility",
+        "mlPersEmotionalTemp",
+        "mlPersHarmAdventure",
+        "mlPersStructPredict",
+        "mlPersShowmanship",
+        "mlPersGenreLoyalty",
+    };
+    std::array<float, 10> a{};
+    for (int i = 0; i < 10; ++i)
+        a[(size_t) i] = readMain01 (main, ids[i], 0.5f);
+    return a;
 }
 
 struct LeaderEffective
@@ -250,6 +295,35 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
         themeNames.add (n);
     layout.add (std::make_unique<juce::AudioParameterChoice> ("uiTheme", "UI theme", themeNames, 1));
 
+    // ML Personality knobs (0–1) — condition ONNX bass; mapped to MusicVAE latent offsets in training
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersRhythmTight", "Rhythmic tightness", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersDynamicRange", "Dynamic range", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTimbreTexture", "Timbre texture", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTensionArc", "Tension arc", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTempoVolatility", "Tempo volatility", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersEmotionalTemp", "Emotional temperature", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersHarmAdventure", "Harmonic adventurousness", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersStructPredict", "Structural predictability", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersShowmanship", "Showmanship", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersGenreLoyalty", "Genre loyalty", 0.f, 1.f, 0.5f));
+
+    juce::StringArray personalityPresetChoices;
+    personalityPresetChoices.add ("Custom");
+    for (size_t i = 0; i < bridge::personality::numNamedPresets; ++i)
+        personalityPresetChoices.add (bridge::personality::kPresets[i].displayName);
+    layout.add (std::make_unique<juce::AudioParameterChoice> (
+        "mlPersonalityPresetName",
+        "Personality preset",
+        personalityPresetChoices,
+        0));
+
+    layout.add (std::make_unique<juce::AudioParameterInt> (
+        "mlModelsLastUpdateCheckUnix",
+        "ML last model update check (unix)",
+        0,
+        2147000000,
+        0));
+
     return layout;
 }
 
@@ -385,6 +459,12 @@ BridgeProcessor::BridgeProcessor()
 
     if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
         bridge::theme::applyThemeChoiceIndex (p->getIndex());
+
+    mlManager = std::make_unique<BridgeMLManager>();
+    mlManager->loadModels();
+
+    if (juce::MessageManager::getInstanceWithoutCreating() != nullptr)
+        juce::MessageManager::callAsync ([this] { requestAutomaticModelUpdateCheckIfDue(); });
 }
 
 BridgeProcessor::~BridgeProcessor()
@@ -403,16 +483,57 @@ juce::AudioProcessorEditor* BridgeProcessor::createEditor()
     return new BridgeEditor (*this);
 }
 
+void BridgeProcessor::refreshBassKickHintFromDrums()
+{
+    std::vector<float> hint (16, 0.0f);
+    const auto& pat = drumEngine.getPattern();
+    for (int s = 0; s < 16; ++s)
+        hint[(size_t) s] = pat[(size_t) s][0].active ? 1.0f : 0.0f;
+    bassEngine.setBassMLKickHint (hint);
+}
+
+void BridgeProcessor::refreshChordsBassHintFromBass()
+{
+    std::array<float, 16> hint {};
+    const auto& bp = bassEngine.getPattern();
+    for (int s = 0; s < 16; ++s)
+        hint[(size_t) s] =
+            bp[(size_t) s].active
+                ? juce::jlimit (0.0f, 1.0f, (float) bp[(size_t) s].velocity / 127.0f)
+                : 0.0f;
+    pianoEngine.setChordsMLBassHint (hint);
+}
+
+void BridgeProcessor::syncDrumsMLPersonalityToEngine()
+{
+    drumEngine.setMLPersonalityKnobs (readMainMLPersonalityKnobs10 (apvtsMain));
+}
+
+void BridgeProcessor::syncChordsMLPersonalityToEngine()
+{
+    pianoEngine.setMLPersonalityKnobs (readMainMLPersonalityKnobs10 (apvtsMain));
+}
+
+void BridgeProcessor::syncMelodyMLPersonalityToEngine()
+{
+    guitarEngine.setMLPersonalityKnobs (readMainMLPersonalityKnobs10 (apvtsMain));
+}
+
 void BridgeProcessor::prepareToPlay (double sr, int spb)
 {
     sampleRate = sr;
     samplesPerBlock = spb;
 
+    drumEngine.setHostSampleRate (sr);
+    bassEngine.setHostSampleRate (sr);
+    pianoEngine.setHostSampleRate (sr);
+    guitarEngine.setHostSampleRate (sr);
+
     midiSampleClock = 0;
 
     drumsLastProcessedStep = -1;
     drumsPendingNoteOffs.clear();
-    drumEngine.generatePattern (false);
+    drumEngine.generatePattern (false, mlManager.get());
     drumEngine.setPlaybackSamplesPerStep (sampleRate * 60.0 / 120.0 / 4.0);
     syncDrumsEngineFromAPVTS();
     drumEngine.rebuildGridPreview();
@@ -420,19 +541,21 @@ void BridgeProcessor::prepareToPlay (double sr, int spb)
     bassLastProcessedStep = -1;
     bassPendingNoteOffs.clear();
     syncBassEngineFromAPVTS();
-    bassEngine.generatePattern();
+    refreshBassKickHintFromDrums();
+    bassEngine.generatePattern (false, mlManager.get());
     bassEngine.rebuildGridPreview();
+    refreshChordsBassHintFromBass();
 
     pianoLastProcessedStep = -1;
     pianoPendingNoteOffs.clear();
     syncPianoEngineFromAPVTS();
-    pianoEngine.generatePattern();
+    pianoEngine.generatePattern (false, mlManager.get());
     pianoEngine.rebuildGridPreview();
 
     guitarLastProcessedStep = -1;
     guitarPendingNoteOffs.clear();
     syncGuitarEngineFromAPVTS();
-    guitarEngine.generatePattern();
+    guitarEngine.generatePattern (false, mlManager.get());
     guitarEngine.rebuildGridPreview();
 }
 
@@ -740,6 +863,8 @@ void BridgeProcessor::syncDrumsEngineFromAPVTS()
         drumsLaneSolo[(size_t) drum] = ((bool) *apvtsDrums.getRawParameterValue ("solo_" + juce::String (drum)));
         drumsAnySolo = drumsAnySolo || drumsLaneSolo[(size_t) drum];
     }
+
+    syncDrumsMLPersonalityToEngine();
 }
 
 double BridgeProcessor::drumsTickerRateForChoiceIndex (int choiceIndex)
@@ -812,12 +937,12 @@ void BridgeProcessor::triggerDrumsGenerate()
     drumEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncDrumsEngineFromAPVTS();
     if (isMainSelectionFullClip (NUM_STEPS))
-        drumEngine.generatePattern (drumsPerformMode);
+        drumEngine.generatePattern (drumsPerformMode, mlManager.get());
     else
     {
         int a = 1, b = NUM_STEPS;
         getMainSelectionBounds (NUM_STEPS, a, b);
-        drumEngine.generatePatternRange (a - 1, b - 1, drumsPerformMode);
+        drumEngine.generatePatternRange (a - 1, b - 1, drumsPerformMode, mlManager.get());
     }
 }
 
@@ -872,6 +997,8 @@ void BridgeProcessor::syncBassEngineFromAPVTS()
         bassTickerRate = bassTickerRateForChoiceIndex (tr->getIndex());
     else
         bassTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsBass.getRawParameterValue ("tickerSpeed"));
+
+    syncBassMLPersonalityToEngine (apvtsMain, bassEngine);
 }
 
 void BridgeProcessor::triggerBassGenerate()
@@ -879,14 +1006,16 @@ void BridgeProcessor::triggerBassGenerate()
     juce::Random r;
     bassEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncBassEngineFromAPVTS();
+    refreshBassKickHintFromDrums();
     if (isMainSelectionFullClip (BassPreset::NUM_STEPS))
-        bassEngine.generatePattern (bassPerformMode);
+        bassEngine.generatePattern (bassPerformMode, mlManager.get());
     else
     {
         int a = 1, b = BassPreset::NUM_STEPS;
         getMainSelectionBounds (BassPreset::NUM_STEPS, a, b);
-        bassEngine.generatePatternRange (a - 1, b - 1, bassPerformMode);
+        bassEngine.generatePatternRange (a - 1, b - 1, bassPerformMode, mlManager.get());
     }
+    refreshChordsBassHintFromBass();
 }
 
 void BridgeProcessor::applyBassStyleAndRegenerate (int styleIndex)
@@ -896,7 +1025,9 @@ void BridgeProcessor::applyBassStyleAndRegenerate (int styleIndex)
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
     syncBassEngineFromAPVTS();
-    bassEngine.generatePattern (bassPerformMode);
+    refreshBassKickHintFromDrums();
+    bassEngine.generatePattern (bassPerformMode, mlManager.get());
+    refreshChordsBassHintFromBass();
 }
 
 void BridgeProcessor::randomizeBassSettings()
@@ -995,6 +1126,8 @@ void BridgeProcessor::syncPianoEngineFromAPVTS()
         pianoTickerRate = bassTickerRateForChoiceIndex (tr->getIndex());
     else
         pianoTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsPiano.getRawParameterValue ("tickerSpeed"));
+
+    syncChordsMLPersonalityToEngine();
 }
 
 void BridgeProcessor::syncGuitarEngineFromAPVTS()
@@ -1039,6 +1172,8 @@ void BridgeProcessor::syncGuitarEngineFromAPVTS()
         guitarTickerRate = bassTickerRateForChoiceIndex (tr->getIndex());
     else
         guitarTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsGuitar.getRawParameterValue ("tickerSpeed"));
+
+    syncMelodyMLPersonalityToEngine();
 }
 
 void BridgeProcessor::randomizePianoSettings()
@@ -1094,13 +1229,14 @@ void BridgeProcessor::triggerPianoGenerate()
     juce::Random r;
     pianoEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncPianoEngineFromAPVTS();
+    refreshChordsBassHintFromBass();
     if (isMainSelectionFullClip (PianoPreset::NUM_STEPS))
-        pianoEngine.generatePattern (pianoPerformMode);
+        pianoEngine.generatePattern (pianoPerformMode, mlManager.get());
     else
     {
         int a = 1, b = PianoPreset::NUM_STEPS;
         getMainSelectionBounds (PianoPreset::NUM_STEPS, a, b);
-        pianoEngine.generatePatternRange (a - 1, b - 1, pianoPerformMode);
+        pianoEngine.generatePatternRange (a - 1, b - 1, pianoPerformMode, mlManager.get());
     }
 }
 
@@ -1111,7 +1247,8 @@ void BridgeProcessor::applyPianoStyleAndRegenerate (int styleIndex)
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
     syncPianoEngineFromAPVTS();
-    pianoEngine.generatePattern (pianoPerformMode);
+    refreshChordsBassHintFromBass();
+    pianoEngine.generatePattern (pianoPerformMode, mlManager.get());
 }
 
 void BridgeProcessor::rebuildPianoGridPreview()
@@ -1136,12 +1273,12 @@ void BridgeProcessor::triggerGuitarGenerate()
     guitarEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncGuitarEngineFromAPVTS();
     if (isMainSelectionFullClip (GuitarPreset::NUM_STEPS))
-        guitarEngine.generatePattern (guitarPerformMode);
+        guitarEngine.generatePattern (guitarPerformMode, mlManager.get());
     else
     {
         int a = 1, b = GuitarPreset::NUM_STEPS;
         getMainSelectionBounds (GuitarPreset::NUM_STEPS, a, b);
-        guitarEngine.generatePatternRange (a - 1, b - 1, guitarPerformMode);
+        guitarEngine.generatePatternRange (a - 1, b - 1, guitarPerformMode, mlManager.get());
     }
 }
 
@@ -1152,7 +1289,7 @@ void BridgeProcessor::applyGuitarStyleAndRegenerate (int styleIndex)
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
             c->setValueNotifyingHost (c->convertTo0to1 ((float) styleIndex));
     syncGuitarEngineFromAPVTS();
-    guitarEngine.generatePattern (guitarPerformMode);
+    guitarEngine.generatePattern (guitarPerformMode, mlManager.get());
 }
 
 void BridgeProcessor::rebuildGuitarGridPreview()
@@ -1284,9 +1421,9 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
                 int a = 1, b = NUM_STEPS;
                 getMainSelectionBounds (NUM_STEPS, a, b);
                 if (a == 1 && b == NUM_STEPS)
-                    drumEngine.generatePattern (true);
+                    drumEngine.generatePattern (true, mlManager.get());
                 else
-                    drumEngine.generatePatternRange (a - 1, b - 1, true);
+                    drumEngine.generatePatternRange (a - 1, b - 1, true, mlManager.get());
             }
 
             if (drumsFillQueued)
@@ -1402,12 +1539,13 @@ void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::
             if (bassPerformMode)
             {
                 syncBassEngineFromAPVTS();
+                refreshBassKickHintFromDrums();
                 int a = 1, b = BassPreset::NUM_STEPS;
                 getMainSelectionBounds (BassPreset::NUM_STEPS, a, b);
                 if (a == 1 && b == BassPreset::NUM_STEPS)
-                    bassEngine.generatePattern (true);
+                    bassEngine.generatePattern (true, mlManager.get());
                 else
-                    bassEngine.generatePatternRange (a - 1, b - 1, true);
+                    bassEngine.generatePatternRange (a - 1, b - 1, true, mlManager.get());
             }
 
             if (bassFillQueued)
@@ -1420,6 +1558,8 @@ void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::
             {
                 bassEngine.generateFill (juce::jmin (12, le0));
             }
+
+            refreshChordsBassHintFromBass();
         }
 
         bassCurrentStep.store (wrappedStep);
@@ -1523,12 +1663,13 @@ void BridgeProcessor::processPianoBlock (juce::AudioBuffer<float>& buffer, juce:
             if (pianoPerformMode)
             {
                 syncPianoEngineFromAPVTS();
+                refreshChordsBassHintFromBass();
                 int a = 1, b = PianoPreset::NUM_STEPS;
                 getMainSelectionBounds (PianoPreset::NUM_STEPS, a, b);
                 if (a == 1 && b == PianoPreset::NUM_STEPS)
-                    pianoEngine.generatePattern (true);
+                    pianoEngine.generatePattern (true, mlManager.get());
                 else
-                    pianoEngine.generatePatternRange (a - 1, b - 1, true);
+                    pianoEngine.generatePatternRange (a - 1, b - 1, true, mlManager.get());
             }
 
             if (pianoFillQueued)
@@ -1647,9 +1788,9 @@ void BridgeProcessor::processGuitarBlock (juce::AudioBuffer<float>& buffer, juce
                 int a = 1, b = GuitarPreset::NUM_STEPS;
                 getMainSelectionBounds (GuitarPreset::NUM_STEPS, a, b);
                 if (a == 1 && b == GuitarPreset::NUM_STEPS)
-                    guitarEngine.generatePattern (true);
+                    guitarEngine.generatePattern (true, mlManager.get());
                 else
-                    guitarEngine.generatePatternRange (a - 1, b - 1, true);
+                    guitarEngine.generatePatternRange (a - 1, b - 1, true, mlManager.get());
             }
 
             if (guitarFillQueued)
@@ -1771,10 +1912,59 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     midiSampleClock += numSamples;
 }
 
+void BridgeProcessor::requestAutomaticModelUpdateCheckIfDue()
+{
+    if (modelUpdateChecker.isUpdateCheckInProgress())
+        return;
+
+    const int now = (int) (juce::Time::getCurrentTime().toMilliseconds() / 1000);
+    if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (apvtsMain.getParameter ("mlModelsLastUpdateCheckUnix")))
+    {
+        const int last = ip->get();
+        if (last > 0 && (now - last) < (24 * 3600))
+            return;
+    }
+
+    modelUpdateChecker.checkForModelUpdates ([this] (BridgeUpdateChecker::UpdateInfo info) {
+        handleModelUpdateCheckResult (std::move (info));
+    });
+}
+
+void BridgeProcessor::requestManualModelUpdateCheck()
+{
+    if (modelUpdateChecker.isUpdateCheckInProgress())
+        return;
+
+    modelUpdateChecker.checkForModelUpdates ([this] (BridgeUpdateChecker::UpdateInfo info) {
+        handleModelUpdateCheckResult (std::move (info));
+    });
+}
+
+void BridgeProcessor::handleModelUpdateCheckResult (BridgeUpdateChecker::UpdateInfo info)
+{
+    if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (apvtsMain.getParameter ("mlModelsLastUpdateCheckUnix")))
+    {
+        ip->beginChangeGesture();
+        *ip = (int) (juce::Time::getCurrentTime().toMilliseconds() / 1000);
+        ip->endChangeGesture();
+    }
+
+    if (info.isNewerThanInstalled && info.downloadUrl.isNotEmpty())
+    {
+        mlPendingModelUpdateVersion = info.latestModelVersion;
+        mlPendingModelUpdateUrl     = info.downloadUrl;
+    }
+    else
+    {
+        mlPendingModelUpdateVersion.clear();
+        mlPendingModelUpdateUrl.clear();
+    }
+}
+
 void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
 {
     juce::XmlElement root ("BridgeState");
-    root.setAttribute ("bridgeVersion", 5);
+    root.setAttribute ("bridgeVersion", 9);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
     if (auto xmlA = apvtsDrums.copyState().createXml())
@@ -1786,6 +1976,8 @@ void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
     if (auto xmlP = apvtsGuitar.copyState().createXml())
         root.addChildElement (xmlP.release());
     root.setAttribute ("activeTab", activeTab.load());
+    root.setAttribute ("mlPendingModelUpdateVersion", mlPendingModelUpdateVersion);
+    root.setAttribute ("mlPendingModelUpdateUrl", mlPendingModelUpdateUrl);
     copyXmlToBinary (root, data);
 }
 
@@ -1802,6 +1994,9 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
             else
                 tab = juce::jlimit (0, 4, tab);
             activeTab.store (tab);
+
+            mlPendingModelUpdateVersion = xml->getStringAttribute ("mlPendingModelUpdateVersion");
+            mlPendingModelUpdateUrl     = xml->getStringAttribute ("mlPendingModelUpdateUrl");
 
             for (auto* child : xml->getChildIterator())
             {
@@ -1829,6 +2024,16 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                     apvtsPiano.replaceState (juce::ValueTree::fromXml (*child));
                 else if (child->hasTagName (apvtsGuitar.state.getType()))
                     apvtsGuitar.replaceState (juce::ValueTree::fromXml (*child));
+            }
+
+            if (apvtsMain.getParameter ("mlPersonalityPresetName") != nullptr)
+            {
+                const auto knobs = readMainMLPersonalityKnobs10 (apvtsMain);
+                const int idx = bridge::personality::indexMatchingKnobs (knobs);
+                if (auto* presetPar = dynamic_cast<juce::AudioParameterChoice*> (
+                        apvtsMain.getParameter ("mlPersonalityPresetName")))
+                    presetPar->setValueNotifyingHost (
+                        presetPar->getNormalisableRange().convertTo0to1 ((float) idx));
             }
 
             if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))

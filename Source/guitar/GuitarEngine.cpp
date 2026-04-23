@@ -1,5 +1,7 @@
 #include "GuitarEngine.h"
+#include "ml/BridgeMLManager.h"
 #include <cmath>
+#include <vector>
 
 using namespace GuitarPreset;
 
@@ -30,7 +32,8 @@ static uint32_t melodicPreviewParamSalt (float density, float swing, float human
 GuitarEngine::GuitarEngine()
     : rng (std::random_device{}())
 {
-    generatePattern(false);
+    mlPersonalityKnobs.fill (0.5f);
+    generatePattern (false, nullptr);
     rebuildGridPreview();
 }
 
@@ -84,9 +87,11 @@ int GuitarEngine::nearestDegreeForMidi (int midi, int prevMidi) const
 // ─────────────────────────────────────────────────────────────────────────────
 // generatePattern
 // ─────────────────────────────────────────────────────────────────────────────
-void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform)
+void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform, BridgeMLManager* ml)
 {
     if (locked) return;
+
+    captureMLContext();
 
     fromStep0 = juce::jlimit (0, NUM_STEPS - 1, fromStep0);
     toStep0   = juce::jlimit (0, NUM_STEPS - 1, toStep0);
@@ -148,15 +153,161 @@ void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamle
 
     resolveApproachNotes();
 
+    std::vector<float> melOut;
+    if (ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::MelodyModel))
+    {
+        const std::array<float, 3> tonal {
+            static_cast<float> (juce::jlimit (0, 11, rootNote)) / 11.0f,
+            static_cast<float> (juce::jlimit (0, 9, scale)) / 9.0f,
+            static_cast<float> (juce::jlimit (0, 7, style)) / 7.0f,
+        };
+        melOut = ml->generateMelody (mlPersonalityKnobs, tonal, mlNoteContext, mlRhythmicGrid);
+    }
+    mergePatternFromML (melOut);
+
+    if (ml == nullptr || ! ml->hasModel (BridgeMLManager::ModelType::MelodyModel))
+        mergeStrumFromML (ml);
+
+    applyGuitarInertiaML (ml);
+
     if (onPatternChanged)
         onPatternChanged();
 
     rebuildGridPreview();
 }
 
-void GuitarEngine::generatePattern (bool seamlessPerform)
+void GuitarEngine::generatePattern (bool seamlessPerform, BridgeMLManager* ml)
 {
-    generatePatternRange (0, patternLen - 1, seamlessPerform);
+    generatePatternRange (0, patternLen - 1, seamlessPerform, ml);
+}
+
+void GuitarEngine::captureMLContext()
+{
+    mlNoteContext.fill (0);
+    int count = 0;
+    for (int s = patternLen - 1; s >= 0 && count < 4; --s)
+    {
+        if (! pattern[(size_t) s].active)
+            continue;
+        const int base = count * 4;
+        mlNoteContext[(size_t) base + 0] =
+            static_cast<float> (pattern[(size_t) s].midiNote % 12) / 11.0f;
+        mlNoteContext[(size_t) base + 1] = 1.0f;
+        mlNoteContext[(size_t) base + 2] = pattern[(size_t) s].velocity / 127.0f;
+        const float shiftNorm = juce::jlimit (
+            -1.0f,
+            1.0f,
+            (float) pattern[(size_t) s].timeShift / (float) juce::jmax (1.0, hostSampleRate * 0.05));
+        mlNoteContext[(size_t) base + 3] = shiftNorm;
+        ++count;
+    }
+
+    for (int s = 0; s < 16; ++s)
+        mlRhythmicGrid[(size_t) s] = juce::jlimit (
+            0.0f,
+            1.0f,
+            density
+                * (0.45f + 0.55f
+                   * (((s % 4) == 0) ? 1.0f : (0.55f + 0.2f * complexity))));
+}
+
+void GuitarEngine::mergePatternFromML (const std::vector<float>& mlOutput)
+{
+    if (mlOutput.size() < 32)
+        return;
+
+    for (int s = 0; s < patternLen && s < 16; ++s)
+    {
+        const float ons = mlOutput[(size_t) s];
+        const float pcBias = mlOutput[16 + (size_t) s];
+        if (ons < 0.38f)
+        {
+            pattern[(size_t) s] = GuitarHit{};
+            continue;
+        }
+
+        if (! pattern[(size_t) s].active)
+        {
+            const int prefDeg = BASS_PREFERRED_DEGREE[style][s];
+            const int deg = chooseDegreeProbabilistic (s, prefDeg);
+            const int prevMidi = s > 0 ? pattern[(size_t) (s - 1)].midiNote : -1;
+            pattern[(size_t) s].active = true;
+            pattern[(size_t) s].degree = deg;
+            pattern[(size_t) s].midiNote = degreeToMidiNote (deg, prevMidi);
+            pattern[(size_t) s].isGhost = false;
+            pattern[(size_t) s].timeShift = 0;
+        }
+
+        const int delta = (int) std::lround ((pcBias - 0.5f) * 4.0f);
+        pattern[(size_t) s].midiNote =
+            snapMidiToCurrentScale (pattern[(size_t) s].midiNote + delta);
+        pattern[(size_t) s].velocity = (uint8) juce::jlimit (
+            1, 127, (int) ((float) pattern[(size_t) s].velocity * (0.6f + 0.55f * ons)));
+        const int prevMidi = s > 0 ? pattern[(size_t) (s - 1)].midiNote : -1;
+        pattern[(size_t) s].degree =
+            nearestDegreeForMidi (pattern[(size_t) s].midiNote, prevMidi);
+    }
+
+    resolveApproachNotes();
+}
+
+void GuitarEngine::mergeStrumFromML (BridgeMLManager* ml)
+{
+    if (ml == nullptr || ! ml->hasModel (BridgeMLManager::ModelType::GuitarStrum))
+        return;
+
+    const int chordType = juce::jlimit (0, 11, scale);
+    const auto out = ml->generateStrumPattern (style, chordType, density);
+    if (out.size() < 16)
+        return;
+
+    for (int s = 0; s < patternLen && s < 16; ++s)
+    {
+        const float v = out[(size_t) s];
+        if (v < 0.02f)
+        {
+            pattern[(size_t) s] = GuitarHit{};
+            continue;
+        }
+
+        if (! pattern[(size_t) s].active)
+        {
+            const int prefDeg = BASS_PREFERRED_DEGREE[style][s];
+            const int deg = chooseDegreeProbabilistic (s, prefDeg);
+            const int prevMidi = s > 0 ? pattern[(size_t) (s - 1)].midiNote : -1;
+            pattern[(size_t) s].active = true;
+            pattern[(size_t) s].degree = deg;
+            pattern[(size_t) s].midiNote = degreeToMidiNote (deg, prevMidi);
+            pattern[(size_t) s].isGhost = false;
+        }
+
+        pattern[(size_t) s].velocity = (uint8) juce::jlimit (1, 127, (int) std::lround (v * 127.0f));
+        pattern[(size_t) s].timeShift = 0;
+    }
+
+    resolveApproachNotes();
+}
+
+void GuitarEngine::applyGuitarInertiaML (BridgeMLManager* ml)
+{
+    if (ml == nullptr || ! ml->hasModel (BridgeMLManager::ModelType::GuitarInertia))
+        return;
+
+    std::vector<int> activeSteps;
+    activeSteps.reserve ((size_t) patternLen);
+    for (int s = 0; s < patternLen; ++s)
+        if (pattern[(size_t) s].active)
+            activeSteps.push_back (s);
+
+    for (size_t i = 1; i < activeSteps.size(); ++i)
+    {
+        const int a = activeSteps[i - 1];
+        const int b = activeSteps[i];
+        auto& cur = pattern[(size_t) b];
+        const int interval = std::abs (cur.midiNote - pattern[(size_t) a].midiNote);
+        const float ms = ml->getGuitarInertiaDelay (juce::jlimit (0, 24, interval));
+        cur.timeShift += (int) (ms * static_cast<float> (hostSampleRate) / 1000.0f);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

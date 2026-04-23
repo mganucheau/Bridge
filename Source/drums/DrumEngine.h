@@ -5,6 +5,9 @@
 #include <array>
 #include <random>
 #include <functional>
+#include <vector>
+
+class BridgeMLManager;
 
 struct DrumHit
 {
@@ -23,9 +26,9 @@ public:
     DrumEngine();
 
     // ── Generation ─────────────────────────────────────────────────────────
-    void generatePattern (bool seamlessPerform = false);
+    void generatePattern (bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
     /** Regenerate only steps from0..to0 inclusive (pattern indices 0..NUM_STEPS-1). */
-    void generatePatternRange (int from0, int to0, bool seamlessPerform = false);
+    void generatePatternRange (int from0, int to0, bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
     void generateFill (int fromStep = 12);  // from step 12 = last 4 steps
 
     // ── Pattern access ─────────────────────────────────────────────────────
@@ -81,6 +84,11 @@ public:
 
     // 16th-note duration in samples — used for humanize amount after generate & for live hits.
     void setPlaybackSamplesPerStep (double s) { playbackSamplesPerStep = juce::jmax (1.0, s); }
+    void setHostSampleRate (double sr) { hostSampleRate = juce::jmax (1.0, sr); }
+
+    void setMLPersonalityKnobs (const std::array<float, 10>& k) { mlPersonalityKnobs = k; }
+    void captureMLContext();
+    void mergePatternFromML (const std::vector<float>& mlOutput);
 
     // Called each bar — may auto-trigger a fill based on fillRate
     bool shouldTriggerFill();
@@ -121,6 +129,9 @@ private:
     void  applyHumanize  (double samplesPerStep);
     float complexityMod  (int step, int drum) const;
 
+    std::array<float, 10> mlPersonalityKnobs {};
+    std::array<float, 32> mlPriorHits {};
+
     static float pseudoRandom01 (uint32_t salt);
     bool         rollHitFromProbability (float prob, uint32_t salt) const;
     uint8        sampleVelocityDeterministic (int step, int drum, bool ghost, uint32_t salt) const;
@@ -137,4 +148,5 @@ private:
     void         generateFillLatin (int fromStep);
 
     double playbackSamplesPerStep = 5512.0; // ~120 BPM 16th @ 44.1 kHz until host calls setPlaybackSamplesPerStep
+    double hostSampleRate = 44100.0;
 };

@@ -5,6 +5,9 @@
 #include <array>
 #include <random>
 #include <functional>
+#include <vector>
+
+class BridgeMLManager;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BassHit — one 16th-note slot in the generated bass line
@@ -29,8 +32,8 @@ public:
     BassEngine();
 
     // ── Generation ─────────────────────────────────────────────────────────
-    void generatePattern(bool seamlessPerform = false);
-    void generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform = false);
+    void generatePattern (bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
+    void generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
     void generateFill (int fromStep = 12);
 
     // ── Pattern access ─────────────────────────────────────────────────────
@@ -81,6 +84,14 @@ public:
     int   getPhraseBars () const { return phraseBars; }
 
     int  getRootMidiBase () const { return rootMidiBase(); }
+
+    void setHostSampleRate (double sr) { hostSampleRate = juce::jmax (1.0, sr); }
+
+    /** 16 floats (0/1) kick grid from drums — used by ML bass model. */
+    void setBassMLKickHint (const std::vector<float>& hint);
+
+    /** 10 floats [0,1] from Settings → Personality; conditions ONNX bass with Magenta-trained student. */
+    void setBassMLPersonalityKnobs (const std::vector<float>& knobs);
 
     /** Re-map existing pattern when global root / scale / octave changes (preserves user edits). */
     void remapPatternAfterTonalityChange (int previousRootMidiBase, int previousScaleIndex);
@@ -139,4 +150,11 @@ private:
     void  resolveApproachNotes();                 // post-pass: fix approach degrees
     float complexityMod (int step) const;
     void  applyHumanize (double samplesPerStep);
+    void  mergePatternFromML (BridgeMLManager* ml);
+    void  captureBassMLContextFromPattern();
+
+    double hostSampleRate = 44100.0;
+    std::vector<float> bassMLKickHint;
+    std::vector<float> bassMLPersonalityKnobs;
+    std::vector<float> bassMLContext;
 };

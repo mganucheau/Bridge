@@ -1,4 +1,5 @@
 #include "BassEngine.h"
+#include "ml/BridgeMLManager.h"
 #include <cmath>
 
 using namespace BassPreset;
@@ -30,8 +31,41 @@ static uint32_t melodicPreviewParamSalt (float density, float swing, float human
 BassEngine::BassEngine()
     : rng (std::random_device{}())
 {
-    generatePattern (false);
+    generatePattern (false, nullptr);
     rebuildGridPreview();
+}
+
+void BassEngine::setBassMLKickHint (const std::vector<float>& hint)
+{
+    bassMLKickHint.assign (16, 0.0f);
+    const int n = juce::jmin (16, (int) hint.size());
+    for (int i = 0; i < n; ++i)
+        bassMLKickHint[(size_t) i] = hint[(size_t) i];
+}
+
+void BassEngine::setBassMLPersonalityKnobs (const std::vector<float>& knobs)
+{
+    bassMLPersonalityKnobs.assign (10, 0.5f);
+    const int n = juce::jmin (10, (int) knobs.size());
+    for (int i = 0; i < n; ++i)
+        bassMLPersonalityKnobs[(size_t) i] = juce::jlimit (0.0f, 1.0f, knobs[(size_t) i]);
+}
+
+void BassEngine::captureBassMLContextFromPattern()
+{
+    bassMLContext.resize (64);
+    const float sr = (float) juce::jmax (1.0, hostSampleRate);
+    const float shiftRef = sr * 0.05f;
+
+    for (int s = 0; s < 16; ++s)
+    {
+        const auto& h = pattern[(size_t) s];
+        const size_t b = (size_t) s * 4;
+        bassMLContext[b + 0] = h.active ? (float) (h.midiNote % 12) / 11.0f : 0.0f;
+        bassMLContext[b + 1] = h.active ? 1.0f : 0.0f;
+        bassMLContext[b + 2] = h.active ? (float) h.velocity / 127.0f : 0.0f;
+        bassMLContext[b + 3] = juce::jlimit (-1.0f, 1.0f, (float) h.timeShift / shiftRef);
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,9 +118,11 @@ int BassEngine::nearestDegreeForMidi (int midi, int prevMidi) const
 // ─────────────────────────────────────────────────────────────────────────────
 // generatePattern
 // ─────────────────────────────────────────────────────────────────────────────
-void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform)
+void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform, BridgeMLManager* ml)
 {
     if (locked) return;
+
+    captureBassMLContextFromPattern();
 
     fromStep0 = juce::jlimit (0, NUM_STEPS - 1, fromStep0);
     toStep0   = juce::jlimit (0, NUM_STEPS - 1, toStep0);
@@ -148,15 +184,55 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
 
     resolveApproachNotes();
 
+    mergePatternFromML (ml);
+
     if (onPatternChanged)
         onPatternChanged();
 
     rebuildGridPreview();
 }
 
-void BassEngine::generatePattern (bool seamlessPerform)
+void BassEngine::generatePattern (bool seamlessPerform, BridgeMLManager* ml)
 {
-    generatePatternRange (0, patternLen - 1, seamlessPerform);
+    generatePatternRange (0, patternLen - 1, seamlessPerform, ml);
+}
+
+void BassEngine::mergePatternFromML (BridgeMLManager* ml)
+{
+    if (ml == nullptr || ! ml->hasModel (BridgeMLManager::ModelType::BassModel))
+        return;
+    if (bassMLKickHint.size() < 16)
+        return;
+
+    const auto out = ml->generateBass (bassMLPersonalityKnobs, bassMLKickHint, rootNote, scale, style, bassMLContext);
+    if (out.size() < 64)
+        return;
+
+    for (int s = 0; s < patternLen && s < 16; ++s)
+    {
+        const float act = out[48 + (size_t) s];
+        if (act < 0.5f)
+        {
+            pattern[(size_t) s] = BassHit{};
+            continue;
+        }
+
+        const int pc = juce::jlimit (0, 11, (int) std::lround (out[(size_t) s]));
+        const int midi = juce::jlimit (12, 127, rootMidiBase() + pc);
+        const float offMs = out[16 + (size_t) s] * 30.0f;
+        const int vel = juce::jlimit (1, 127, (int) std::lround (out[32 + (size_t) s] * 127.0f));
+
+        BassHit& h = pattern[(size_t) s];
+        h.active = true;
+        h.midiNote = midi;
+        h.velocity = (uint8) vel;
+        h.isGhost = false;
+        h.timeShift = (int) (offMs * static_cast<float> (hostSampleRate) / 1000.0f);
+        const int prevMidi = s > 0 ? pattern[(size_t) (s - 1)].midiNote : -1;
+        h.degree = nearestDegreeForMidi (midi, prevMidi);
+    }
+
+    resolveApproachNotes();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

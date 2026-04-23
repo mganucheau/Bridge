@@ -156,7 +156,7 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
     gearButton.onClick = [this]
     {
         auto* content = new BridgeSettingsDialog (proc);
-        content->setSize (520, 520);
+        content->setSize (540, 780);
         juce::DialogWindow::LaunchOptions o;
         o.content.setOwned (content);
         o.dialogTitle                 = "Settings";

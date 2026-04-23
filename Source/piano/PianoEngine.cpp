@@ -1,4 +1,5 @@
 #include "PianoEngine.h"
+#include "ml/BridgeMLManager.h"
 #include <cmath>
 
 using namespace PianoPreset;
@@ -30,8 +31,14 @@ static uint32_t melodicPreviewParamSalt (float density, float swing, float human
 PianoEngine::PianoEngine()
     : rng (std::random_device{}())
 {
-    generatePattern(false);
+    mlPersonalityKnobs.fill (0.5f);
+    generatePattern (false, nullptr);
     rebuildGridPreview();
+}
+
+void PianoEngine::setChordsMLBassHint (const std::array<float, 16>& bassOnsets)
+{
+    mlChordsBassPattern = bassOnsets;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,9 +91,11 @@ int PianoEngine::nearestDegreeForMidi (int midi, int prevMidi) const
 // ─────────────────────────────────────────────────────────────────────────────
 // generatePattern
 // ─────────────────────────────────────────────────────────────────────────────
-void PianoEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform)
+void PianoEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform, BridgeMLManager* ml)
 {
     if (locked) return;
+
+    captureMLContext();
 
     fromStep0 = juce::jlimit (0, NUM_STEPS - 1, fromStep0);
     toStep0   = juce::jlimit (0, NUM_STEPS - 1, toStep0);
@@ -148,15 +157,114 @@ void PianoEngine::generatePatternRange (int fromStep0, int toStep0, bool seamles
 
     resolveApproachNotes();
 
+    std::vector<float> mlOut;
+    if (ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::ChordsModel))
+    {
+        const std::array<float, 3> tonal {
+            static_cast<float> (juce::jlimit (0, 11, rootNote)) / 11.0f,
+            static_cast<float> (juce::jlimit (0, 9, scale)) / 9.0f,
+            static_cast<float> (juce::jlimit (0, 7, style)) / 7.0f,
+        };
+        mlOut = ml->generateChords (mlPersonalityKnobs, tonal, mlChordContext, mlChordsBassPattern);
+    }
+    mergePatternFromML (mlOut);
+
     if (onPatternChanged)
         onPatternChanged();
 
     rebuildGridPreview();
 }
 
-void PianoEngine::generatePattern (bool seamlessPerform)
+void PianoEngine::generatePattern (bool seamlessPerform, BridgeMLManager* ml)
 {
-    generatePatternRange (0, patternLen - 1, seamlessPerform);
+    generatePatternRange (0, patternLen - 1, seamlessPerform, ml);
+}
+
+void PianoEngine::captureMLContext()
+{
+    mlChordContext.fill (0);
+    int rootsFound = 0;
+    int roots[2] = { -1, -1 };
+    int typeApprox[2] = { 0, 0 };
+
+    for (int s = patternLen - 1; s >= 0 && rootsFound < 2; --s)
+    {
+        if (! pattern[(size_t) s].active)
+            continue;
+        roots[rootsFound] = pattern[(size_t) s].midiNote % 12;
+        typeApprox[rootsFound] = juce::jlimit (0, 11, pattern[(size_t) s].degree);
+        ++rootsFound;
+    }
+
+    if (rootsFound >= 1)
+    {
+        mlChordContext[0] = static_cast<float> (roots[0]) / 11.0f;
+        mlChordContext[1] = rootsFound >= 2 ? static_cast<float> (roots[1]) / 11.0f : mlChordContext[0];
+        mlChordContext[2] = static_cast<float> (typeApprox[0]) / 11.0f;
+        mlChordContext[3] = rootsFound >= 2 ? static_cast<float> (typeApprox[1]) / 11.0f : mlChordContext[2];
+    }
+
+    int lo = 127, hi = 0, n = 0;
+    const int s0 = juce::jmax (0, patternLen - 8);
+    for (int s = s0; s < patternLen; ++s)
+    {
+        if (! pattern[(size_t) s].active)
+            continue;
+        lo = juce::jmin (lo, pattern[(size_t) s].midiNote);
+        hi = juce::jmax (hi, pattern[(size_t) s].midiNote);
+        ++n;
+    }
+    mlChordContext[4] = (n > 0) ? juce::jlimit (0.0f, 1.0f, (float) (hi - lo) / 36.0f) : 0.0f;
+    mlChordContext[5] = juce::jlimit (0.0f, 1.0f, density);
+
+    float e0 = 0, e1 = 0;
+    for (int s = 8; s < 12; ++s)
+        if (s < patternLen && pattern[(size_t) s].active)
+            e0 += pattern[(size_t) s].velocity / 127.0f;
+    for (int s = 12; s < 16; ++s)
+        if (s < patternLen && pattern[(size_t) s].active)
+            e1 += pattern[(size_t) s].velocity / 127.0f;
+    mlChordContext[6] = juce::jlimit (0.0f, 1.0f, e0 * 0.25f);
+    mlChordContext[7] = juce::jlimit (0.0f, 1.0f, e1 * 0.25f);
+}
+
+void PianoEngine::mergePatternFromML (const std::vector<float>& mlOutput)
+{
+    if (mlOutput.size() < 24)
+        return;
+
+    for (int s = 0; s < patternLen && s < 16; ++s)
+    {
+        const float w = mlOutput[(size_t) s];
+        if (w < 0.35f)
+        {
+            pattern[(size_t) s] = PianoHit{};
+            continue;
+        }
+
+        if (! pattern[(size_t) s].active)
+        {
+            const int prefDeg = BASS_PREFERRED_DEGREE[style][s];
+            const int deg = chooseDegreeProbabilistic (s, prefDeg);
+            const int prevMidi = s > 0 ? pattern[(size_t) (s - 1)].midiNote : -1;
+            pattern[(size_t) s].active = true;
+            pattern[(size_t) s].degree = deg;
+            pattern[(size_t) s].midiNote = degreeToMidiNote (deg, prevMidi);
+            pattern[(size_t) s].isGhost = false;
+            pattern[(size_t) s].timeShift = 0;
+        }
+
+        const float voicing = mlOutput[16 + (size_t) (s % 8)];
+        const int delta = (int) std::lround ((voicing - 0.5f) * 4.0f);
+        pattern[(size_t) s].midiNote =
+            snapMidiToCurrentScale (pattern[(size_t) s].midiNote + delta);
+        pattern[(size_t) s].velocity = (uint8) juce::jlimit (
+            1, 127, (int) ((float) pattern[(size_t) s].velocity * (0.65f + 0.6f * w)));
+        const int prevMidi = s > 0 ? pattern[(size_t) (s - 1)].midiNote : -1;
+        pattern[(size_t) s].degree = nearestDegreeForMidi (pattern[(size_t) s].midiNote, prevMidi);
+    }
+
+    resolveApproachNotes();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
