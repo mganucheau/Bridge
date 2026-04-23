@@ -40,6 +40,12 @@ public:
     const DrumPattern& getPatternForGrid() const { return gridPreview; }
 
     void rebuildGridPreview();
+    void morphPatternForDensityAndComplexity();
+    void adaptPatternToNewStyle (int newStyleIndex);
+    void evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml);
+
+    /** Editor / UI: mutate the committed pattern (then call rebuildGridPreview). */
+    DrumPattern& editPattern() noexcept { return pattern; }
 
     // ── Parameters (0.0–1.0 unless noted) ─────────────────────────────────
     void setStyle      (int s)   { style      = jlimit(0, NUM_STYLES - 1, s); }
@@ -50,13 +56,11 @@ public:
     void setVelocity   (float v) { velocityMul = jlimit(0.0f,  1.0f,  v); }
     void setFillRate   (float f) { fillRate    = jlimit(0.0f,  1.0f,  f); }
     void setComplexity (float c) { complexity  = jlimit(0.0f,  1.0f,  c); }
-    void setPocket     (float p) { pocket      = jlimit(0.0f,  1.0f,  p); }
+    void setHold       (float h) { hold        = jlimit(0.0f,  1.0f,  h); }
     void setGhostAmount(float g) { ghostAmount = jlimit(0.0f,  1.0f,  g); }
     void setPatternLen (int   l) { patternLen  = jlimit(1, NUM_STEPS, l); }
     void setSeed       (uint32 s){ seed        = s; rng.seed(seed); }
     void setPhraseBars (int bars) { phraseBars = jlimit (1, 64, bars); }
-    void setPerformBoost (bool on) { performBoost = on; }
-    bool  isPerformBoost() const { return performBoost; }
 
     int   getStyle()       const { return style; }
     float getTemperature() const { return temperature; }
@@ -66,7 +70,7 @@ public:
     float getVelocity()    const { return velocityMul; }
     float getFillRate()    const { return fillRate; }
     float getComplexity()  const { return complexity; }
-    float getPocket()      const { return pocket; }
+    float getHold()        const { return hold; }
     float getGhostAmount() const { return ghostAmount; }
     int   getPatternLen()  const { return patternLen; }
     uint32 getSeed()       const { return seed; }
@@ -81,6 +85,7 @@ public:
                                   double samplesPerStep);
 
     void setFillHoldActive (bool on) { fillHoldActive = on; }
+    bool isFillHoldActive() const noexcept { return fillHoldActive; }
 
     // 16th-note duration in samples — used for humanize amount after generate & for live hits.
     void setPlaybackSamplesPerStep (double s) { playbackSamplesPerStep = juce::jmax (1.0, s); }
@@ -102,7 +107,6 @@ private:
     std::mt19937 rng;
 
     int   style       = 0;
-    bool  performBoost = false;
     float temperature = 1.0f;
     float density     = 0.7f;
     float swing       = 0.0f;
@@ -110,7 +114,7 @@ private:
     float velocityMul = 0.85f;
     float fillRate    = 0.15f;
     float complexity  = 0.5f;
-    float pocket      = 0.5f;
+    float hold        = 0.5f;
     float ghostAmount = 0.5f;
     int   patternLen  = NUM_STEPS;
     uint32 seed       = 42;

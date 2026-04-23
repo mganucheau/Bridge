@@ -225,3 +225,26 @@ void BridgeLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& 
     label.setFont (bridge::hig::uiFont (13.0f));
     label.setColour (juce::Label::textColourId, bridge::colors::textSecondary());
 }
+
+void BridgeLookAndFeel::drawScrollbar (juce::Graphics& g, juce::ScrollBar& scrollbar, int x, int y, int width, int height,
+                                       bool isScrollbarVertical, int thumbStartPosition, int thumbSize,
+                                       bool isMouseOver, bool isMouseDown)
+{
+    juce::ignoreUnused (scrollbar, isMouseOver, isMouseDown);
+
+    const auto track = juce::Rectangle<int> (x, y, width, height).toFloat();
+    g.setColour (bridge::colors::knobTrack().withAlpha (0.55f));
+    g.fillRoundedRectangle (track, 4.0f);
+
+    if (thumbSize <= 0)
+        return;
+
+    juce::Rectangle<float> thumb;
+    if (isScrollbarVertical)
+        thumb = { (float) x + 2.0f, (float) thumbStartPosition, (float) width - 4.0f, (float) thumbSize };
+    else
+        thumb = { (float) thumbStartPosition, (float) y + 2.0f, (float) thumbSize, (float) height - 4.0f };
+
+    g.setColour (bridge::colors::textDim().withAlpha (0.9f));
+    g.fillRoundedRectangle (thumb, 4.0f);
+}

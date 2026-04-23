@@ -44,6 +44,20 @@ private:
     int dragOriginStep = -1;
 };
 
+/** Guitar roll + step grid sized to the committed pattern pitch span (scrolls vertically). */
+struct GuitarMelodicBody : public juce::Component
+{
+    explicit GuitarMelodicBody (BridgeProcessor& p);
+    void resized() override;
+
+    GuitarPianoRollComponent roll;
+    GuitarGridComponent grid;
+
+private:
+    BridgeProcessor& proc;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GuitarMelodicBody)
+};
+
 class GuitarLabelledKnob : public juce::Component
 {
 public:
@@ -78,25 +92,30 @@ private:
                                      const juce::String& id, int value);
 
     BridgeProcessor& proc;
+    GuitarMelodicBody melodicBody { proc };
     BridgeLookAndFeel laf;
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xff0a84ff), GuitarPreset::NUM_STEPS };
 
-    
-
-        GuitarPianoRollComponent pianoRoll { proc };
-    GuitarGridComponent grid { proc };
+    juce::Viewport melodicViewport;
 
     struct StepTimer : public juce::Timer
     {
         GuitarPanel& panel;
         StepTimer (GuitarPanel& p) : panel (p) {}
-        void timerCallback() override { panel.updateStepAnimation(); }
+        void timerCallback() override
+        {
+            panel.flushDeferredGuitarGridPreviewRebuild();
+            panel.updateStepAnimation();
+        }
     } stepTimer { *this };
 
     void updateStepAnimation();
+    void flushDeferredGuitarGridPreviewRebuild();
     int  lastAnimStep = -1;
+
+    bool deferredGuitarGridPreviewRebuild = false;
 
     void applyGuitarPageState();
 

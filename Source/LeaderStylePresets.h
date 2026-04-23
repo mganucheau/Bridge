@@ -16,7 +16,7 @@ static const char* LEADER_STYLE_NAMES[NUM_LEADER_STYLES] = {
 
 struct LeaderStyleBias
 {
-    float presence; // added to leaderPresence 0..1
+    float hold; // added to leader Hold macro 0..1
     float tight;
     float unity;
     float breath;

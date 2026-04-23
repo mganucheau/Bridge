@@ -78,6 +78,11 @@ public:
     void triggerDrumsGenerate();
     void triggerDrumsFill (int fromStep = 12);
     void rebuildDrumsGridPreview();
+    /** Panels / UI: push APVTS into engines (otherwise private to processor). */
+    void syncDrumsEngineFromAPVTS();
+    void syncBassEngineFromAPVTS();
+    void syncPianoEngineFromAPVTS();
+    void syncGuitarEngineFromAPVTS();
     const DrumPattern& getPatternForGrid() const;
     /** Global selection (1-based steps), always from apvtsMain; never collapsed to full clip. */
     void getMainSelectionBounds (int numSteps, int& loopStart, int& loopEnd) const;
@@ -126,14 +131,22 @@ public:
 
     /** Current PPQ per pattern step from main "timeDivision" param (phase A: one bar = 16 steps). */
     double getMainPpqPerStep() const noexcept;
+
+#if BRIDGE_ENABLE_QA_HOOKS
+    /** For BridgeTests: queue a bass note-off so UI rebuild + processBlock flush path can be observed. */
+    void bridgeQaInjectBassPendingNoteOff (int channel, int noteNumber, int64 atSample);
+    bool bridgeQaMelodicFlushPendingForTests() const noexcept;
+#endif
+
     std::atomic<int> guitarCurrentStep { -1 };
     std::atomic<int> guitarCurrentVisualStep { -1 };
+
+    void refreshBassKickHintFromDrums();
+    void refreshChordsBassHintFromBass();
 
 private:
     void handleModelUpdateCheckResult (BridgeUpdateChecker::UpdateInfo info);
 
-    void refreshBassKickHintFromDrums();
-    void refreshChordsBassHintFromBass();
     void syncDrumsMLPersonalityToEngine();
     void syncChordsMLPersonalityToEngine();
     void syncMelodyMLPersonalityToEngine();
@@ -150,10 +163,6 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout buildMainLayout();
     static juce::AudioProcessorValueTreeState::ParameterLayout buildDrumsLayout();
 
-    void syncDrumsEngineFromAPVTS();
-    void syncBassEngineFromAPVTS();
-    void syncPianoEngineFromAPVTS();
-    void syncGuitarEngineFromAPVTS();
     void randomizeDrumsSettings();
 
     void processDrumsBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&,
@@ -164,6 +173,10 @@ private:
                              const juce::AudioPlayHead::CurrentPositionInfo& pos, int numSamples);
     void processGuitarBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&,
                            const juce::AudioPlayHead::CurrentPositionInfo& pos, int numSamples);
+
+    /** Host-transport beat accumulator; mutates only main loop selection (1-based) inside engines. */
+    void advanceJamClockAndMaybeEvolve (double bpm, int numSamples,
+                                        bool drumsOn, bool bassOn, bool pianoOn, bool guitarOn);
 
     void scheduleDrumsNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
                                    int sampleOffset, juce::MidiBuffer& midi);
@@ -195,13 +208,19 @@ private:
     juce::Array<PendingOff> pianoPendingNoteOffs;
     juce::Array<PendingOff> guitarPendingNoteOffs;
 
+    std::atomic<bool> melodicPreviewFlushPending { false };
+    bool pianoSustainLatchDown = false;
+    juce::Random pianoSustainRng { 0xC0FF33u };
+
     void flushPendingNoteOffs (juce::Array<PendingOff>& pending, juce::MidiBuffer& midi);
+    void markMelodicPreviewFlushIfMessageThread();
+    void servicePianoSustainPedal (juce::MidiBuffer& midi, bool phraseBoundary);
 
     double drumsLastBpm = 120.0;
     int    drumsLastProcessedStep = -1;
     bool   drumsFillQueued = false;
     int    drumsFillFromStep = 12;
-    bool   drumsPerformMode = false;
+    double drumsJamDebtBeats = 0.0;
     double drumsTickerRate = 1.0;
     std::array<bool, NUM_DRUMS> drumsLaneMute {};
     std::array<bool, NUM_DRUMS> drumsLaneSolo {};
@@ -211,7 +230,7 @@ private:
     int    bassLastProcessedStep = -1;
     bool   bassFillQueued = false;
     int    bassFillFromStep = 12;
-    bool   bassPerformMode = false;
+    double bassJamDebtBeats = 0.0;
     int    bassMidiChannel = 1;
     double bassTickerRate = 1.0;
 
@@ -219,7 +238,7 @@ private:
     int    pianoLastProcessedStep = -1;
     bool   pianoFillQueued = false;
     int    pianoFillFromStep = 12;
-    bool   pianoPerformMode = false;
+    double pianoJamDebtBeats = 0.0;
     int    pianoMidiChannel = 2;
     double pianoTickerRate = 1.0;
 
@@ -227,7 +246,7 @@ private:
     int    guitarLastProcessedStep = -1;
     bool   guitarFillQueued = false;
     int    guitarFillFromStep = 12;
-    bool   guitarPerformMode = false;
+    double guitarJamDebtBeats = 0.0;
     int    guitarMidiChannel = 3;
     double guitarTickerRate = 1.0;
 

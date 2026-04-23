@@ -254,9 +254,10 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
     if (step < 0 || step >= patLen || visualRow < 0 || visualRow >= NUM_DRUMS
         || drum < 0 || drum >= NUM_DRUMS) return;
 
-    auto& gridPat = const_cast<DrumPattern&> (proc.getPatternForGrid());
-    gridPat[(size_t) step][(size_t) drum].active   = ! gridPat[(size_t) step][(size_t) drum].active;
-    gridPat[(size_t) step][(size_t) drum].velocity = 100;
+    auto& pat = proc.drumEngine.editPattern();
+    pat[(size_t) step][(size_t) drum].active   = ! pat[(size_t) step][(size_t) drum].active;
+    pat[(size_t) step][(size_t) drum].velocity = 100;
+    proc.drumEngine.rebuildGridPreview();
 
     repaint();
 }
@@ -306,6 +307,9 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("playbackLoopOn", this);
     proc.apvtsDrums.addParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.addParameterListener ("style", this);
+    for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
+                            "hold", "ghostAmount", "intensity" })
+        proc.apvtsDrums.addParameterListener (id, this);
     proc.apvtsDrums.state.addListener (this);
 
     proc.apvtsMain.addParameterListener ("drumsOn", this);
@@ -338,6 +342,9 @@ DrumsPanel::~DrumsPanel()
     proc.apvtsMain.removeParameterListener ("playbackLoopOn", this);
     proc.apvtsDrums.removeParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.removeParameterListener ("style", this);
+    for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
+                            "hold", "ghostAmount", "intensity" })
+        proc.apvtsDrums.removeParameterListener (id, this);
     proc.apvtsDrums.state.removeListener (this);
     setLookAndFeel (nullptr);
 }
@@ -432,6 +439,33 @@ void DrumsPanel::parameterChanged (const juce::String& parameterID, float newVal
     {
         loopStrip.repaint();
         drumGrid.repaint();
+    }
+
+    if (parameterID == "density" || parameterID == "complexity")
+    {
+        proc.syncDrumsEngineFromAPVTS();
+        proc.drumEngine.morphPatternForDensityAndComplexity();
+        triggerAsyncUpdate();
+        return;
+    }
+    if (parameterID == "style")
+    {
+        proc.syncDrumsEngineFromAPVTS();
+        int si = 0;
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsDrums.getParameter ("style")))
+            si = c->getIndex();
+        proc.drumEngine.adaptPatternToNewStyle (si);
+        triggerAsyncUpdate();
+        return;
+    }
+
+    if (parameterID == "swing" || parameterID == "humanize" || parameterID == "velocity"
+        || parameterID == "fillRate" || parameterID == "hold" || parameterID == "ghostAmount"
+        || parameterID == "intensity" || parameterID == "tickerSpeed")
+    {
+        proc.rebuildDrumsGridPreview();
+        triggerAsyncUpdate();
+        return;
     }
 
     proc.rebuildDrumsGridPreview();

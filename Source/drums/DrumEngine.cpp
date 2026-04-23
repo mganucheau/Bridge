@@ -36,7 +36,7 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
             {
                 float mutateProb = 0.15f + 0.20f * (complexity + (1.0f - density));
                 if (drum == 2 || drum == 3) mutateProb *= 1.3f;
-                mutateProb *= std::pow (1.0f, 1.0f / temperature);
+                mutateProb = std::pow (mutateProb, 1.0f / temperature);
                 mutateThisStep = pseudoRandom01 (rng()) < mutateProb;
             }
 
@@ -48,7 +48,7 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
             float base = blendedStyleBase (step, drum);
             float prob = base + complexityMod (step, drum);
-            prob *= density * 1.5f;
+            prob *= density;
             prob = jlimit (0.0f, 1.0f, prob);
 
             bool active = sampleProb (prob);
@@ -281,7 +281,7 @@ float DrumEngine::grooveMicroOffset (int step, int drum, uint32_t salt, double s
 {
     const float loose = STYLE_GROOVE_LOOSENESS[juce::jlimit (0, NUM_STYLES - 1, style)];
     const float amt = loose * (0.35f + 0.65f * humanize)
-                        * juce::jmap (pocket, 0.35f, 1.0f);
+                        * juce::jmap (hold, 0.35f, 1.0f);
     if (amt < 0.03f) return 0.0f;
     const int maxNudge = juce::jmax (1, (int)(samplesPerStep * 0.11 * amt));
     return (pseudoRandom01 (salt ^ 0x9e3779b9u) * 2.0f - 1.0f) * (float) maxNudge;
@@ -308,7 +308,7 @@ uint8 DrumEngine::sampleVelocityDeterministic (int step, int drum, bool ghost, u
     vel = juce::jlimit (vMin, vMax, vel);
     float hum = 0.87f + 0.13f * pseudoRandom01 (salt ^ 0xbeeff00du);
     float stylePocket = 1.0f - 0.09f * STYLE_GROOVE_LOOSENESS[juce::jlimit (0, NUM_STYLES - 1, style)];
-    float userPocket  = juce::jmap (pocket, 0.88f, 1.0f);
+    float userPocket  = juce::jmap (hold, 0.88f, 1.0f);
     vel = (int)((float) vel * velocityMul * hum * stylePocket * userPocket);
     return (uint8) juce::jlimit (1, 127, vel);
 }
@@ -330,7 +330,7 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
     {
         float base = blendedStyleBase (wrappedStep, drum);
         float prob = base + complexityMod (wrappedStep, drum);
-        prob *= density * 1.5f;
+        prob *= density;
         prob = juce::jlimit (0.0f, 1.0f, prob);
 
         const uint32_t salt = seed ^ ((uint32_t) globalStep * 2654435761u)
@@ -434,6 +434,7 @@ float DrumEngine::complexityMod (int step, int drum) const
     return mod;
 }
 
+// Groove invariant: humanize shifts are deterministic from seed + step + drum (no per-block RNG).
 void DrumEngine::applyHumanize (double samplesPerStep)
 {
     if (humanize < 0.01f) return;
@@ -441,12 +442,15 @@ void DrumEngine::applyHumanize (double samplesPerStep)
     int maxShift = (int)(samplesPerStep * 0.25 * humanize); // up to 25% of a step
     if (maxShift < 1) return;
 
-    std::uniform_int_distribution<int> dist (-maxShift, maxShift);
-
     for (int step = 0; step < patternLen; ++step)
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
             if (pattern[step][drum].active)
-                pattern[step][drum].timeShift = dist (rng);
+            {
+                const uint32_t salt = seed ^ (uint32_t) step * 2246822519u ^ (uint32_t) drum * 3266489917u ^ 0x9E3779B9u;
+                const float u = pseudoRandom01 (salt);
+                pattern[step][drum].timeShift =
+                    (int) std::lround ((u * 2.0f - 1.0f) * (float) maxShift);
+            }
 }
 
 void DrumEngine::captureMLContext()
@@ -520,32 +524,55 @@ bool DrumEngine::shouldTriggerFill()
     ++barCount;
     if (fillRate < 0.01f) return false;
 
-    std::uniform_real_distribution<float> dist (0.0f, 1.0f);
-    float roll = dist (rng);
+    const float roll = pseudoRandom01 (seed ^ (uint32_t) barCount * 196613u ^ 0xF1110001u);
 
     const int gridBars = juce::jmax (1, phraseBars);
-    float prob = fillRate * (1.0f + (barCount % gridBars == 0 ? 0.5f : 0.0f));
-    float cap = 0.25f;
-    if (performBoost)
-        cap = 0.42f;
+    const float prob = fillRate * (1.0f + (barCount % gridBars == 0 ? 0.5f : 0.0f));
+    static constexpr float cap = 0.32f;
     return roll < prob * cap;
 }
 
 void DrumEngine::rebuildGridPreview()
 {
-    const bool hold = fillHoldActive;
-    fillHoldActive = false;
-
     for (int s = 0; s < patternLen; ++s)
     {
-        DrumStep out {};
-        evaluateStepForPlayback (s, s, out, playbackSamplesPerStep);
-        gridPreview[(size_t) s] = out;
+        gridPreview[(size_t) s] = pattern[(size_t) s];
+        for (int d = 0; d < NUM_DRUMS; ++d)
+        {
+            auto& h = gridPreview[(size_t) s][(size_t) d];
+            if (h.active)
+                h.velocity = (uint8) juce::jlimit (1, 127, (int) std::lround ((float) h.velocity * velocityMul));
+        }
     }
-
-    fillHoldActive = hold;
 
     for (int s = patternLen; s < NUM_STEPS; ++s)
         for (int d = 0; d < NUM_DRUMS; ++d)
             gridPreview[(size_t) s][(size_t) d] = {};
+}
+
+void DrumEngine::morphPatternForDensityAndComplexity()
+{
+    if (patternLen < 1)
+        return;
+    generatePatternRange (0, patternLen - 1, true, nullptr);
+}
+
+void DrumEngine::adaptPatternToNewStyle (int newStyleIndex)
+{
+    newStyleIndex = juce::jlimit (0, NUM_STYLES - 1, newStyleIndex);
+    style = newStyleIndex;
+    if (patternLen < 1)
+        return;
+    generatePatternRange (0, patternLen - 1, true, nullptr);
+}
+
+void DrumEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml)
+{
+    if (patternLen < 1)
+        return;
+    fromStep0 = juce::jlimit (0, patternLen - 1, fromStep0);
+    toStep0   = juce::jlimit (0, patternLen - 1, toStep0);
+    if (toStep0 < fromStep0)
+        std::swap (fromStep0, toStep0);
+    generatePatternRange (fromStep0, toStep0, true, ml);
 }

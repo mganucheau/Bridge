@@ -17,12 +17,12 @@ static float melodicPreviewDet01 (uint32_t seed, int step, uint32_t tag)
     return (x & 0xffffffu) / (float) 0x1000000;
 }
 
-static uint32_t melodicPreviewParamSalt (float density, float swing, float humanize, float pocket,
+static uint32_t melodicPreviewParamSalt (float density, float swing, float humanize, float hold,
                                          float velocityMul, float fillRate, float complexity,
                                          float ghostAmount, float temperature, float staccato)
 {
     auto q = [] (float v) -> uint32_t { return (uint32_t) juce::roundToInt (v * 16384.0f); };
-    return q (density) ^ (q (swing) << 1) ^ (q (humanize) << 2) ^ (q (pocket) << 3)
+    return q (density) ^ (q (swing) << 1) ^ (q (humanize) << 2) ^ (q (hold) << 3)
            ^ (q (velocityMul) << 4) ^ (q (fillRate) << 5) ^ (q (complexity) << 6)
            ^ (q (ghostAmount) << 7) ^ (q (temperature) << 8) ^ (q (staccato) << 9);
 }
@@ -141,7 +141,7 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
         {
             float mutateProb = 0.15f + 0.20f * (complexity + (1.0f - density));
             if (previous[(size_t) step].active == false) mutateProb *= 1.2f;
-            mutateProb *= std::pow (1.0f, 1.0f / temperature);
+            mutateProb = std::pow (mutateProb, 1.0f / temperature);
             mutateThisStep = sampleProb (mutateProb);
         }
 
@@ -153,7 +153,7 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
 
         float base = BASS_NOTE_PROBS[style][step];
         float prob = base + complexityMod (step);
-        prob *= density * 1.4f;
+        prob *= density;
         prob  = jlimit (0.0f, 1.0f, prob);
 
         bool active = sampleProb (prob);
@@ -241,85 +241,218 @@ void BassEngine::mergePatternFromML (BridgeMLManager* ml)
 void BassEngine::rebuildGridPreview()
 {
     displayPattern = pattern;
-
-    const uint32_t ps = melodicPreviewParamSalt (density, swing, humanize, pocket, velocityMul,
-                                                 fillRate, complexity, ghostAmount, temperature, staccato);
-
-    auto cMod = [this] (int step)
-    {
-        if (complexity < 0.5f)
-            return 0.0f;
-        float extra = (complexity - 0.5f) * 0.35f;
-        const bool offBeat = (step % 2 != 0);
-        return extra * (offBeat ? 1.5f : 0.5f);
-    };
-
     for (int s = 0; s < patternLen; ++s)
     {
+        if (! pattern[(size_t) s].active)
+            continue;
         BassHit& out = displayPattern[(size_t) s];
-        const BassHit& src = pattern[(size_t) s];
-
-        if (src.active)
-        {
-            const int vel = juce::roundToInt ((float) src.velocity * velocityMul);
-            out.velocity = (uint8) juce::jlimit (1, 127, vel);
-            continue;
-        }
-
-        float probBase = BASS_NOTE_PROBS[style][s];
-        float prob = probBase + cMod (s);
-        prob *= density * 1.4f;
-        prob = jlimit (0.0f, 1.0f, prob);
-        const float thresh = std::pow (prob, 1.0f / temperature);
-        if (melodicPreviewDet01 (seed, s, ps ^ 0x10000u) >= thresh)
-            continue;
-
-        const int deg = BASS_PREFERRED_DEGREE[style][s];
-        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][s] * ghostAmount);
-        const bool ghost = melodicPreviewDet01 (seed, s, ps ^ 0x20000u ^ (uint32_t) s * 13u) < ghostT;
-
-        out.active = true;
-        out.degree = deg;
-        out.midiNote = degreeToMidiNote (deg, -1);
-        out.velocity = sampleVelocity (s, ghost, (s % 4 == 0));
-        out.isGhost = ghost;
+        const int vel = juce::roundToInt ((float) pattern[(size_t) s].velocity * velocityMul);
+        out.velocity = (uint8) juce::jlimit (1, 127, vel);
     }
 
-    if (! fillHoldActive)
+    if (fillHoldActive)
+    {
+        for (int s = 0; s < patternLen; ++s)
+        {
+            if (! pattern[(size_t) s].active)
+                continue;
+            auto& out = displayPattern[(size_t) s];
+            if (out.velocity < 110)
+                out.velocity = (uint8) jmin (127, (int) out.velocity + 20);
+        }
+    }
+}
+
+void BassEngine::morphPatternForDensityAndComplexity()
+{
+    if (locked)
         return;
 
+    float meanProb = 0.f;
+    for (int s = 0; s < patternLen; ++s)
+        meanProb += BASS_NOTE_PROBS[style][s];
+    meanProb /= (float) juce::jmax (1, patternLen);
+
+    const float densDrive = juce::jmap (density, 0.f, 1.f, 0.25f, 1.05f);
+    int target = (int) std::lround (densDrive * meanProb * (float) patternLen * (0.5f + 0.45f * complexity));
+    target = juce::jlimit (0, patternLen, target);
+
+    int active = 0;
+    for (int s = 0; s < patternLen; ++s)
+        if (pattern[(size_t) s].active)
+            ++active;
+
+    while (active > target)
+    {
+        int bestS = -1;
+        float bestScore = 1e9f;
+        for (int s = 0; s < patternLen; ++s)
+        {
+            if (! pattern[(size_t) s].active)
+                continue;
+            const float downProt = (s % 4 == 0) ? 0.5f : 0.f;
+            const float score = BASS_NOTE_PROBS[style][s] + downProt;
+            if (score < bestScore)
+            {
+                bestScore = score;
+                bestS = s;
+            }
+        }
+        if (bestS < 0)
+            break;
+        pattern[(size_t) bestS] = BassHit{};
+        --active;
+    }
+
+    while (active < target)
+    {
+        int bestS = -1;
+        float bestScore = -1.f;
+        for (int s = 0; s < patternLen; ++s)
+        {
+            if (pattern[(size_t) s].active)
+                continue;
+            const float score = BASS_NOTE_PROBS[style][s] * (1.0f + 0.22f * complexityMod (s));
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestS = s;
+            }
+        }
+        if (bestS < 0)
+            break;
+        const int step = bestS;
+        const int prefDeg = BASS_PREFERRED_DEGREE[style][step];
+        const int deg = chooseDegreeProbabilistic (step, prefDeg);
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][step] * ghostAmount);
+        const bool ghost = (deg != 6) && sampleProb (ghostT);
+        const bool accent = (step % 4 == 0) && ! ghost;
+        int prevMidi = -1;
+        for (int ps = step - 1; ps >= 0; --ps)
+        {
+            if (pattern[(size_t) ps].active)
+            {
+                prevMidi = pattern[(size_t) ps].midiNote;
+                break;
+            }
+        }
+        pattern[(size_t) step].active = true;
+        pattern[(size_t) step].degree = deg;
+        pattern[(size_t) step].midiNote = degreeToMidiNote (deg, prevMidi);
+        pattern[(size_t) step].velocity = sampleVelocity (step, ghost, accent);
+        pattern[(size_t) step].isGhost = ghost;
+        pattern[(size_t) step].timeShift = 0;
+        ++active;
+    }
+
+    resolveApproachNotes();
+    rebuildGridPreview();
+    if (onPatternChanged != nullptr)
+        onPatternChanged();
+}
+
+void BassEngine::adaptPatternToNewStyle (int newStyleIndex)
+{
+    newStyleIndex = juce::jlimit (0, BassPreset::NUM_STYLES - 1, newStyleIndex);
+    style = newStyleIndex;
+
     for (int s = 0; s < patternLen; ++s)
     {
-        float base = BASS_NOTE_PROBS[style][s];
-        float prob = (0.12f + 0.55f * base) * density * (0.45f + 0.55f * fillRate);
-        prob = jlimit (0.0f, 1.0f, prob);
-        const float thresh = std::pow (prob, 1.0f / temperature);
-        if (melodicPreviewDet01 (seed, s, ps ^ 0x30000u ^ (uint32_t) s * 17u) >= thresh)
+        if (! pattern[(size_t) s].active)
+            continue;
+        const float t = melodicPreviewDet01 (seed, s, 0xADA0u ^ (uint32_t) s * 1315423911u);
+        if (t < 0.38f)
             continue;
 
-        BassHit& h = displayPattern[(size_t) s];
-        const int deg = BASS_PREFERRED_DEGREE[style][s];
-        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][s] * ghostAmount);
-        const bool ghost = melodicPreviewDet01 (seed, s, ps ^ 0x40000u ^ (uint32_t) s * 31u) < ghostT;
-
-        if (! pattern[(size_t) s].active)
+        const int prefDeg = BASS_PREFERRED_DEGREE[style][s];
+        const int deg = chooseDegreeProbabilistic (s, prefDeg);
+        int prevMidi = -1;
+        for (int ps = s - 1; ps >= 0; --ps)
         {
-            if (! h.active)
+            if (pattern[(size_t) ps].active)
             {
-                h.active = true;
-                h.degree = deg;
-                h.midiNote = degreeToMidiNote (deg, -1);
-                h.velocity = sampleVelocity (s, ghost, (s % 4 == 0));
-                h.isGhost = ghost;
+                prevMidi = pattern[(size_t) ps].midiNote;
+                break;
             }
-            else if (h.velocity < 110)
-                h.velocity = (uint8) jmin (127, (int) h.velocity + 28);
         }
-        else if (h.velocity < 110)
+        pattern[(size_t) s].degree = deg;
+        pattern[(size_t) s].midiNote = degreeToMidiNote (deg, prevMidi);
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][s] * ghostAmount);
+        pattern[(size_t) s].isGhost = (deg != 6) && sampleProb (ghostT);
+    }
+
+    resolveApproachNotes();
+    rebuildGridPreview();
+    if (onPatternChanged != nullptr)
+        onPatternChanged();
+}
+
+void BassEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml)
+{
+    juce::ignoreUnused (ml);
+    if (locked)
+        return;
+
+    fromStep0 = juce::jlimit (0, patternLen - 1, fromStep0);
+    toStep0 = juce::jlimit (0, patternLen - 1, toStep0);
+    if (toStep0 < fromStep0)
+        std::swap (fromStep0, toStep0);
+
+    std::array<BassHit, NUM_STEPS> previous = pattern;
+
+    for (int step = fromStep0; step <= toStep0; ++step)
+    {
+        const float t = melodicPreviewDet01 (seed, step, 0xE901u ^ (uint32_t) step * 17389u);
+        if (t < 0.66f && previous[(size_t) step].active)
         {
-            h.velocity = (uint8) jmin (127, (int) h.velocity + 28);
+            pattern[(size_t) step] = previous[(size_t) step];
+            continue;
+        }
+
+        float base = BASS_NOTE_PROBS[style][step];
+        float prob = base + complexityMod (step);
+        prob *= density;
+        prob = jlimit (0.0f, 1.0f, prob);
+        const bool active = sampleProb (prob);
+        pattern[(size_t) step] = BassHit{};
+
+        if (active)
+        {
+            const int prefDeg = BASS_PREFERRED_DEGREE[style][step];
+            const int deg = chooseDegreeProbabilistic (step, prefDeg);
+            const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][step] * ghostAmount);
+            const bool isGhost = (deg != 6) && sampleProb (ghostT);
+            const bool isAccent = (step % 4 == 0) && ! isGhost;
+            int prevMidi = -1;
+            for (int ps = step - 1; ps >= 0; --ps)
+            {
+                if (pattern[(size_t) ps].active)
+                {
+                    prevMidi = pattern[(size_t) ps].midiNote;
+                    break;
+                }
+            }
+            if (prevMidi < 0)
+                for (int ps = step - 1; ps >= 0; --ps)
+                    if (previous[(size_t) ps].active)
+                    {
+                        prevMidi = previous[(size_t) ps].midiNote;
+                        break;
+                    }
+
+            pattern[(size_t) step].active = true;
+            pattern[(size_t) step].degree = deg;
+            pattern[(size_t) step].midiNote = degreeToMidiNote (deg, prevMidi);
+            pattern[(size_t) step].velocity = sampleVelocity (step, isGhost, isAccent);
+            pattern[(size_t) step].isGhost = isGhost;
+            pattern[(size_t) step].timeShift = 0;
         }
     }
+
+    resolveApproachNotes();
+    rebuildGridPreview();
+    if (onPatternChanged != nullptr)
+        onPatternChanged();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -509,12 +642,13 @@ void BassEngine::applyHumanize (double samplesPerStep)
     {
         if (!pattern[(size_t)step].active) continue;
 
-        // Random jitter
-        int jitter = (int)(const_cast<BassEngine*>(this)->rng() % (maxShift * 2 + 1)) - maxShift;
+        const float u = melodicPreviewDet01 (seed, step, 0x48ABu ^ (uint32_t) step * 1103515245u);
+        int jitter = (int) std::lround ((u * 2.0 - 1.0) * (double) maxShift);
 
-        // Add timing-feel offset (pocket)
+        // Residual timing-feel offset: high hold → less micro-shift (hold is primarily note length).
         float feel = BASS_TIMING_FEEL[style][step];
-        int feelOff = (int)(feel * pocket * samplesPerStep);
+        const float tightness = (1.0f - hold * 0.92f) * 0.5f;
+        int feelOff = (int)(feel * tightness * samplesPerStep);
 
         pattern[(size_t)step].timeShift = jitter + feelOff;
     }
@@ -538,14 +672,15 @@ int BassEngine::getSwingOffset (int step, double samplesPerStep) const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Timing feel offset (pocket): separate from swing, applies per-step styling
+// Timing feel offset: separate from swing, applies per-step styling
 // This is pre-baked into timeShift during generation via applyHumanize.
 // This method is here for external callers who want the raw feel value.
 // ─────────────────────────────────────────────────────────────────────────────
 int BassEngine::getTimingFeelOffset (int step, double samplesPerStep) const
 {
     float feel = BASS_TIMING_FEEL[style][step];
-    return (int)(feel * pocket * samplesPerStep);
+    const float tightness = (1.0f - hold * 0.92f) * 0.5f;
+    return (int)(feel * tightness * samplesPerStep);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -566,6 +701,8 @@ int BassEngine::calcNoteDuration (const BassHit& hit, double samplesPerStep) con
         float stacScale = 1.0f - staccato * 0.70f;  // 1.0 → 0.30
         artDur *= stacScale;
     }
+
+    artDur *= juce::jmap (hold, 0.0f, 1.0f, 0.45f, 1.55f);
 
     return jmax (1, (int)(artDur * samplesPerStep));
 }

@@ -44,6 +44,20 @@ private:
     int dragOriginStep = -1;
 };
 
+/** Piano roll + step grid sized to the committed pattern pitch span (scrolls vertically). */
+struct PianoMelodicBody : public juce::Component
+{
+    explicit PianoMelodicBody (BridgeProcessor& p);
+    void resized() override;
+
+    PianoPianoRollComponent roll;
+    PianoGridComponent grid;
+
+private:
+    BridgeProcessor& proc;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PianoMelodicBody)
+};
+
 class PianoLabelledKnob : public juce::Component
 {
 public:
@@ -78,25 +92,30 @@ private:
                                      const juce::String& id, int value);
 
     BridgeProcessor& proc;
+    PianoMelodicBody melodicBody { proc };
     BridgeLookAndFeel laf;
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffbf5af2), PianoPreset::NUM_STEPS };
 
-    
-
-        PianoPianoRollComponent pianoRoll { proc };
-    PianoGridComponent grid { proc };
+    juce::Viewport melodicViewport;
 
     struct StepTimer : public juce::Timer
     {
         PianoPanel& panel;
         StepTimer (PianoPanel& p) : panel (p) {}
-        void timerCallback() override { panel.updateStepAnimation(); }
+        void timerCallback() override
+        {
+            panel.flushDeferredPianoGridPreviewRebuild();
+            panel.updateStepAnimation();
+        }
     } stepTimer { *this };
 
     void updateStepAnimation();
+    void flushDeferredPianoGridPreviewRebuild();
     int  lastAnimStep = -1;
+
+    bool deferredPianoGridPreviewRebuild = false;
 
     void applyPianoPageState();
 

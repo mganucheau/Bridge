@@ -44,6 +44,9 @@ public:
 
     void setFillHoldActive (bool on) { fillHoldActive = on; }
     void rebuildGridPreview();
+    void morphPatternForDensityAndComplexity();
+    void adaptPatternToNewStyle (int newStyleIndex);
+    void evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml);
 
     // ── Parameters ─────────────────────────────────────────────────────────
     void setStyle       (int  s) { style       = jlimit (0, BassPreset::NUM_STYLES - 1, s); }
@@ -54,7 +57,7 @@ public:
     void setDensity     (float d){ density     = jlimit (0.0f,  1.0f,  d); }
     void setSwing       (float s){ swing       = jlimit (0.0f,  1.0f,  s); }
     void setHumanize    (float h){ humanize    = jlimit (0.0f,  1.0f,  h); }
-    void setPocket      (float p){ pocket      = jlimit (0.0f,  1.0f,  p); }  // timing feel intensity
+    void setHold        (float h){ hold        = jlimit (0.0f,  1.0f,  h); }  // note length + residual timing feel
     void setVelocity    (float v){ velocityMul = jlimit (0.0f,  1.0f,  v); }
     void setFillRate    (float f){ fillRate    = jlimit (0.0f,  1.0f,  f); }
     void setComplexity  (float c){ complexity  = jlimit (0.0f,  1.0f,  c); }
@@ -73,7 +76,7 @@ public:
     float getDensity    () const { return density; }
     float getSwing      () const { return swing; }
     float getHumanize   () const { return humanize; }
-    float getPocket     () const { return pocket; }
+    float getHold       () const { return hold; }
     float getVelocity   () const { return velocityMul; }
     float getFillRate   () const { return fillRate; }
     float getComplexity () const { return complexity; }
@@ -99,7 +102,7 @@ public:
     // Swing offset in samples for a given step
     int  getSwingOffset (int step, double samplesPerStep) const;
 
-    // Combined timing feel offset (pocket) in samples
+    // Combined timing feel offset (scaled by hold) in samples
     int  getTimingFeelOffset (int step, double samplesPerStep) const;
 
     // Note duration in samples for a given hit
@@ -129,7 +132,7 @@ private:
     float density     = 0.70f;
     float swing       = 0.0f;
     float humanize    = 0.20f;
-    float pocket      = 0.50f;
+    float hold        = 0.50f;
     float velocityMul = 0.85f;
     float fillRate    = 0.15f;
     float complexity  = 0.50f;

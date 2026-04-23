@@ -21,7 +21,7 @@ struct LeaderStylePresetTest : public juce::UnitTest
 
         beginTest ("bias table shape");
         const auto& balanced = LEADER_STYLE_BIASES[0];
-        expectWithinAbsoluteError (balanced.presence, 0.f, 1.0e-5f);
+        expectWithinAbsoluteError (balanced.hold, 0.f, 1.0e-5f);
         expectWithinAbsoluteError (balanced.tight, 0.f, 1.0e-5f);
         expectWithinAbsoluteError (balanced.unity, 0.f, 1.0e-5f);
         expectWithinAbsoluteError (balanced.breath, 0.f, 1.0e-5f);

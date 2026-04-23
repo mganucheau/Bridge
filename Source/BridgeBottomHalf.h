@@ -24,7 +24,7 @@ private:
 class BridgeBottomHalf : public juce::Component
 {
 public:
-    /** instApvts: per-instrument params (groove, expression, perform). mainApvts: global loop + playback. */
+    /** instApvts: per-instrument params (groove, expression, jam). mainApvts: global loop + playback. */
     BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvts,
                       juce::AudioProcessorValueTreeState& mainApvts,
                       BridgeLookAndFeel& laf,
@@ -44,13 +44,13 @@ private:
     LabelledKnob knobDensity;
     LabelledKnob knobSwing;
     LabelledKnob knobHumanize;
-    LabelledKnob knobPocket;
+    LabelledKnob knobHold;
     LabelledKnob knobVelocity;
 
     juce::Label expressionLabel;
     LabelledKnob knobFillRate;
     LabelledKnob knobComplexity;
-    LabelledKnob knobPresence;
+    LabelledKnob knobSustain;
 
     juce::Label tensionLabel;
     std::unique_ptr<BridgeXYPad> xyTension;
@@ -69,8 +69,8 @@ private:
     juce::Label actionsLabel;
     juce::TextButton generateButton { "GENERATE" };
     juce::TextButton fillButton { "FILL" };
-    juce::TextButton performButton { "JAM" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> performAttach;
+    juce::ComboBox jamIntervalBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> jamIntervalAttach;
 
     std::function<void(bool)> fillHoldCallback;
 

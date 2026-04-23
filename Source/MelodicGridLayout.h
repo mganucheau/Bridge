@@ -8,12 +8,119 @@
 #include "guitar/GuitarEngine.h"
 #include "guitar/GuitarStylePresets.h"
 
-// Shared melodic grid logic: one octave (12 pitch rows) and square cell layout.
+// Shared melodic grid logic: pitch window from the committed pattern (viewport + zoom)
+// and square cell layout.
 
 namespace bridge
 {
 
+/** Legacy default row count when callers still assume a single-octave window. */
 inline constexpr int kMelodicOctaveRows = 12;
+/** Max visible span between lowest and highest MIDI row (pattern extent + padding, clamped). */
+inline constexpr int kMelodicMaxVisibleSpanSemis = 24;
+inline constexpr int kMelodicPitchPadSemis = 2;
+
+inline void computeMelodicPitchWindowFromCommittedPattern (const PianoEngine& engine, int& minMidi, int& maxMidi)
+{
+    int pMin = 127, pMax = 0;
+    const auto& pat = engine.getPattern();
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
+    {
+        const auto& h = pat[(size_t) s];
+        if (! h.active)
+            continue;
+        pMin = juce::jmin (pMin, h.midiNote);
+        pMax = juce::jmax (pMax, h.midiNote);
+    }
+
+    const int root = engine.degreeToMidiNote (0, -1);
+
+    if (pMin > pMax)
+    {
+        minMidi = juce::jlimit (0, 115, (root / 12) * 12);
+        maxMidi = juce::jmin (127, minMidi + 11);
+        return;
+    }
+
+    minMidi = juce::jlimit (0, 127, pMin - kMelodicPitchPadSemis);
+    maxMidi = juce::jlimit (0, 127, pMax + kMelodicPitchPadSemis);
+    const int span = maxMidi - minMidi;
+    if (span > kMelodicMaxVisibleSpanSemis)
+    {
+        const int mid = (minMidi + maxMidi) / 2;
+        minMidi = juce::jlimit (0, 127, mid - kMelodicMaxVisibleSpanSemis / 2);
+        maxMidi = juce::jlimit (0, 127, minMidi + kMelodicMaxVisibleSpanSemis);
+    }
+}
+
+inline void computeMelodicPitchWindowFromCommittedPattern (const BassEngine& engine, int& minMidi, int& maxMidi)
+{
+    int pMin = 127, pMax = 0;
+    const auto& pat = engine.getPattern();
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
+    {
+        const auto& h = pat[(size_t) s];
+        if (! h.active)
+            continue;
+        pMin = juce::jmin (pMin, h.midiNote);
+        pMax = juce::jmax (pMax, h.midiNote);
+    }
+
+    const int root = engine.degreeToMidiNote (0, -1);
+
+    if (pMin > pMax)
+    {
+        minMidi = juce::jlimit (0, 115, (root / 12) * 12);
+        maxMidi = juce::jmin (127, minMidi + 11);
+        return;
+    }
+
+    minMidi = juce::jlimit (0, 127, pMin - kMelodicPitchPadSemis);
+    maxMidi = juce::jlimit (0, 127, pMax + kMelodicPitchPadSemis);
+    const int span = maxMidi - minMidi;
+    if (span > kMelodicMaxVisibleSpanSemis)
+    {
+        const int mid = (minMidi + maxMidi) / 2;
+        minMidi = juce::jlimit (0, 127, mid - kMelodicMaxVisibleSpanSemis / 2);
+        maxMidi = juce::jlimit (0, 127, minMidi + kMelodicMaxVisibleSpanSemis);
+    }
+}
+
+inline void computeMelodicPitchWindowFromCommittedPattern (const GuitarEngine& engine, int& minMidi, int& maxMidi)
+{
+    int pMin = 127, pMax = 0;
+    const auto& pat = engine.getPattern();
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
+    {
+        const auto& h = pat[(size_t) s];
+        if (! h.active)
+            continue;
+        pMin = juce::jmin (pMin, h.midiNote);
+        pMax = juce::jmax (pMax, h.midiNote);
+    }
+
+    const int root = engine.degreeToMidiNote (0, -1);
+
+    if (pMin > pMax)
+    {
+        minMidi = juce::jlimit (0, 115, (root / 12) * 12);
+        maxMidi = juce::jmin (127, minMidi + 11);
+        return;
+    }
+
+    minMidi = juce::jlimit (0, 127, pMin - kMelodicPitchPadSemis);
+    maxMidi = juce::jlimit (0, 127, pMax + kMelodicPitchPadSemis);
+    const int span = maxMidi - minMidi;
+    if (span > kMelodicMaxVisibleSpanSemis)
+    {
+        const int mid = (minMidi + maxMidi) / 2;
+        minMidi = juce::jlimit (0, 127, mid - kMelodicMaxVisibleSpanSemis / 2);
+        maxMidi = juce::jlimit (0, 127, minMidi + kMelodicMaxVisibleSpanSemis);
+    }
+}
 /** Left column: piano roll (melodic) or drum lane labels + M/S (drums). */
 inline constexpr int kMelodicKeyStripWidth = 64;
 /** Loop + step division strip under the instrument control bar. */

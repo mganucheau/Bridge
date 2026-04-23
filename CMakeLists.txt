@@ -16,6 +16,10 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(JUCE)
 
+# When ON, BridgeProcessor exposes small hooks used only by BridgeTests (pending-note flush, etc.).
+# Set OFF for a shipping build that must not carry test-only entry points.
+option(BRIDGE_ENABLE_QA_HOOKS "Expose QA-only hooks in BridgeProcessor for automated tests" ON)
+
 juce_add_plugin(Bridge
     VERSION                     "1.0.0"
     COMPANY_NAME                "Bridge Audio"
@@ -78,6 +82,9 @@ target_compile_definitions(Bridge
         BRIDGE_APP_VERSION=9
         "BRIDGE_UPDATE_MANIFEST_URL=\"${BRIDGE_UPDATE_MANIFEST_URL}\""
 )
+if (BRIDGE_ENABLE_QA_HOOKS)
+    target_compile_definitions(Bridge PRIVATE BRIDGE_ENABLE_QA_HOOKS=1)
+endif()
 
 target_link_libraries(Bridge
     PRIVATE
@@ -149,7 +156,17 @@ target_sources(BridgeTests PRIVATE
     Tests/LeaderStyleTests.cpp
     Tests/PresetConsistencyTests.cpp
     Tests/ProcessorStateTests.cpp
+    Tests/ApvtsLayoutRegistryTests.cpp
+    Tests/StateMigrationTests.cpp
+    Tests/ProcessorMidiAndFlushTests.cpp
+    Tests/TonalityEngineSyncTests.cpp
+    Tests/GridPatternParityTests.cpp
+    Tests/SharedLayoutConstantsTests.cpp
+    Tests/UnifiedStyleRegistryTests.cpp
 )
+if (BRIDGE_ENABLE_QA_HOOKS)
+    target_compile_definitions(BridgeTests PRIVATE BRIDGE_ENABLE_QA_HOOKS=1)
+endif()
 
 target_include_directories(BridgeTests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 

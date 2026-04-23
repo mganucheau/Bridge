@@ -8,6 +8,18 @@
 #include "BridgeScaleHighlight.h"
 #include "guitar/GuitarStylePresets.h"
 
+namespace
+{
+static int currentUnifiedStyleChoiceIndex (juce::AudioProcessorValueTreeState& ap)
+{
+    if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (ap.getParameter ("style")))
+        return c->getIndex();
+    if (ap.getRawParameterValue ("style") != nullptr)
+        return (int) *ap.getRawParameterValue ("style");
+    return 0;
+}
+} // namespace
+
 class FillHoldListener : public juce::MouseListener
 {
 public:
@@ -36,6 +48,31 @@ private:
     juce::TextButton& btn;
 };
 
+// ─── GuitarMelodicBody ───────────────────────────────────────────────────────────
+
+GuitarMelodicBody::GuitarMelodicBody (BridgeProcessor& processor)
+    : roll (processor), grid (processor), proc (processor)
+{
+    addAndMakeVisible (roll);
+    addAndMakeVisible (grid);
+}
+
+void GuitarMelodicBody::resized()
+{
+    const int w = juce::jmax (1, getWidth());
+    int minMidi = 60, maxMidi = 72;
+    bridge::computeMelodicPitchWindowFromCommittedPattern (proc.guitarEngine, minMidi, maxMidi);
+    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
+    const int strip = (int) bridge::kMelodicKeyStripWidth;
+    const int gridW = juce::jmax (1, w - strip);
+    const float cellW = (float) gridW / (float) juce::jmax (1, GuitarPreset::NUM_STEPS);
+    const float cellH = juce::jmin (cellW, 50.0f);
+    const int bodyH = juce::jmax (1, juce::roundToInt (cellH * (float) nRows));
+
+    roll.setBounds (0, 0, strip, bodyH);
+    grid.setBounds (strip, 0, gridW, bodyH);
+}
+
 // ─── GuitarPianoRollComponent ───────────────────────────────────────────────────────
 
 GuitarPianoRollComponent::GuitarPianoRollComponent (BridgeProcessor& p) : proc (p) {}
@@ -44,8 +81,8 @@ void GuitarPianoRollComponent::mouseDown (const juce::MouseEvent& e)
 {
     auto& engine = proc.guitarEngine;
     int low = 60, high = 72;
-    bridge::setOneOctaveMelodicRange (engine, low, high);
-    const int nRows = bridge::kMelodicOctaveRows;
+    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
+    const int nRows = juce::jmax (1, high - low + 1);
     const float rowH = (float) getHeight() / (float) nRows;
     const int row = (int) (e.position.y / juce::jmax (1.0f, rowH));
     const int idx = juce::jlimit (0, nRows - 1, row);
@@ -74,8 +111,8 @@ void GuitarPianoRollComponent::paint (juce::Graphics& g)
     
     auto& engine = proc.guitarEngine;
     int low = 60, high = 72;
-    bridge::setOneOctaveMelodicRange (engine, low, high);
-    int nRows = bridge::kMelodicOctaveRows;
+    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
+    const int nRows = juce::jmax (1, high - low + 1);
     float rowH = full.getHeight() / (float) nRows;
     
     const juce::String names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
@@ -136,8 +173,8 @@ void GuitarGridComponent::paint (juce::Graphics& g)
     g.fillAll();
 
     int minMidi = 60, maxMidi = 72;
-    bridge::setOneOctaveMelodicRange (engine, minMidi, maxMidi);
-    const int nRows = bridge::kMelodicOctaveRows;
+    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
+    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = GuitarPreset::NUM_STEPS;
 
     float cellW = full.getWidth() / (float)nSteps;
@@ -226,8 +263,8 @@ void GuitarGridComponent::mouseDown (const juce::MouseEvent& e)
     auto& engine = proc.guitarEngine;
     auto full = getLocalBounds().toFloat();
     int minMidi = 60, maxMidi = 72;
-    bridge::setOneOctaveMelodicRange (engine, minMidi, maxMidi);
-    const int nRows = bridge::kMelodicOctaveRows;
+    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
+    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = GuitarPreset::NUM_STEPS;
     float cellW = full.getWidth() / (float)nSteps;
     float cellH = full.getHeight() / (float)nRows;
@@ -264,8 +301,8 @@ void GuitarGridComponent::mouseDrag (const juce::MouseEvent& e)
     auto& engine = proc.guitarEngine;
     auto full = getLocalBounds().toFloat();
     int minMidi = 60, maxMidi = 72;
-    bridge::setOneOctaveMelodicRange (engine, minMidi, maxMidi);
-    const int nRows = bridge::kMelodicOctaveRows;
+    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
+    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = GuitarPreset::NUM_STEPS;
     float cellW = full.getWidth() / (float)nSteps;
     float cellH = full.getHeight() / (float)nRows;
@@ -346,12 +383,17 @@ GuitarPanel::GuitarPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("guitarOn", this);
     proc.apvtsMain.addParameterListener ("scale", this);
     proc.apvtsMain.addParameterListener ("rootNote", this);
-    for (const char* id : { "density", "swing", "humanize", "pocket", "velocity", "fillRate", "complexity",
-                            "ghostAmount", "presence", "temperature", "staccato", "intensity" })
+    proc.apvtsMain.addParameterListener ("octave", this);
+    for (const char* id : { "density", "swing", "humanize", "hold", "velocity", "fillRate", "complexity",
+                            "ghostAmount", "sustain", "temperature", "staccato", "intensity" })
         proc.apvtsGuitar.addParameterListener (id, this);
 
-    addAndMakeVisible (pianoRoll);
-    addAndMakeVisible (grid);
+    addAndMakeVisible (melodicViewport);
+    melodicViewport.setViewedComponent (&melodicBody, false);
+    melodicViewport.setScrollBarsShown (true, false);
+    melodicViewport.setScrollBarThickness (10);
+    melodicViewport.getVerticalScrollBar().setLookAndFeel (&laf);
+
     addAndMakeVisible (loopStrip);
     loopStrip.setStepLabelGutter ((int) bridge::kMelodicKeyStripWidth);
     addAndMakeVisible (bottomHalf);
@@ -373,16 +415,18 @@ GuitarPanel::GuitarPanel (BridgeProcessor& p)
 
 GuitarPanel::~GuitarPanel()
 {
+    melodicViewport.getVerticalScrollBar().setLookAndFeel (nullptr);
     proc.apvtsMain.removeParameterListener ("guitarOn", this);
     proc.apvtsMain.removeParameterListener ("scale", this);
     proc.apvtsMain.removeParameterListener ("rootNote", this);
+    proc.apvtsMain.removeParameterListener ("octave", this);
     proc.apvtsMain.removeParameterListener ("loopStart", this);
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
     proc.apvtsMain.removeParameterListener ("playbackLoopOn", this);
     proc.apvtsGuitar.removeParameterListener ("tickerSpeed", this);
     proc.apvtsGuitar.removeParameterListener ("style", this);
-    for (const char* id : { "density", "swing", "humanize", "pocket", "velocity", "fillRate", "complexity",
-                            "ghostAmount", "presence", "temperature", "staccato", "intensity" })
+    for (const char* id : { "density", "swing", "humanize", "hold", "velocity", "fillRate", "complexity",
+                            "ghostAmount", "sustain", "temperature", "staccato", "intensity" })
         proc.apvtsGuitar.removeParameterListener (id, this);
     proc.apvtsGuitar.state.removeListener (this);
 }
@@ -398,7 +442,7 @@ void GuitarPanel::setLoopIntParameter (juce::AudioProcessorValueTreeState& apvts
 
 void GuitarPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&)
 {
-    proc.rebuildGuitarGridPreview();
+    deferredGuitarGridPreviewRebuild = true;
     triggerAsyncUpdate();
 }
 
@@ -409,13 +453,15 @@ void GuitarPanel::applyGuitarPageState()
 
     bottomHalf.setEnabled (on);
     instrumentStrip.setTrackPowered (on);
-    pianoRoll.setEnabled (on);
-    grid.setEnabled (on);
+    melodicViewport.setEnabled (on);
+    melodicBody.roll.setEnabled (on);
+    melodicBody.grid.setEnabled (on);
     loopStrip.setEnabled (on);
 
     const float dim = on ? 1.0f : 0.42f;
-    pianoRoll.setAlpha (dim);
-    grid.setAlpha (dim);
+    melodicViewport.setAlpha (dim);
+    melodicBody.roll.setAlpha (dim);
+    melodicBody.grid.setAlpha (dim);
     loopStrip.setAlpha (dim);
     bottomHalf.setAlpha (dim);
 }
@@ -433,8 +479,18 @@ void GuitarPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentGuitar());
-    pianoRoll.setBounds (card.removeFromLeft ((int) bridge::kMelodicKeyStripWidth));
-    grid.setBounds (card);
+
+    melodicViewport.setBounds (card);
+    const int viewW = juce::jmax (1, melodicViewport.getMaximumVisibleWidth());
+    int minMidi = 60, maxMidi = 72;
+    bridge::computeMelodicPitchWindowFromCommittedPattern (proc.guitarEngine, minMidi, maxMidi);
+    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
+    const int strip = (int) bridge::kMelodicKeyStripWidth;
+    const int gridW = juce::jmax (1, viewW - strip);
+    const float cellW = (float) gridW / (float) juce::jmax (1, GuitarPreset::NUM_STEPS);
+    const float cellH = juce::jmin (cellW, 50.0f);
+    const int bodyH = juce::jmax (1, juce::roundToInt (cellH * (float) nRows));
+    melodicBody.setSize (viewW, bodyH);
 
     bottomHalf.setBounds (shell.bottomStrip);
 }
@@ -463,8 +519,8 @@ void GuitarPanel::paint (juce::Graphics& g)
 
 void GuitarPanel::handleAsyncUpdate()
 {
-    pianoRoll.repaint();
-    grid.repaint();
+    melodicBody.roll.repaint();
+    melodicBody.grid.repaint();
     loopStrip.repaint();
 }
 
@@ -474,17 +530,57 @@ void GuitarPanel::parameterChanged (const juce::String& parameterID, float newVa
     if (parameterID == "guitarOn")
     {
         applyGuitarPageState();
+        proc.rebuildGuitarGridPreview();
+        triggerAsyncUpdate();
         return;
     }
     if (parameterID == "loopStart" || parameterID == "loopEnd" || parameterID == "playbackLoopOn"
-        || parameterID == "scale" || parameterID == "rootNote" || parameterID == "uiTheme")
+        || parameterID == "scale" || parameterID == "rootNote" || parameterID == "octave"
+        || parameterID == "uiTheme")
     {
         loopStrip.repaint();
-        grid.repaint();
-        pianoRoll.repaint();
+        melodicBody.grid.repaint();
+        melodicBody.roll.repaint();
+        resized();
     }
-    proc.rebuildGuitarGridPreview();
+
+    if (parameterID == "density" || parameterID == "complexity")
+    {
+        proc.syncGuitarEngineFromAPVTS();
+        proc.guitarEngine.morphPatternForDensityAndComplexity();
+        triggerAsyncUpdate();
+        return;
+    }
+    if (parameterID == "style")
+    {
+        proc.syncGuitarEngineFromAPVTS();
+        proc.guitarEngine.adaptPatternToNewStyle (
+            bridgeMelodicEngineStyleIndex (currentUnifiedStyleChoiceIndex (proc.apvtsGuitar)));
+        triggerAsyncUpdate();
+        resized();
+        return;
+    }
+
+    if (parameterID == "swing" || parameterID == "humanize" || parameterID == "hold"
+        || parameterID == "velocity" || parameterID == "ghostAmount" || parameterID == "sustain"
+        || parameterID == "temperature" || parameterID == "staccato" || parameterID == "intensity"
+        || parameterID == "fillRate" || parameterID == "tickerSpeed")
+    {
+        proc.rebuildGuitarGridPreview();
+        triggerAsyncUpdate();
+        return;
+    }
+
+    deferredGuitarGridPreviewRebuild = true;
     triggerAsyncUpdate();
+}
+
+void GuitarPanel::flushDeferredGuitarGridPreviewRebuild()
+{
+    if (! deferredGuitarGridPreviewRebuild)
+        return;
+    deferredGuitarGridPreviewRebuild = false;
+    proc.rebuildGuitarGridPreview();
 }
 
 void GuitarPanel::updateStepAnimation()
@@ -493,6 +589,6 @@ void GuitarPanel::updateStepAnimation()
     if (step != lastAnimStep)
     {
         lastAnimStep = step;
-        grid.update (step);
+        melodicBody.grid.update (step);
     }
 }

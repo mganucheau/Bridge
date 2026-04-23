@@ -43,6 +43,20 @@ private:
     int dragOriginStep = -1;
 };
 
+/** Bass roll + step grid sized to the committed pattern pitch span (scrolls vertically). */
+struct BassMelodicBody : public juce::Component
+{
+    explicit BassMelodicBody (BridgeProcessor& p);
+    void resized() override;
+
+    BassPianoRollComponent roll;
+    BassGridComponent grid;
+
+private:
+    BridgeProcessor& proc;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BassMelodicBody)
+};
+
 class BassLabelledKnob : public juce::Component
 {
 public:
@@ -77,23 +91,30 @@ private:
                                      const juce::String& id, int value);
 
     BridgeProcessor& proc;
+    BassMelodicBody melodicBody { proc };
     BridgeLookAndFeel laf;
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xff5ed4c4), BassPreset::NUM_STEPS };
 
-    BassPianoRollComponent pianoRoll { proc };
-    BassGridComponent grid { proc };
+    juce::Viewport melodicViewport;
 
     struct StepTimer : public juce::Timer
     {
         BassPanel& panel;
         StepTimer (BassPanel& p) : panel (p) {}
-        void timerCallback() override { panel.updateStepAnimation(); }
+        void timerCallback() override
+        {
+            panel.flushDeferredBassGridPreviewRebuild();
+            panel.updateStepAnimation();
+        }
     } stepTimer { *this };
 
     void updateStepAnimation();
+    void flushDeferredBassGridPreviewRebuild();
     int  lastAnimStep = -1;
+
+    bool deferredBassGridPreviewRebuild = false;
 
     void applyBassPageState();
 

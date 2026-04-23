@@ -26,6 +26,7 @@ private:
     void syncSoloButtonColours();
     void syncPageSoloToggle();
     void applyLeaderPageState();
+    void flushLeaderStripPreviewIfPending();
 
     struct StripPreview : public juce::Component
     {
@@ -65,6 +66,8 @@ private:
     Row guitarRow;
 
     BridgeBottomHalf bottomHalf;
+
+    bool leaderStripPreviewPending = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainPanel)
 };

@@ -54,11 +54,12 @@ MainPanel::MainPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("leaderTabOn", this);
     for (const char* id : { "mainSoloDrums", "mainSoloBass", "mainSoloPiano", "mainSoloGuitar" })
         proc.apvtsMain.addParameterListener (id, this);
-    for (const char* id : { "presence", "density", "swing", "humanize", "pocket", "velocity", "fillRate",
-                            "complexity", "ghostAmount", "leaderStyle", "perform", "scale", "rootNote" })
+    for (const char* id : { "hold", "density", "swing", "humanize", "velocity", "fillRate",
+                            "complexity", "ghostAmount", "leaderStyle", "scale", "rootNote", "octave" })
         proc.apvtsMain.addParameterListener (id, this);
 
     startTimerHz (30);
+    leaderStripPreviewPending = true;
     syncSoloButtonColours();
     syncPageSoloToggle();
     applyLeaderPageState();
@@ -69,8 +70,8 @@ MainPanel::~MainPanel()
     proc.apvtsMain.removeParameterListener ("leaderTabOn", this);
     for (const char* id : { "mainSoloDrums", "mainSoloBass", "mainSoloPiano", "mainSoloGuitar" })
         proc.apvtsMain.removeParameterListener (id, this);
-    for (const char* id : { "presence", "density", "swing", "humanize", "pocket", "velocity", "fillRate",
-                            "complexity", "ghostAmount", "leaderStyle", "perform", "scale", "rootNote" })
+    for (const char* id : { "hold", "density", "swing", "humanize", "velocity", "fillRate",
+                            "complexity", "ghostAmount", "leaderStyle", "scale", "rootNote", "octave" })
         proc.apvtsMain.removeParameterListener (id, this);
     proc.apvtsMain.state.removeListener (this);
     setLookAndFeel (nullptr);
@@ -87,20 +88,13 @@ void MainPanel::parameterChanged (const juce::String& parameterID, float newValu
         syncPageSoloToggle();
         syncSoloButtonColours();
     }
-    else if (parameterID == "presence" || parameterID == "density" || parameterID == "swing"
-             || parameterID == "humanize" || parameterID == "pocket" || parameterID == "velocity"
+    else if (parameterID == "hold" || parameterID == "density" || parameterID == "swing"
+             || parameterID == "humanize" || parameterID == "velocity"
              || parameterID == "fillRate" || parameterID == "complexity" || parameterID == "ghostAmount"
-             || parameterID == "leaderStyle" || parameterID == "perform" || parameterID == "scale"
-             || parameterID == "rootNote")
+             || parameterID == "leaderStyle" || parameterID == "scale"
+             || parameterID == "rootNote" || parameterID == "octave")
     {
-        proc.rebuildDrumsGridPreview();
-        proc.rebuildBassGridPreview();
-        proc.rebuildPianoGridPreview();
-        proc.rebuildGuitarGridPreview();
-        if (drumsRow.preview != nullptr) drumsRow.preview->repaint();
-        if (bassRow.preview != nullptr) bassRow.preview->repaint();
-        if (pianoRow.preview != nullptr) pianoRow.preview->repaint();
-        if (guitarRow.preview != nullptr) guitarRow.preview->repaint();
+        leaderStripPreviewPending = true;
     }
 }
 
@@ -211,8 +205,20 @@ void MainPanel::valueTreePropertyChanged (juce::ValueTree& vt, const juce::Ident
     juce::ignoreUnused (vt, id);
 }
 
+void MainPanel::flushLeaderStripPreviewIfPending()
+{
+    if (! leaderStripPreviewPending)
+        return;
+    leaderStripPreviewPending = false;
+    proc.rebuildDrumsGridPreview();
+    proc.rebuildBassGridPreview();
+    proc.rebuildPianoGridPreview();
+    proc.rebuildGuitarGridPreview();
+}
+
 void MainPanel::timerCallback()
 {
+    flushLeaderStripPreviewIfPending();
     if (drumsRow.preview) drumsRow.preview->repaint();
     if (bassRow.preview) bassRow.preview->repaint();
     if (pianoRow.preview) pianoRow.preview->repaint();

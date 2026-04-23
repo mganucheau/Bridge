@@ -46,6 +46,10 @@ public:
 
     void positionComboBoxText (juce::ComboBox& box, juce::Label& label) override;
 
+    void drawScrollbar (juce::Graphics& g, juce::ScrollBar& scrollbar, int x, int y, int width, int height,
+                        bool isScrollbarVertical, int thumbStartPosition, int thumbSize,
+                        bool isMouseOver, bool isMouseDown) override;
+
     // Custom configuration flag
     enum class KnobStyle
     {
