@@ -1,4 +1,5 @@
 build/
+bridge_ml.zip
 ml/.venv/
 __pycache__/
 *.py[cod]
