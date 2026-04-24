@@ -51,8 +51,8 @@ private:
 
 // ─── PianoMelodicBody ───────────────────────────────────────────────────────────
 
-PianoMelodicBody::PianoMelodicBody (PianoPanel& panel, BridgeProcessor& processor)
-    : roll (processor), grid (panel, processor)
+PianoMelodicBody::PianoMelodicBody (PianoPanel& panelIn, BridgeProcessor& processor)
+    : roll (processor), grid (panelIn, processor)
 {
     addAndMakeVisible (roll);
     addAndMakeVisible (grid);
@@ -161,8 +161,8 @@ void PianoPianoRollComponent::paint (juce::Graphics& g)
 
 // ─── PianoGridComponent ────────────────────────────────────────────────────────
 
-PianoGridComponent::PianoGridComponent (PianoPanel& panel, BridgeProcessor& p)
-    : parentPanel (panel), proc (p)
+PianoGridComponent::PianoGridComponent (PianoPanel& panelIn, BridgeProcessor& p)
+    : panel (panelIn), proc (p)
 {}
 
 void PianoGridComponent::setCellSize (float w, float h)
@@ -171,19 +171,19 @@ void PianoGridComponent::setCellSize (float w, float h)
     storedCellH = h;
 }
 
-void PianoGridComponent::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+void PianoGridComponent::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
 {
-    if (e.mods.isCommandDown() || e.mods.isCtrlDown())
-    {
-        if (e.mods.isShiftDown())
-            parentPanel.adjustZoomX (wheel.deltaY);
-        else
-            parentPanel.adjustZoomY (wheel.deltaY);
-    }
+    if (e.mods.isCtrlDown() || e.mods.isCommandDown())
+        panel.adjustZoomY (w.deltaY);
+    else if (e.mods.isShiftDown())
+        panel.adjustZoomX (w.deltaY);
     else if (auto* vp = findParentComponentOfClass<juce::Viewport>())
-    {
-        vp->mouseWheelMove (e.getEventRelativeTo (vp), wheel);
-    }
+        vp->mouseWheelMove (e.getEventRelativeTo (vp), w);
+}
+
+void PianoGridComponent::magnify (const juce::MouseEvent&, float scaleFactor)
+{
+    panel.adjustZoomY (scaleFactor - 1.0f);
 }
 
 void PianoGridComponent::paint (juce::Graphics& g)
@@ -437,6 +437,20 @@ PianoPanel::PianoPanel (BridgeProcessor& p)
             par->setValueNotifyingHost (muted ? 0.0f : 1.0f);
     };
 
+    melodicTonalityPrev = std::move (proc.onMelodicTonalityChanged);
+    std::function<void()> storedPrev = melodicTonalityPrev;
+    proc.onMelodicTonalityChanged = [this, before = std::move (melodicTonalityPrev)] () mutable
+    {
+        if (before)
+            before();
+        juce::MessageManager::callAsync ([this]
+        {
+            resized();
+            repaint();
+        });
+    };
+    melodicTonalityPrev = std::move (storedPrev);
+
     proc.rebuildPianoGridPreview();
     stepTimer.startTimerHz (30);
     applyPianoPageState();
@@ -444,6 +458,7 @@ PianoPanel::PianoPanel (BridgeProcessor& p)
 
 PianoPanel::~PianoPanel()
 {
+    proc.onMelodicTonalityChanged = std::move (melodicTonalityPrev);
     melodicViewport.getVerticalScrollBar().setLookAndFeel (nullptr);
     proc.apvtsMain.removeParameterListener ("pianoOn", this);
     proc.apvtsMain.removeParameterListener ("scale", this);
@@ -495,38 +510,40 @@ void PianoPanel::applyPianoPageState()
     bottomHalf.setAlpha (dim);
 }
 
+void PianoPanel::scrollMelodicViewportToPatternCentre()
+{
+    const auto extent = bridge::getPatternMidiExtent (proc.pianoEngine);
+    const int pMin = extent.first;
+    const int pMax = extent.second;
+    const int midMidi = (pMin <= pMax) ? (pMin + pMax) / 2
+                                       : (bridge::kMelodicMinMidi + bridge::kMelodicMaxMidi) / 2;
+    const int spanRows = bridge::kMelodicMaxMidi - bridge::kMelodicMinMidi + 1;
+    const float rowH = (float) melodicBody.getHeight() / (float) spanRows;
+    const int vpH = juce::jmax (1, melodicViewport.getHeight());
+    const int bodyH = melodicBody.getHeight();
+    const int scrollY = juce::jlimit (0, juce::jmax (0, bodyH - vpH),
+                                      (int) ((bridge::kMelodicMaxMidi - midMidi) * rowH) - vpH / 2);
+    melodicViewport.setViewPosition (melodicViewport.getViewPositionX(), scrollY);
+}
+
 void PianoPanel::fitPatternInView()
 {
     zoomX = 1.0f;
     zoomY = 1.0f;
     resized();
-    melodicViewport.setViewPosition (0, 0);
+    scrollMelodicViewportToPatternCentre();
 }
 
-void PianoPanel::adjustZoomX (float wheelDeltaY)
+void PianoPanel::adjustZoomX (float delta)
 {
-    const int oldX = melodicViewport.getViewPositionX();
-    const int oldY = melodicViewport.getViewPositionY();
-    auto* body     = melodicViewport.getViewedComponent();
-    const int oldBw = body != nullptr ? body->getWidth() : 1;
-    const int oldBh = body != nullptr ? body->getHeight() : 1;
-
-    zoomX = juce::jlimit (0.5f, 8.0f, zoomX * (1.0f + wheelDeltaY * 0.25f));
+    zoomX = juce::jlimit (0.4f, 6.0f, zoomX * (1.0f + delta * 0.3f));
     resized();
-    bridge::melodicViewportPreserveCentreAfterBodyResize (melodicViewport, oldX, oldY, oldBw, oldBh);
 }
 
-void PianoPanel::adjustZoomY (float wheelDeltaY)
+void PianoPanel::adjustZoomY (float delta)
 {
-    const int oldX = melodicViewport.getViewPositionX();
-    const int oldY = melodicViewport.getViewPositionY();
-    auto* body     = melodicViewport.getViewedComponent();
-    const int oldBw = body != nullptr ? body->getWidth() : 1;
-    const int oldBh = body != nullptr ? body->getHeight() : 1;
-
-    zoomY = juce::jlimit (0.5f, 8.0f, zoomY * (1.0f + wheelDeltaY * 0.25f));
+    zoomY = juce::jlimit (0.4f, 6.0f, zoomY * (1.0f + delta * 0.3f));
     resized();
-    bridge::melodicViewportPreserveCentreAfterBodyResize (melodicViewport, oldX, oldY, oldBw, oldBh);
 }
 
 void PianoPanel::resized()
@@ -544,7 +561,7 @@ void PianoPanel::resized()
     loopStrip.setAccent (bridge::colors::accentPiano());
 
     melodicViewport.setBounds (card);
-    const int viewW = juce::jmax (1, melodicViewport.getMaximumVisibleWidth());
+    const int viewW = juce::jmax (1, melodicViewport.getWidth());
     const int viewH = juce::jmax (1, melodicViewport.getHeight());
 
     int minMidi = 60, maxMidi = 72;
@@ -558,8 +575,8 @@ void PianoPanel::resized()
     const float cellW     = baseCellW * zoomX;
     const float cellH     = baseCellH * zoomY;
 
-    const int bodyW = strip + (int) std::lround (cellW * (float) nSteps);
-    const int bodyH = juce::jmax (1, (int) std::lround (cellH * (float) nRows));
+    const int bodyW = strip + (int) (cellW * (float) nSteps);
+    const int bodyH = juce::jmax (1, (int) (cellH * (float) nRows));
 
     melodicBody.setMelodicCellSize (cellW, cellH);
     melodicBody.setSize (bodyW, bodyH);

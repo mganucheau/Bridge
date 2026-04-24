@@ -69,8 +69,9 @@ private:
     juce::Label actionsLabel;
     juce::TextButton generateButton { "GENERATE" };
     juce::TextButton fillButton { "FILL" };
-    juce::ComboBox jamIntervalBox;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> jamIntervalAttach;
+    juce::Slider jamKnob { juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> jamKnobAttach;
+    juce::Label jamLabel;
 
     std::function<void(bool)> fillHoldCallback;
 

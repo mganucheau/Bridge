@@ -185,6 +185,7 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
         float ghostTend  = BASS_GHOST_TENDENCY[style][step] * ghostAmount;
         bool  isGhost    = (deg != 6) && sampleProb (ghostTend);
         bool  isAccent   = (step % 4 == 0) && ! isGhost;
+        juce::ignoreUnused (isAccent);
         int midi = degreeToMidiNote (deg, -1);
 
         pattern[(size_t) step].active    = true;
@@ -199,7 +200,10 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
         }
         else
         {
-            pattern[(size_t) step].velocity  = sampleVelocity (step, isGhost, isAccent);
+            uint8 neutralVel = (uint8) juce::jlimit (1, 127, (int) (velocityMul * 100.0f));
+            pattern[(size_t) step].velocity = isGhost
+                ? (uint8) juce::jlimit (1, 64, (int) (velocityMul * 40.0f))
+                : neutralVel;
             pattern[(size_t) step].isGhost   = isGhost;
             pattern[(size_t) step].timeShift   = 0;
         }
@@ -794,7 +798,7 @@ int BassEngine::calcNoteDuration (const BassHit& hit, double samplesPerStep) con
         artDur *= stacScale;
     }
 
-    artDur *= juce::jmap (hold, 0.0f, 1.0f, 0.45f, 1.55f);
+    artDur *= 1.0f + hold * 0.55f;
 
     return jmax (1, (int)(artDur * samplesPerStep));
 }

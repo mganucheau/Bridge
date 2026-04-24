@@ -154,18 +154,19 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
     setupAction (generateButton);
     setupAction (fillButton);
 
-    jamIntervalBox.setTooltip ("Jam: auto-evolve the main loop selection on a beat clock");
-    jamIntervalBox.setColour (juce::ComboBox::backgroundColourId, bridge::colors::knobTrack());
-    jamIntervalBox.setColour (juce::ComboBox::textColourId, bridge::colors::textPrimary());
-    jamIntervalBox.setColour (juce::ComboBox::outlineColourId, bridge::colors::cardOutline());
-    jamIntervalBox.setJustificationType (juce::Justification::centredLeft);
-    if (auto* p = instApvts.getParameter ("jamInterval"))
-        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
-            jamIntervalBox.addItemList (c->choices, 1);
-    addAndMakeVisible (jamIntervalBox);
+    jamKnob.setRange (0, 7, 1);
+    jamKnob.setDoubleClickReturnValue (true, 0.0);
+    jamKnob.setTooltip ("Jam: auto-evolve the main loop selection on a beat clock");
+    BridgeLookAndFeel::setKnobStyle (jamKnob, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent);
     if (instApvts.getParameter ("jamInterval") != nullptr)
-        jamIntervalAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
-            instApvts, "jamInterval", jamIntervalBox);
+        jamKnobAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+            instApvts, "jamInterval", jamKnob);
+    jamLabel.setText ("JAM", juce::dontSendNotification);
+    jamLabel.setJustificationType (juce::Justification::centred);
+    jamLabel.setColour (juce::Label::textColourId, bridge::colors::textDim());
+    jamLabel.setFont (bridge::hig::uiFont (10.0f, "Semibold"));
+    addAndMakeVisible (jamKnob);
+    addAndMakeVisible (jamLabel);
 }
 
 BridgeBottomHalf::~BridgeBottomHalf()
@@ -292,15 +293,16 @@ void BridgeBottomHalf::resized()
     selectorsLabel.setBounds (selArea.removeFromTop (14));
     selArea.removeFromTop (4);
     {
-        const int midW = kLoopBtnSide + kBtnPairGap + kLoopBtnSide;
+        const int midW = kLoopBtnSide;
         const int blockW = kKnobW + kOuterGap + midW + kOuterGap + kKnobW;
         const int x0 = selArea.getX() + (selArea.getWidth() - blockW) / 2;
         const int y0 = selArea.getY() + (selArea.getHeight() - kKnobH) / 2;
-        const int yBtn = selArea.getCentreY() - kLoopBtnSide / 2;
+        const int stackH = kLoopBtnSide + kBtnPairGap + kLoopBtnSide;
+        const int xBtn   = x0 + kKnobW + kOuterGap;
+        const int yTop   = selArea.getCentreY() - stackH / 2;
         knobLoopStart.setBounds (x0, y0, kKnobW, kKnobH);
-        const int xLoop = x0 + kKnobW + kOuterGap;
-        loopPlaybackButton.setBounds (xLoop, yBtn, kLoopBtnSide, kLoopBtnSide);
-        syncIconButton.setBounds (xLoop + kLoopBtnSide + kBtnPairGap, yBtn, kLoopBtnSide, kLoopBtnSide);
+        loopPlaybackButton.setBounds (xBtn, yTop, kLoopBtnSide, kLoopBtnSide);
+        syncIconButton.setBounds (xBtn, yTop + kLoopBtnSide + kBtnPairGap, kLoopBtnSide, kLoopBtnSide);
         knobLoopEnd.setBounds (x0 + kKnobW + kOuterGap + midW + kOuterGap, y0, kKnobW, kKnobH);
     }
 
@@ -318,6 +320,8 @@ void BridgeBottomHalf::resized()
         r2.removeFromLeft (btnGap);
         fillButton.setBounds (r2.removeFromLeft (btnW));
         r2.removeFromLeft (btnGap);
-        jamIntervalBox.setBounds (r2);
+        auto jamArea = r2;
+        jamLabel.setBounds (jamArea.removeFromBottom (14));
+        jamKnob.setBounds (jamArea.reduced (2, 0));
     }
 }

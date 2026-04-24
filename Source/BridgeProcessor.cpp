@@ -380,6 +380,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
 juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    // Defaults aligned with melodic: swing, humanize, fill, velocity, hold at 0 where present.
 
     juce::StringArray styleNames;
     for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
@@ -428,6 +429,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsL
 static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (int defaultMidiChannel)
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
+    // Groove / expression defaults: swing, humanize, fill, velocity, hold, staccato at 0 (neutral).
 
     juce::StringArray styleNames;
     for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
@@ -795,6 +797,8 @@ void BridgeProcessor::parameterChanged (const juce::String& parameterID, float n
             ed->notifyGuitarPatternChanged();
             ed->repaint();
         }
+        if (onMelodicTonalityChanged)
+            onMelodicTonalityChanged();
         return;
     }
 
@@ -1429,42 +1433,26 @@ void BridgeProcessor::markMelodicPreviewFlushIfMessageThread()
 
 void BridgeProcessor::servicePianoSustainPedal (juce::MidiBuffer& midi, bool phraseBoundary)
 {
+    juce::ignoreUnused (phraseBoundary);
     const float s = readApvts01 (apvtsPiano, "sustain", 0.f);
     const int ch = juce::jlimit (1, 16, pianoMidiChannel);
 
-    if (s < 0.02f)
+    if (s <= 0.0f)
     {
-        if (pianoSustainLatchDown)
+        if (lastPianoSustainCc64Value != 0)
         {
             midi.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), 0);
-            pianoSustainLatchDown = false;
+            lastPianoSustainCc64Value = 0;
         }
-        return;
-    }
-
-    if (s > 0.98f)
-    {
-        if (! pianoSustainLatchDown)
-        {
-            midi.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 127), 0);
-            pianoSustainLatchDown = true;
-        }
-        return;
-    }
-
-    if (! phraseBoundary)
-        return;
-
-    const float liftProb = juce::jmap (s, 0.02f, 0.98f, 0.10f, 0.58f);
-    if (pianoSustainLatchDown && pianoSustainRng.nextFloat() < liftProb)
-    {
-        midi.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), 0);
         pianoSustainLatchDown = false;
+        return;
     }
-    else if (! pianoSustainLatchDown
-             && pianoSustainRng.nextFloat() < juce::jmap (s, 0.02f, 0.98f, 0.35f, 0.72f))
+
+    const int ccVal = juce::jlimit (1, 127, juce::roundToInt (s * 127.0f));
+    if (ccVal != lastPianoSustainCc64Value)
     {
-        midi.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 127), 0);
+        midi.addEvent (juce::MidiMessage::controllerEvent (ch, 64, ccVal), 0);
+        lastPianoSustainCc64Value = ccVal;
         pianoSustainLatchDown = true;
     }
 }
@@ -1984,6 +1972,7 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             midiMessages.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), 0);
         }
         pianoSustainLatchDown = false;
+        lastPianoSustainCc64Value = 0;
         pianoCurrentStep.store (-1);
         pianoCurrentVisualStep.store (-1);
     }
@@ -2018,6 +2007,7 @@ void BridgeProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
             midiMessages.addEvent (juce::MidiMessage::controllerEvent (ch, 64, 0), 0);
         }
         pianoSustainLatchDown = false;
+        lastPianoSustainCc64Value = 0;
         midiSampleClock += numSamples;
         return;
     }

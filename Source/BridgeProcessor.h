@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <functional>
 #include <memory>
 #include "drums/DrumEngine.h"
 #include "bass/BassEngine.h"
@@ -132,6 +133,9 @@ public:
     /** Preview note from UI (audio thread drains). */
     void queueMelodicPreviewNote (int midiChannel, int noteNumber, int velocity);
 
+    /** Melodic panels register (chain) to refresh layout after root/scale/octave remap. */
+    std::function<void()> onMelodicTonalityChanged;
+
     /** Current PPQ per pattern step from main "timeDivision" param (phase A: one bar = 16 steps). */
     double getMainPpqPerStep() const noexcept;
 
@@ -213,7 +217,7 @@ private:
 
     std::atomic<bool> melodicPreviewFlushPending { false };
     bool pianoSustainLatchDown = false;
-    juce::Random pianoSustainRng { 0xC0FF33u };
+    int  lastPianoSustainCc64Value = -1;
 
     void flushPendingNoteOffs (juce::Array<PendingOff>& pending, juce::MidiBuffer& midi);
     void markMelodicPreviewFlushIfMessageThread();

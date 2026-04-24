@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cmath>
+#include <utility>
 #include <JuceHeader.h>
 #include "bass/BassEngine.h"
 #include "bass/BassStylePresets.h"
@@ -41,79 +42,30 @@ inline void melodicViewportPreserveCentreAfterBodyResize (juce::Viewport& vp,
 
 /** Legacy default row count when callers still assume a single-octave window. */
 inline constexpr int kMelodicOctaveRows = 12;
-/** Max visible span between lowest and highest MIDI row (pattern extent + padding, clamped). */
-inline constexpr int kMelodicMaxVisibleSpanSemis = 24;
-inline constexpr int kMelodicPitchPadSemis = 2;
+inline constexpr int kMelodicPitchPadSemis = 0;
+/** Fixed piano-roll pitch span (C0–C6); viewport scrolls and zoom scales row height. */
+inline constexpr int kMelodicMinMidi = 12;
+inline constexpr int kMelodicMaxMidi = 84;
 
-inline void computeMelodicPitchWindowFromCommittedPattern (const PianoEngine& engine, int& minMidi, int& maxMidi)
+inline void computeMelodicPitchWindowFromCommittedPattern (const PianoEngine&, int& minMidi, int& maxMidi)
 {
-    int pMin = 127, pMax = 0;
-    const auto& pat = engine.getPattern();
-    const int plen = engine.getPatternLen();
-    for (int s = 0; s < plen; ++s)
-    {
-        const auto& h = pat[(size_t) s];
-        if (! h.active)
-            continue;
-        pMin = juce::jmin (pMin, h.midiNote);
-        pMax = juce::jmax (pMax, h.midiNote);
-    }
-
-    const int root = engine.degreeToMidiNote (0, -1);
-
-    if (pMin > pMax)
-    {
-        minMidi = juce::jlimit (0, 115, (root / 12) * 12);
-        maxMidi = juce::jmin (127, minMidi + 11);
-        return;
-    }
-
-    minMidi = juce::jlimit (0, 127, pMin - kMelodicPitchPadSemis);
-    maxMidi = juce::jlimit (0, 127, pMax + kMelodicPitchPadSemis);
-    const int span = maxMidi - minMidi;
-    if (span > kMelodicMaxVisibleSpanSemis)
-    {
-        const int mid = (minMidi + maxMidi) / 2;
-        minMidi = juce::jlimit (0, 127, mid - kMelodicMaxVisibleSpanSemis / 2);
-        maxMidi = juce::jlimit (0, 127, minMidi + kMelodicMaxVisibleSpanSemis);
-    }
+    minMidi = kMelodicMinMidi;
+    maxMidi = kMelodicMaxMidi;
 }
 
-inline void computeMelodicPitchWindowFromCommittedPattern (const BassEngine& engine, int& minMidi, int& maxMidi)
+inline void computeMelodicPitchWindowFromCommittedPattern (const BassEngine&, int& minMidi, int& maxMidi)
 {
-    int pMin = 127, pMax = 0;
-    const auto& pat = engine.getPattern();
-    const int plen = engine.getPatternLen();
-    for (int s = 0; s < plen; ++s)
-    {
-        const auto& h = pat[(size_t) s];
-        if (! h.active)
-            continue;
-        pMin = juce::jmin (pMin, h.midiNote);
-        pMax = juce::jmax (pMax, h.midiNote);
-    }
-
-    const int root = engine.degreeToMidiNote (0, -1);
-
-    if (pMin > pMax)
-    {
-        minMidi = juce::jlimit (0, 115, (root / 12) * 12);
-        maxMidi = juce::jmin (127, minMidi + 11);
-        return;
-    }
-
-    minMidi = juce::jlimit (0, 127, pMin - kMelodicPitchPadSemis);
-    maxMidi = juce::jlimit (0, 127, pMax + kMelodicPitchPadSemis);
-    const int span = maxMidi - minMidi;
-    if (span > kMelodicMaxVisibleSpanSemis)
-    {
-        const int mid = (minMidi + maxMidi) / 2;
-        minMidi = juce::jlimit (0, 127, mid - kMelodicMaxVisibleSpanSemis / 2);
-        maxMidi = juce::jlimit (0, 127, minMidi + kMelodicMaxVisibleSpanSemis);
-    }
+    minMidi = kMelodicMinMidi;
+    maxMidi = kMelodicMaxMidi;
 }
 
-inline void computeMelodicPitchWindowFromCommittedPattern (const GuitarEngine& engine, int& minMidi, int& maxMidi)
+inline void computeMelodicPitchWindowFromCommittedPattern (const GuitarEngine&, int& minMidi, int& maxMidi)
+{
+    minMidi = kMelodicMinMidi;
+    maxMidi = kMelodicMaxMidi;
+}
+
+inline std::pair<int, int> getPatternMidiExtent (const PianoEngine& engine)
 {
     int pMin = 127, pMax = 0;
     const auto& pat = engine.getPattern();
@@ -126,25 +78,39 @@ inline void computeMelodicPitchWindowFromCommittedPattern (const GuitarEngine& e
         pMin = juce::jmin (pMin, h.midiNote);
         pMax = juce::jmax (pMax, h.midiNote);
     }
+    return { pMin, pMax };
+}
 
-    const int root = engine.degreeToMidiNote (0, -1);
-
-    if (pMin > pMax)
+inline std::pair<int, int> getPatternMidiExtent (const BassEngine& engine)
+{
+    int pMin = 127, pMax = 0;
+    const auto& pat = engine.getPattern();
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
     {
-        minMidi = juce::jlimit (0, 115, (root / 12) * 12);
-        maxMidi = juce::jmin (127, minMidi + 11);
-        return;
+        const auto& h = pat[(size_t) s];
+        if (! h.active)
+            continue;
+        pMin = juce::jmin (pMin, h.midiNote);
+        pMax = juce::jmax (pMax, h.midiNote);
     }
+    return { pMin, pMax };
+}
 
-    minMidi = juce::jlimit (0, 127, pMin - kMelodicPitchPadSemis);
-    maxMidi = juce::jlimit (0, 127, pMax + kMelodicPitchPadSemis);
-    const int span = maxMidi - minMidi;
-    if (span > kMelodicMaxVisibleSpanSemis)
+inline std::pair<int, int> getPatternMidiExtent (const GuitarEngine& engine)
+{
+    int pMin = 127, pMax = 0;
+    const auto& pat = engine.getPattern();
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
     {
-        const int mid = (minMidi + maxMidi) / 2;
-        minMidi = juce::jlimit (0, 127, mid - kMelodicMaxVisibleSpanSemis / 2);
-        maxMidi = juce::jlimit (0, 127, minMidi + kMelodicMaxVisibleSpanSemis);
+        const auto& h = pat[(size_t) s];
+        if (! h.active)
+            continue;
+        pMin = juce::jmin (pMin, h.midiNote);
+        pMax = juce::jmax (pMax, h.midiNote);
     }
+    return { pMin, pMax };
 }
 /** Left column: piano roll (melodic) or drum lane labels + M/S (drums). */
 inline constexpr int kMelodicKeyStripWidth = 64;

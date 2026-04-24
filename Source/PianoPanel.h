@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <JuceHeader.h>
 #include "BridgeProcessor.h"
 #include "piano/PianoStylePresets.h"
@@ -39,12 +40,13 @@ public:
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel) override;
+    void magnify (const juce::MouseEvent& e, float scaleFactor);
     void resized  () override;
     void update   (int activeStep);
     void setCellSize (float w, float h);
 
 private:
-    PianoPanel&      parentPanel;
+    PianoPanel&      panel;
     BridgeProcessor& proc;
     float storedCellW = 1.0f;
     float storedCellH = 1.0f;
@@ -97,11 +99,14 @@ public:
     float zoomX = 1.0f;
     float zoomY = 1.0f;
 
-    void adjustZoomX (float wheelDeltaY);
-    void adjustZoomY (float wheelDeltaY);
+    void adjustZoomX (float delta);
+    void adjustZoomY (float delta);
     void fitPatternInView();
 
 private:
+    void scrollMelodicViewportToPatternCentre();
+    std::function<void()> melodicTonalityPrev;
+
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     void parameterChanged (const juce::String& parameterID, float newValue) override;
 
