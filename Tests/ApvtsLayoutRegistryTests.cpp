@@ -87,7 +87,7 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         expectNoParam (*this, proc.apvtsPiano, "presence");
         expectNoParam (*this, proc.apvtsGuitar, "presence");
 
-        beginTest ("Fresh processor: groove-style floats default to 0, density and complexity to 0.5");
+        beginTest ("Fresh processor: groove-style floats default to 0 (drums velocity modest default), density and complexity to 0.5");
 
         auto near = [this] (float a, float b, const char* label)
         {
@@ -103,7 +103,7 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         near ((float) *proc.apvtsMain.getRawParameterValue ("complexity"), 0.5f, "main complexity");
 
         near ((float) *proc.apvtsDrums.getRawParameterValue ("humanize"), 0.f, "drums humanize");
-        near ((float) *proc.apvtsDrums.getRawParameterValue ("velocity"), 0.f, "drums velocity");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("velocity"), 0.72f, "drums velocity");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("fillRate"), 0.f, "drums fillRate");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("hold"), 0.f, "drums hold");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("ghostAmount"), 0.f, "drums ghostAmount");

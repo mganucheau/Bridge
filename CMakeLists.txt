@@ -179,6 +179,7 @@ target_compile_definitions(BridgeTests PRIVATE
 
 target_link_libraries(BridgeTests PRIVATE
     Bridge
+    $<TARGET_NAME_IF_EXISTS:BridgeMLModels>
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_core

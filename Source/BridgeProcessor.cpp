@@ -380,7 +380,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
 juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
-    // Defaults aligned with melodic: swing, humanize, fill, velocity, hold at 0 where present.
+    // Swing, humanize, fill, hold at 0 (neutral). Drums velocity starts above 0 so GM hits stay
+    // audible after leader gain; melodic lanes keep velocity at 0 for neutral expression.
 
     juce::StringArray styleNames;
     for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
@@ -390,7 +391,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsL
     layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.72f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.5f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("hold",        "Hold",        0.0f,  1.0f, 0.0f));
@@ -1478,14 +1479,19 @@ void BridgeProcessor::scheduleDrumsNotesForStep (int globalStep, int wrappedStep
         int humanOff = hits[(size_t) drum].timeShift;
         int finalOff = juce::jlimit (0, samplesPerBlock - 1, sampleOffset + swingOff + humanOff);
 
+        // GM drum map (see DRUM_MIDI_NOTES); default MIDI channel 10 — drum racks must listen on
+        // that channel (or omni). Melodic instruments on ch 1 only will play bass, not drums.
         const int midiNote = juce::jlimit (1, 127, (int) DRUM_MIDI_NOTES[drum]);
         float g = leaderMidiGain (apvtsMain);
-        uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) hits[(size_t) drum].velocity * g + 0.5f));
+        const int velInt = juce::roundToInt ((float) hits[(size_t) drum].velocity * g);
+        uint8 vel = (uint8) juce::jlimit (1, 127, velInt);
 
         const int midiChannel = drumsMidiChannel;
         midi.addEvent (juce::MidiMessage::noteOn  (midiChannel, midiNote, vel), finalOff);
 
-        int64 offAt = midiSampleClock + finalOff + (int64)(sampleRate * 0.05);
+        const int64 gateSamples = juce::jmax ((int64) (sampleRate * 0.05),
+                                              (int64) (samplesPerStep * 0.18));
+        int64 offAt = midiSampleClock + finalOff + gateSamples;
         drumsPendingNoteOffs.add ({ midiChannel, midiNote, offAt });
     }
 }
