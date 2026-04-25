@@ -308,7 +308,9 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     proc.apvtsDrums.addParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.addParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
-                            "hold", "ghostAmount", "intensity" })
+                            "hold", "ghostAmount", "intensity",
+                            "lockKick", "lockSnare", "lockHats", "lockPerc",
+                            "life", "hatOpen", "velShape" })
         proc.apvtsDrums.addParameterListener (id, this);
     proc.apvtsDrums.state.addListener (this);
 
@@ -319,6 +321,18 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     loopStrip.setStepLabelGutter ((int) bridge::kMelodicKeyStripWidth);
     addAndMakeVisible (bottomHalf);
     addAndMakeVisible (instrumentStrip);
+    addAndMakeVisible (velocityStrip);
+
+    velocityStrip.velocityAt = [this] (int step) -> int
+    {
+        const auto& pat = proc.drumEngine.getPatternForGrid();
+        if (step < 0 || step >= NUM_STEPS) return 0;
+        int maxV = 0;
+        for (int drum = 0; drum < NUM_DRUMS; ++drum)
+            if (pat[(size_t) step][(size_t) drum].active)
+                maxV = juce::jmax (maxV, (int) pat[(size_t) step][(size_t) drum].velocity);
+        return maxV;
+    };
 
     instrumentStrip.getMuteButton().setTooltip ("Mute Drums");
     instrumentStrip.getSoloButton().setTooltip ("Solo Drums");
@@ -343,7 +357,9 @@ DrumsPanel::~DrumsPanel()
     proc.apvtsDrums.removeParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.removeParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
-                            "hold", "ghostAmount", "intensity" })
+                            "hold", "ghostAmount", "intensity",
+                            "lockKick", "lockSnare", "lockHats", "lockPerc",
+                            "life", "hatOpen", "velShape" })
         proc.apvtsDrums.removeParameterListener (id, this);
     proc.apvtsDrums.state.removeListener (this);
     setLookAndFeel (nullptr);
@@ -393,7 +409,13 @@ void DrumsPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentDrums());
+    auto velStripRow = card.removeFromBottom (18);
+    velocityStrip.setBounds (velStripRow.reduced ((int) bridge::kMelodicKeyStripWidth, 0).withTrimmedTop (2));
     drumGrid.setBounds (card);
+
+    int ls = 1, le = NUM_STEPS;
+    proc.getDrumsLoopBounds (ls, le);
+    velocityStrip.setStepRange (ls - 1, le - 1);
 
     bottomHalf.setBounds (shell.bottomStrip);
 }

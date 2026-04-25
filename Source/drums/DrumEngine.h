@@ -26,10 +26,26 @@ public:
     DrumEngine();
 
     // ── Generation ─────────────────────────────────────────────────────────
+    /** Sting-style per-layer locks: when a layer is locked, generate copies that layer from the
+        previous pattern instead of regenerating it. Layer 0 = kick, 1 = snare, 2 = hats, 3 = perc. */
+    struct LayerMask
+    {
+        bool kick  = false;
+        bool snare = false;
+        bool hats  = false;
+        bool perc  = false;
+
+        bool any() const noexcept { return kick || snare || hats || perc; }
+    };
+
     void generatePattern (bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
     /** Regenerate only steps from0..to0 inclusive (pattern indices 0..NUM_STEPS-1). */
     void generatePatternRange (int from0, int to0, bool seamlessPerform = false, BridgeMLManager* ml = nullptr);
     void generateFill (int fromStep = 12);  // from step 12 = last 4 steps
+
+    /** Set per-layer lock state used by the next generate*. */
+    void setLayerLocks (LayerMask m) noexcept { layerLocks = m; }
+    LayerMask getLayerLocks() const noexcept { return layerLocks; }
 
     // ── Pattern access ─────────────────────────────────────────────────────
     const DrumStep& getStep (int step) const
@@ -95,6 +111,23 @@ public:
     void captureMLContext();
     void mergePatternFromML (const std::vector<float>& mlOutput);
 
+    // ── Sting/Session features ─────────────────────────────────────────────
+    /** 0 = static, 1 = constantly breathing. Drives a slow LFO over humanize / velocity at
+        playback time without rewriting the pattern. */
+    void  setLifeAmount (float v) noexcept { lifeAmount = juce::jlimit (0.f, 1.f, v); }
+    float getLifeAmount() const noexcept   { return lifeAmount; }
+
+    /** Closed/open hat balance for articulation. */
+    void  setHatOpen (float v) noexcept { hatOpen = juce::jlimit (0.f, 1.f, v); }
+    float getHatOpen() const noexcept   { return hatOpen; }
+
+    /** Velocity contour macro (0 flat, 1 accent, 2 crescendo, 3 decrescendo). */
+    void setVelShape (int s) noexcept { velShape = juce::jlimit (0, 3, s); }
+    int  getVelShape() const noexcept { return velShape; }
+
+    /** Per-step activity (max velocity per step / 127) — exported for melodic followers. */
+    std::array<float, NUM_STEPS> getStepActivityGrid() const noexcept;
+
     // Called each bar — may auto-trigger a fill based on fillRate
     bool shouldTriggerFill();
 
@@ -135,6 +168,11 @@ private:
 
     std::array<float, 10> mlPersonalityKnobs {};
     std::array<float, 32> mlPriorHits {};
+
+    LayerMask layerLocks {};
+    float     lifeAmount = 0.0f;
+    float     hatOpen    = 0.0f;
+    int       velShape   = 1; // 0 flat, 1 accent, 2 crescendo, 3 decrescendo
 
     static float pseudoRandom01 (uint32_t salt);
     bool         rollHitFromProbability (float prob, uint32_t salt) const;

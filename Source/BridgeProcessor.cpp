@@ -296,6 +296,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate", "Fill Rate", 0.f, 1.f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity", "Complexity", 0.f, 1.f, 0.50f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost", 0.f, 1.f, 0.0f));
+    // Sting/Session ideas (Phase A–F): per-section macro and section chooser live on main APVTS so
+    // every instrument can lerp uniformly. Defaults are neutral so existing presets sound the same.
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("arrSection", "Section",
+                                                              juce::StringArray { "Intro", "Verse", "Chorus", "Bridge", "Outro" }, 1));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("sectionIntensity", "Section intensity", 0.f, 1.f, 0.50f));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart", "Loop Start", 1, 16, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd", "Loop End", 1, 16, 16));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On (legacy)", false));
@@ -424,6 +429,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsL
                                                                 false));
     }
 
+    // Sting-style per-layer locks. Generate copies locked layers from the previous pattern so
+    // the drummer can iterate on a single layer (e.g. snare) without losing the rest.
+    layout.add (std::make_unique<juce::AudioParameterBool> ("lockKick",  "Lock Kick",  false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("lockSnare", "Lock Snare", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("lockHats",  "Lock Hats",  false));
+    layout.add (std::make_unique<juce::AudioParameterBool> ("lockPerc",  "Lock Perc",  false));
+
+    // Continuous "Life" drift (Sting/Session-style aliveness). 0 = static, 1 = constantly breathing.
+    // Drives a slow LFO over humanize / velocity at runtime; pattern notes themselves stay stable.
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("life", "Life", 0.f, 1.f, 0.0f));
+
+    // Articulation macro for the hat layer (closed -> open balance).
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("hatOpen", "Hat Open", 0.f, 1.f, 0.0f));
+
+    // Velocity contour shape for the per-step velocity strip; macro before per-step editing lands.
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("velShape", "Vel Shape",
+                                                              juce::StringArray { "Flat", "Accent", "Crescendo", "Decrescendo" }, 1));
+
     return layout;
 }
 
@@ -470,6 +493,28 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
     layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On", false));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Speed",
                                                               juce::StringArray { "x2", "1", "1/2" }, 1));
+
+    // Continuous "Life" drift; slowly modulates humanize / velocity at runtime so loops breathe.
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("life",         "Life",         0.f, 1.f, 0.0f));
+    // Continuous melody/motion control: 0 stays anchored on the preferred degree, 1 walks freely.
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("melody",       "Melody",       0.f, 1.f, 0.5f));
+    // Follow rhythm strength: 0 ignores the drummer, 1 strongly biases onsets toward drum activity.
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("followRhythm", "Follow Drums", 0.f, 1.f, 0.0f));
+
+    // Velocity contour shape for the per-step velocity strip.
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("velShape", "Vel Shape",
+                                                              juce::StringArray { "Flat", "Accent", "Crescendo", "Decrescendo" }, 0));
+
+    // Per-instrument articulation macros surfaced for the engine and MIDI output.
+    if (defaultMidiChannel == 1) // Bass
+        layout.add (std::make_unique<juce::AudioParameterFloat> ("slideAmt", "Slide", 0.f, 1.f, 0.0f));
+    else if (defaultMidiChannel == 2) // Piano
+        layout.add (std::make_unique<juce::AudioParameterFloat> ("voicingSpread", "Voicing", 0.f, 1.f, 0.5f));
+    else if (defaultMidiChannel == 3) // Guitar
+    {
+        layout.add (std::make_unique<juce::AudioParameterFloat> ("palmMute",       "Palm Mute", 0.f, 1.f, 0.0f));
+        layout.add (std::make_unique<juce::AudioParameterFloat> ("strumIntensity", "Strum",     0.f, 1.f, 0.5f));
+    }
 
     return layout;
 }
@@ -525,6 +570,8 @@ BridgeProcessor::BridgeProcessor()
     apvtsMain.addParameterListener ("rootNote", this);
     apvtsMain.addParameterListener ("octave", this);
     apvtsMain.addParameterListener ("uiTheme", this);
+    apvtsMain.addParameterListener ("arrSection", this);
+    apvtsMain.addParameterListener ("sectionIntensity", this);
 
     lastSpanLockStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
     lastSpanLockEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
@@ -547,6 +594,8 @@ BridgeProcessor::~BridgeProcessor()
     apvtsMain.removeParameterListener ("scale", this);
     apvtsMain.removeParameterListener ("rootNote", this);
     apvtsMain.removeParameterListener ("octave", this);
+    apvtsMain.removeParameterListener ("arrSection", this);
+    apvtsMain.removeParameterListener ("sectionIntensity", this);
     apvtsMain.removeParameterListener ("uiTheme", this);
 }
 
@@ -574,6 +623,51 @@ void BridgeProcessor::refreshChordsBassHintFromBass()
                 ? juce::jlimit (0.0f, 1.0f, (float) bp[(size_t) s].velocity / 127.0f)
                 : 0.0f;
     pianoEngine.setChordsMLBassHint (hint);
+}
+
+void BridgeProcessor::applyArrangementMacro (float& density, float& complexity, bool isDrums) const
+{
+    int section = 1;
+    if (auto* p = const_cast<juce::AudioProcessorValueTreeState&> (apvtsMain).getParameter ("arrSection"))
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+            section = c->getIndex();
+    float intensity = 0.5f;
+    if (auto* v = const_cast<juce::AudioProcessorValueTreeState&> (apvtsMain).getRawParameterValue ("sectionIntensity"))
+        intensity = juce::jlimit (0.f, 1.f, v->load());
+
+    // Section targets: density/complexity offsets at full sectionIntensity (1.0).
+    // Intro/Outro pull back, Verse stays neutral, Chorus pushes forward, Bridge sits between.
+    struct Target { float dens; float complx; };
+    static constexpr Target kDrumTargets[5] = {
+        {-0.20f, -0.15f}, // Intro
+        {-0.05f, -0.05f}, // Verse
+        { 0.20f,  0.15f}, // Chorus
+        { 0.05f,  0.10f}, // Bridge
+        {-0.30f, -0.20f}, // Outro
+    };
+    static constexpr Target kMelodicTargets[5] = {
+        {-0.15f, -0.20f}, // Intro
+        { 0.00f, -0.05f}, // Verse
+        { 0.18f,  0.18f}, // Chorus
+        { 0.10f,  0.20f}, // Bridge
+        {-0.25f, -0.25f}, // Outro
+    };
+    section = juce::jlimit (0, 4, section);
+    const Target t = isDrums ? kDrumTargets[section] : kMelodicTargets[section];
+    density    = juce::jlimit (0.f, 1.f, density    + t.dens   * intensity);
+    complexity = juce::jlimit (0.f, 1.f, complexity + t.complx * intensity);
+}
+
+void BridgeProcessor::publishDrumActivityToFollowers()
+{
+    // Drums export 16 floats of step activity; melodic engines use it as a soft prior on onsets.
+    const auto act = drumEngine.getStepActivityGrid();
+    std::array<float, 16> grid {};
+    for (size_t i = 0; i < 16; ++i)
+        grid[i] = act[i];
+    bassEngine.setRhythmActivityHint (grid);
+    pianoEngine.setRhythmActivityHint (grid);
+    guitarEngine.setRhythmActivityHint (grid);
 }
 
 void BridgeProcessor::syncDrumsMLPersonalityToEngine()
@@ -615,6 +709,7 @@ void BridgeProcessor::prepareToPlay (double sr, int spb)
     bassPendingNoteOffs.clear();
     syncBassEngineFromAPVTS();
     refreshBassKickHintFromDrums();
+    publishDrumActivityToFollowers();
     bassEngine.generatePattern (false, mlManager.get());
     bassEngine.rebuildGridPreview();
     refreshChordsBassHintFromBass();
@@ -768,6 +863,16 @@ void BridgeProcessor::parameterChanged (const juce::String& parameterID, float n
         return;
     }
 
+    // Section macro: re-sync engines so per-instrument density/complexity targets glide in.
+    if (parameterID == "arrSection" || parameterID == "sectionIntensity")
+    {
+        syncDrumsEngineFromAPVTS();
+        syncBassEngineFromAPVTS();
+        syncPianoEngineFromAPVTS();
+        syncGuitarEngineFromAPVTS();
+        return;
+    }
+
     if (parameterID == "scale" || parameterID == "rootNote" || parameterID == "octave")
     {
         const int oldBassBase = bassEngine.getRootMidiBase();
@@ -914,6 +1019,8 @@ void BridgeProcessor::syncDrumsEngineFromAPVTS()
     complexity = juce::jmin (1.f, complexity + 0.22f * L.complexity);
     velocity  = juce::jmin (1.f, velocity * (0.90f + 0.14f * L.humanize));
 
+    applyArrangementMacro (density, complexity, /*isDrums*/ true);
+
     drumEngine.setDensity    (density);
     drumEngine.setSwing      (swing);
     drumEngine.setHumanize   (humanize);
@@ -940,6 +1047,18 @@ void BridgeProcessor::syncDrumsEngineFromAPVTS()
         drumsLaneSolo[(size_t) drum] = ((bool) *apvtsDrums.getRawParameterValue ("solo_" + juce::String (drum)));
         drumsAnySolo = drumsAnySolo || drumsLaneSolo[(size_t) drum];
     }
+
+    // Sting/Session: layer locks, life drift, hat-open articulation, vel-shape macro.
+    DrumEngine::LayerMask mask;
+    if (auto* p = apvtsDrums.getRawParameterValue ("lockKick"))  mask.kick  = p->load() > 0.5f;
+    if (auto* p = apvtsDrums.getRawParameterValue ("lockSnare")) mask.snare = p->load() > 0.5f;
+    if (auto* p = apvtsDrums.getRawParameterValue ("lockHats"))  mask.hats  = p->load() > 0.5f;
+    if (auto* p = apvtsDrums.getRawParameterValue ("lockPerc"))  mask.perc  = p->load() > 0.5f;
+    drumEngine.setLayerLocks (mask);
+    drumEngine.setLifeAmount  (readApvts01 (apvtsDrums, "life",    0.f));
+    drumEngine.setHatOpen     (readApvts01 (apvtsDrums, "hatOpen", 0.f));
+    if (auto* vs = dynamic_cast<juce::AudioParameterChoice*> (apvtsDrums.getParameter ("velShape")))
+        drumEngine.setVelShape (vs->getIndex());
 
     syncDrumsMLPersonalityToEngine();
 }
@@ -1021,6 +1140,7 @@ void BridgeProcessor::triggerDrumsGenerate()
         getMainSelectionBounds (NUM_STEPS, a, b);
         drumEngine.generatePatternRange (a - 1, b - 1, false, mlManager.get());
     }
+    publishDrumActivityToFollowers();
 }
 
 void BridgeProcessor::triggerDrumsFill (int fromStep)
@@ -1050,6 +1170,7 @@ void BridgeProcessor::syncBassEngineFromAPVTS()
     float staccato    = (float)*apvtsBass.getRawParameterValue ("staccato");
     applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
                           melodicHold, velocity, fillRate, complexity, ghostAmount, staccato);
+    applyArrangementMacro (density, complexity, /*isDrums*/ false);
     bassEngine.setTemperature (temperature);
     bassEngine.setDensity     (density);
     bassEngine.setSwing       (swing);
@@ -1073,6 +1194,13 @@ void BridgeProcessor::syncBassEngineFromAPVTS()
     else
         bassTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsBass.getRawParameterValue ("tickerSpeed"));
 
+    bassEngine.setLifeAmount   (readApvts01 (apvtsBass, "life",         0.f));
+    bassEngine.setMelodyMotion (readApvts01 (apvtsBass, "melody",       0.5f));
+    bassEngine.setFollowRhythm (readApvts01 (apvtsBass, "followRhythm", 0.f));
+    bassEngine.setSlideAmount  (readApvts01 (apvtsBass, "slideAmt",     0.f));
+    if (auto* vs = dynamic_cast<juce::AudioParameterChoice*> (apvtsBass.getParameter ("velShape")))
+        bassEngine.setVelShape (vs->getIndex());
+
     syncBassMLPersonalityToEngine (apvtsMain, bassEngine);
 }
 
@@ -1082,6 +1210,7 @@ void BridgeProcessor::triggerBassGenerate()
     bassEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncBassEngineFromAPVTS();
     refreshBassKickHintFromDrums();
+    publishDrumActivityToFollowers();
     if (isMainSelectionFullClip (BassPreset::NUM_STEPS))
         bassEngine.generatePattern (false, mlManager.get());
     else
@@ -1211,6 +1340,7 @@ void BridgeProcessor::syncPianoEngineFromAPVTS()
     float staccato    = (float)*apvtsPiano.getRawParameterValue ("staccato");
     applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
                           melodicHold, velocity, fillRate, complexity, ghostAmount, staccato);
+    applyArrangementMacro (density, complexity, /*isDrums*/ false);
     pianoEngine.setTemperature (temperature);
     pianoEngine.setDensity     (density);
     pianoEngine.setSwing       (swing);
@@ -1234,6 +1364,13 @@ void BridgeProcessor::syncPianoEngineFromAPVTS()
     else
         pianoTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsPiano.getRawParameterValue ("tickerSpeed"));
 
+    pianoEngine.setLifeAmount    (readApvts01 (apvtsPiano, "life",          0.f));
+    pianoEngine.setMelodyMotion  (readApvts01 (apvtsPiano, "melody",        0.5f));
+    pianoEngine.setFollowRhythm  (readApvts01 (apvtsPiano, "followRhythm",  0.f));
+    pianoEngine.setVoicingSpread (readApvts01 (apvtsPiano, "voicingSpread", 0.5f));
+    if (auto* vs = dynamic_cast<juce::AudioParameterChoice*> (apvtsPiano.getParameter ("velShape")))
+        pianoEngine.setVelShape (vs->getIndex());
+
     syncChordsMLPersonalityToEngine();
 }
 
@@ -1255,6 +1392,7 @@ void BridgeProcessor::syncGuitarEngineFromAPVTS()
     float staccato    = (float)*apvtsGuitar.getRawParameterValue ("staccato");
     applyLeaderToMelodic (getLeaderEffective (apvtsMain), temperature, density, swing, humanize,
                           melodicHold, velocity, fillRate, complexity, ghostAmount, staccato);
+    applyArrangementMacro (density, complexity, /*isDrums*/ false);
     guitarEngine.setTemperature (temperature);
     guitarEngine.setDensity     (density);
     guitarEngine.setSwing       (swing);
@@ -1277,6 +1415,14 @@ void BridgeProcessor::syncGuitarEngineFromAPVTS()
         guitarTickerRate = bassTickerRateForChoiceIndex (tr->getIndex());
     else
         guitarTickerRate = bassTickerRateForChoiceIndex ((int) *apvtsGuitar.getRawParameterValue ("tickerSpeed"));
+
+    guitarEngine.setLifeAmount     (readApvts01 (apvtsGuitar, "life",           0.f));
+    guitarEngine.setMelodyMotion   (readApvts01 (apvtsGuitar, "melody",         0.5f));
+    guitarEngine.setFollowRhythm   (readApvts01 (apvtsGuitar, "followRhythm",   0.f));
+    guitarEngine.setPalmMute       (readApvts01 (apvtsGuitar, "palmMute",       0.f));
+    guitarEngine.setStrumIntensity (readApvts01 (apvtsGuitar, "strumIntensity", 0.5f));
+    if (auto* vs = dynamic_cast<juce::AudioParameterChoice*> (apvtsGuitar.getParameter ("velShape")))
+        guitarEngine.setVelShape (vs->getIndex());
 
     syncMelodyMLPersonalityToEngine();
 }
@@ -1335,6 +1481,7 @@ void BridgeProcessor::triggerPianoGenerate()
     pianoEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncPianoEngineFromAPVTS();
     refreshChordsBassHintFromBass();
+    publishDrumActivityToFollowers();
     if (isMainSelectionFullClip (PianoPreset::NUM_STEPS))
         pianoEngine.generatePattern (false, mlManager.get());
     else
@@ -1378,6 +1525,7 @@ void BridgeProcessor::triggerGuitarGenerate()
     juce::Random r;
     guitarEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncGuitarEngineFromAPVTS();
+    publishDrumActivityToFollowers();
     if (isMainSelectionFullClip (GuitarPreset::NUM_STEPS))
         guitarEngine.generatePattern (false, mlManager.get());
     else
@@ -2215,7 +2363,9 @@ void BridgeProcessor::handleModelUpdateCheckResult (BridgeUpdateChecker::UpdateI
 void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
 {
     juce::XmlElement root ("BridgeState");
-    root.setAttribute ("bridgeVersion", 11);
+    // v12: adds arrSection / sectionIntensity (main); life / velShape / hatOpen + lockKick / lockSnare / lockHats / lockPerc (drums);
+    //      life / melody / followRhythm / velShape (melodic) plus instrument-specific articulation (slideAmt, voicingSpread, palmMute, strumIntensity).
+    root.setAttribute ("bridgeVersion", 12);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
     if (auto xmlA = apvtsDrums.copyState().createXml())

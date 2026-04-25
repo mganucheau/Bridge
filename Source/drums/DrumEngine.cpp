@@ -19,6 +19,31 @@ static float probabilityAfterDensity (float base, float density)
     }
     return juce::jlimit (0.0f, 1.0f, prob);
 }
+
+// Velocity contour macro: shapes the 16-step velocity envelope after generation. Flat = identity;
+// Accent = beats 0/8 stronger and 4/12 medium; Crescendo / Decrescendo ramp evenly across the bar.
+static float velocityShapeFactor (int shape, int step, int patternLen)
+{
+    if (shape <= 0 || patternLen <= 0)
+        return 1.0f;
+    const float t = (float) step / juce::jmax (1.0f, (float) (patternLen - 1));
+    switch (shape)
+    {
+        case 1: // Accent
+        {
+            const int s = step % 16;
+            if (s == 0 || s == 8)  return 1.18f;
+            if (s == 4 || s == 12) return 1.05f;
+            return 0.88f;
+        }
+        case 2: // Crescendo
+            return juce::jmap (t, 0.f, 1.f, 0.75f, 1.20f);
+        case 3: // Decrescendo
+            return juce::jmap (t, 0.f, 1.f, 1.20f, 0.75f);
+        default:
+            return 1.0f;
+    }
+}
 } // namespace
 
 DrumEngine::DrumEngine()
@@ -42,6 +67,14 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
     const DrumPattern previous = pattern;
     std::vector<std::tuple<int, int, int>> restoreTimeShift;
 
+    auto isLayerLocked = [this] (int drum)
+    {
+        if (drum == 0)            return layerLocks.kick;
+        if (drum == 1)            return layerLocks.snare;
+        if (drum == 2 || drum == 3) return layerLocks.hats;
+        return layerLocks.perc;
+    };
+
     for (int step = from0; step <= to0; ++step)
     {
         if (step >= patternLen)
@@ -49,6 +82,15 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
         {
+            // Sting-style lock: keep this layer's hits intact across regenerate.
+            if (isLayerLocked (drum))
+            {
+                pattern[step][drum] = previous[step][drum];
+                if (pattern[step][drum].active)
+                    restoreTimeShift.emplace_back (step, drum, previous[step][drum].timeShift);
+                continue;
+            }
+
             bool mutateThisStep = true;
             if (seamlessPerform)
             {
@@ -116,6 +158,37 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
     if (! partialRegenWindow)
         mergePatternFromML (mlOut);
     applyHumanize (playbackSamplesPerStep);
+
+    // Apply velocity contour macro after humanize so users see and hear the shape.
+    if (velShape > 0)
+    {
+        for (int step = 0; step < patternLen; ++step)
+        {
+            const float k = velocityShapeFactor (velShape, step, patternLen);
+            for (int drum = 0; drum < NUM_DRUMS; ++drum)
+                if (pattern[(size_t) step][(size_t) drum].active)
+                {
+                    const int v = (int) std::lround ((float) pattern[(size_t) step][(size_t) drum].velocity * k);
+                    pattern[(size_t) step][(size_t) drum].velocity = (uint8) juce::jlimit (1, 127, v);
+                }
+        }
+    }
+
+    // Articulation: hatOpen biases hits between closed (drum 2) and open (drum 3) hat layers.
+    if (hatOpen > 0.01f)
+    {
+        for (int step = 0; step < patternLen; ++step)
+        {
+            auto& closed = pattern[(size_t) step][2];
+            auto& open   = pattern[(size_t) step][3];
+            const uint32_t salt = seed ^ ((uint32_t) step * 0x9E3779B9u) ^ 0xCAFEBABEu;
+            if (closed.active && pseudoRandom01 (salt) < hatOpen * 0.6f)
+            {
+                open = closed;
+                closed.active = false;
+            }
+        }
+    }
 
     for (const auto& t : restoreTimeShift)
         pattern[(size_t) std::get<0> (t)][(size_t) std::get<1> (t)].timeShift = std::get<2> (t);
@@ -380,9 +453,25 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
             bool ghost = (base < ghostThresh);
             vel = sampleVelocityDeterministic (wrappedStep, drum, ghost, salt ^ 0x27d4eb2du);
 
-            int maxShift = (int)(samplesPerStep * 0.25 * humanize);
-            if (maxShift > 0)
-                tshift = (int)(pseudoRandom01 (salt ^ 0x85ebca6bu) * (float)(2 * maxShift + 1)) - maxShift;
+            // Live velocity contour from the per-step macro shape.
+            if (velShape > 0)
+            {
+                const float k = velocityShapeFactor (velShape, wrappedStep, patternLen);
+                vel = (uint8) juce::jlimit (1, 127, (int) std::lround ((float) vel * k));
+            }
+
+            // "Life" drift: slow LFO modulates velocity per global step. Stable across plays
+            // because it's derived from globalStep, not RNG state.
+            if (lifeAmount > 0.01f)
+            {
+                const float phase = std::sin ((float) globalStep * 0.0625f + (float) drum * 0.7f);
+                const float lifeK = 1.0f + lifeAmount * 0.18f * phase;
+                vel = (uint8) juce::jlimit (1, 127, (int) std::lround ((float) vel * lifeK));
+            }
+
+            int humShift = (int)(samplesPerStep * 0.25 * (humanize + lifeAmount * 0.15f));
+            if (humShift > 0)
+                tshift = (int)(pseudoRandom01 (salt ^ 0x85ebca6bu) * (float)(2 * humShift + 1)) - humShift;
             tshift += (int) grooveMicroOffset (wrappedStep, drum, salt, samplesPerStep);
         }
 
@@ -463,6 +552,20 @@ float DrumEngine::complexityMod (int step, int drum) const
     if (drum >= 4 && drum <= 7)
         weight *= 1.2f;
     return mod * weight;
+}
+
+std::array<float, NUM_STEPS> DrumEngine::getStepActivityGrid() const noexcept
+{
+    std::array<float, NUM_STEPS> grid {};
+    for (int step = 0; step < NUM_STEPS; ++step)
+    {
+        float maxV = 0.0f;
+        for (int drum = 0; drum < NUM_DRUMS; ++drum)
+            if (pattern[(size_t) step][(size_t) drum].active)
+                maxV = juce::jmax (maxV, (float) pattern[(size_t) step][(size_t) drum].velocity / 127.0f);
+        grid[(size_t) step] = maxV;
+    }
+    return grid;
 }
 
 // Groove invariant: humanize shifts are deterministic from seed + step + drum (no per-block RNG).

@@ -7,6 +7,7 @@
 #include "BridgeLookAndFeel.h"
 #include "BridgeBottomHalf.h"
 #include "BridgeLoopRangeStrip.h"
+#include "BridgeVelocityStrip.h"
 #include "InstrumentControlBar.h"
 #include "guitar/GuitarLookAndFeel.h"
 #include "guitar/GuitarStylePresets.h"
@@ -119,6 +120,7 @@ private:
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xff0a84ff), GuitarPreset::NUM_STEPS };
+    BridgeVelocityStrip velocityStrip { GuitarPreset::NUM_STEPS, juce::Colour (0xff0a84ff) };
 
     juce::Viewport melodicViewport;
 

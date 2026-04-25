@@ -131,6 +131,89 @@ struct StateMigrationTests final : public juce::UnitTest
             expectEquals (jam->getIndex(), 3);
         else
             expect (false, "jamInterval missing on piano APVTS");
+
+        beginTest ("v11 → v12: state without new arrangement / drift / articulation params loads with layout defaults");
+
+        // Build a v11-style state by rewriting the version attribute on an otherwise-current snapshot.
+        BridgeProcessor v11src;
+        juce::MemoryBlock mbV11;
+        v11src.getStateInformation (mbV11);
+        auto xmlV11 = juce::AudioProcessor::getXmlFromBinary (mbV11.getData(), (int) mbV11.getSize());
+        expect (xmlV11 != nullptr);
+        xmlV11->setAttribute ("bridgeVersion", 11);
+
+        // Strip the v12 PARAMs so the state looks like an older save that never knew them.
+        auto strip = [] (juce::XmlElement* node, std::initializer_list<const char*> ids)
+        {
+            if (node == nullptr) return;
+            std::vector<juce::XmlElement*> doomed;
+            for (auto* ch : node->getChildIterator())
+                if (ch->hasTagName ("PARAM"))
+                    for (auto* id : ids)
+                        if (ch->getStringAttribute ("id") == id)
+                            doomed.push_back (ch);
+            for (auto* d : doomed)
+                node->removeChildElement (d, true);
+        };
+        strip (findChildWithTag (*xmlV11, v11src.apvtsMain.state.getType().toString()),
+               { "arrSection", "sectionIntensity" });
+        strip (findChildWithTag (*xmlV11, v11src.apvtsDrums.state.getType().toString()),
+               { "lockKick", "lockSnare", "lockHats", "lockPerc", "life", "hatOpen", "velShape" });
+        strip (findChildWithTag (*xmlV11, v11src.apvtsBass.state.getType().toString()),
+               { "life", "melody", "followRhythm", "velShape", "slideAmt" });
+        strip (findChildWithTag (*xmlV11, v11src.apvtsPiano.state.getType().toString()),
+               { "life", "melody", "followRhythm", "velShape", "voicingSpread" });
+        strip (findChildWithTag (*xmlV11, v11src.apvtsGuitar.state.getType().toString()),
+               { "life", "melody", "followRhythm", "velShape", "palmMute", "strumIntensity" });
+
+        juce::MemoryBlock mbV11Out;
+        juce::AudioProcessor::copyXmlToBinary (*xmlV11, mbV11Out);
+        BridgeProcessor v12dst;
+        v12dst.setStateInformation (mbV11Out.getData(), (int) mbV11Out.getSize());
+
+        if (auto* arr = dynamic_cast<juce::AudioParameterChoice*> (v12dst.apvtsMain.getParameter ("arrSection")))
+            expectEquals (arr->getIndex(), 1);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsMain.getRawParameterValue ("sectionIntensity"), 0.5, 0.02);
+
+        for (auto* id : { "lockKick", "lockSnare", "lockHats", "lockPerc" })
+            expectWithinAbsoluteError ((double) *v12dst.apvtsDrums.getRawParameterValue (id), 0.0, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsDrums.getRawParameterValue ("life"),    0.0, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsDrums.getRawParameterValue ("hatOpen"), 0.0, 0.02);
+
+        for (auto* apvts : { &v12dst.apvtsBass, &v12dst.apvtsPiano, &v12dst.apvtsGuitar })
+        {
+            expectWithinAbsoluteError ((double) *apvts->getRawParameterValue ("life"),         0.0, 0.02);
+            expectWithinAbsoluteError ((double) *apvts->getRawParameterValue ("melody"),       0.5, 0.02);
+            expectWithinAbsoluteError ((double) *apvts->getRawParameterValue ("followRhythm"), 0.0, 0.02);
+        }
+        expectWithinAbsoluteError ((double) *v12dst.apvtsBass.getRawParameterValue ("slideAmt"),         0.0, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsPiano.getRawParameterValue ("voicingSpread"),   0.5, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsGuitar.getRawParameterValue ("palmMute"),       0.0, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsGuitar.getRawParameterValue ("strumIntensity"), 0.5, 0.02);
+
+        beginTest ("v12 round trip: explicit non-default values for the new params persist");
+
+        BridgeProcessor src;
+        if (auto* arr = dynamic_cast<juce::AudioParameterChoice*> (src.apvtsMain.getParameter ("arrSection")))
+            arr->setValueNotifyingHost (arr->getNormalisableRange().convertTo0to1 (2.0f)); // Chorus
+        if (auto* p = src.apvtsMain.getParameter ("sectionIntensity")) p->setValueNotifyingHost (0.81f);
+        if (auto* p = src.apvtsDrums.getParameter ("lockKick"))        p->setValueNotifyingHost (1.0f);
+        if (auto* p = src.apvtsDrums.getParameter ("life"))            p->setValueNotifyingHost (0.6f);
+        if (auto* p = src.apvtsBass.getParameter ("followRhythm"))     p->setValueNotifyingHost (0.7f);
+        if (auto* p = src.apvtsGuitar.getParameter ("palmMute"))       p->setValueNotifyingHost (0.4f);
+
+        juce::MemoryBlock mbRT;
+        src.getStateInformation (mbRT);
+        BridgeProcessor dst;
+        dst.setStateInformation (mbRT.getData(), (int) mbRT.getSize());
+
+        if (auto* arr = dynamic_cast<juce::AudioParameterChoice*> (dst.apvtsMain.getParameter ("arrSection")))
+            expectEquals (arr->getIndex(), 2);
+        expectWithinAbsoluteError ((double) *dst.apvtsMain.getRawParameterValue ("sectionIntensity"), 0.81, 0.02);
+        expect (*dst.apvtsDrums.getRawParameterValue ("lockKick") > 0.5f);
+        expectWithinAbsoluteError ((double) *dst.apvtsDrums.getRawParameterValue ("life"),         0.6, 0.02);
+        expectWithinAbsoluteError ((double) *dst.apvtsBass.getRawParameterValue ("followRhythm"),  0.7, 0.02);
+        expectWithinAbsoluteError ((double) *dst.apvtsGuitar.getRawParameterValue ("palmMute"),    0.4, 0.02);
     }
 };
 

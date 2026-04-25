@@ -7,6 +7,7 @@
 #include "BridgeLookAndFeel.h"
 #include "BridgeBottomHalf.h"
 #include "BridgeLoopRangeStrip.h"
+#include "BridgeVelocityStrip.h"
 #include "InstrumentControlBar.h"
 #include "piano/PianoLookAndFeel.h"
 #include "piano/PianoStylePresets.h"
@@ -119,6 +120,7 @@ private:
     BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffbf5af2), PianoPreset::NUM_STEPS };
+    BridgeVelocityStrip velocityStrip { PianoPreset::NUM_STEPS, juce::Colour (0xffbf5af2) };
 
     juce::Viewport melodicViewport;
 

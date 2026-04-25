@@ -142,6 +142,13 @@ void PianoEngine::generatePatternRange (int fromStep0, int toStep0, bool seamles
         float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step));
         prob = probabilityAfterDensity (prob, density);
 
+        if (followRhythm > 0.01f)
+        {
+            const float act = rhythmActivity[(size_t) (step % 16)];
+            const float bias = (act - 0.4f) * 0.6f * followRhythm;
+            prob = juce::jlimit (0.0f, 1.0f, prob + bias);
+        }
+
         bool active = sampleProb (prob);
         const PianoHit& prev = previous[(size_t) step];
 
@@ -518,6 +525,12 @@ void PianoEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeML
         float base = BASS_NOTE_PROBS[style][step];
         float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step));
         prob = probabilityAfterDensity (prob, density);
+        if (followRhythm > 0.01f)
+        {
+            const float act = rhythmActivity[(size_t) (step % 16)];
+            const float bias = (act - 0.4f) * 0.6f * followRhythm;
+            prob = juce::jlimit (0.0f, 1.0f, prob + bias);
+        }
         const bool active = sampleProb (prob);
 
         if (! active)
@@ -691,20 +704,19 @@ uint8 PianoEngine::sampleVelocity (int step, bool ghost, bool accent) const
 
 int PianoEngine::chooseDegreeProbabilistic (int step, int preferredDegree) const
 {
-    // At low complexity, almost always use the preferred degree.
-    // At high complexity, occasionally substitute adjacent chord tones.
-    if (complexity < 0.45f)
+    const float devFromComplexity = (complexity > 0.45f) ? (complexity - 0.45f) * 0.55f : 0.0f;
+    const float devFromMotion     = juce::jmap (juce::jlimit (0.f, 1.f, melodyMotion), 0.f, 1.f, 0.0f, 0.55f);
+    const float deviateProbability = juce::jlimit (0.0f, 0.95f, devFromComplexity + devFromMotion);
+
+    if (deviateProbability <= 0.001f)
         return preferredDegree;
 
-    float deviateProbability = (complexity - 0.45f) * 0.55f; // up to ~0.30
-
-    // Only deviate on off-beat steps (1,2,3, 5,6,7, …)
     bool offBeat = (step % 4 != 0);
-    if (!offBeat) return preferredDegree;
+    if (! offBeat && melodyMotion < 0.7f)
+        return preferredDegree;
 
     if (sampleProb (deviateProbability))
     {
-        // Choose a random valid alternate degree (avoid approach/sub on inner steps)
         const int alts[] = { 0, 3, 4, 5, 2, 1 };
         int idx = const_cast<PianoEngine*>(this)->rng() % 6;
         return alts[idx];

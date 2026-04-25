@@ -118,6 +118,30 @@ public:
     int  degreeToMidiNote (int degree, int prevMidi = -1) const;
     int  nearestDegreeForMidi (int midi, int prevMidi = -1) const;
 
+    // ── Sting/Session features ─────────────────────────────────────────────
+    /** Slow runtime drift over humanize / velocity. 0 disables. */
+    void  setLifeAmount (float v) noexcept   { lifeAmount = juce::jlimit (0.f, 1.f, v); }
+    float getLifeAmount() const noexcept     { return lifeAmount; }
+
+    /** 0 = anchor on preferred degree; 1 = freely walk through chord tones. */
+    void  setMelodyMotion (float v) noexcept { melodyMotion = juce::jlimit (0.f, 1.f, v); }
+    float getMelodyMotion() const noexcept   { return melodyMotion; }
+
+    /** Pull onset/velocity weights from the leader (drums) — 0 ignores, 1 strongly follows. */
+    void  setFollowRhythm (float v) noexcept { followRhythm = juce::jlimit (0.f, 1.f, v); }
+    float getFollowRhythm() const noexcept   { return followRhythm; }
+
+    /** 16-step activity grid from drums (0..1). Used as a soft prior on onsets/velocities. */
+    void  setRhythmActivityHint (const std::array<float, 16>& g) noexcept { rhythmActivity = g; }
+
+    /** Velocity contour macro (0 flat, 1 accent, 2 crescendo, 3 decrescendo). */
+    void setVelShape (int s) noexcept { velShape = juce::jlimit (0, 3, s); }
+    int  getVelShape() const noexcept { return velShape; }
+
+    /** Articulation: bass slide intensity (0..1) — extends note length on stepwise transitions. */
+    void  setSlideAmount (float v) noexcept { slideAmount = juce::jlimit (0.f, 1.f, v); }
+    float getSlideAmount() const noexcept   { return slideAmount; }
+
 private:
     BassPattern  pattern;
     BassPattern  displayPattern {};  // pattern + optional fill-hold overlay for UI
@@ -161,4 +185,11 @@ private:
     std::vector<float> bassMLKickHint;
     std::vector<float> bassMLPersonalityKnobs;
     std::vector<float> bassMLContext;
+
+    float lifeAmount   = 0.0f;
+    float melodyMotion = 0.5f;
+    float followRhythm = 0.0f;
+    float slideAmount  = 0.0f;
+    int   velShape     = 0;
+    std::array<float, 16> rhythmActivity {};
 };

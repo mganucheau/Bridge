@@ -150,6 +150,12 @@ public:
 
     void refreshBassKickHintFromDrums();
     void refreshChordsBassHintFromBass();
+    /** Push drum step activity to bass/piano/guitar engines for follow-rhythm bias. */
+    void publishDrumActivityToFollowers();
+    /** Apply arrangement section macro (Intro..Outro × intensity) to a per-instrument
+        (density, complexity) pair. Engine APVTS values remain the user's set point; this
+        nudges them toward section-appropriate targets before they're pushed to engines. */
+    void applyArrangementMacro (float& density, float& complexity, bool isDrums) const;
 
 private:
     void handleModelUpdateCheckResult (BridgeUpdateChecker::UpdateInfo info);

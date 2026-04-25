@@ -54,6 +54,7 @@ target_sources(Bridge PRIVATE
     Source/BridgeInstrumentTabRail.cpp
     Source/BridgeBottomHalf.cpp
     Source/BridgeLoopRangeStrip.cpp
+    Source/BridgeVelocityStrip.cpp
     Source/BridgeXYPad.cpp
     Source/BridgeSettingsDialog.cpp
     Source/BridgeLookAndFeel.cpp

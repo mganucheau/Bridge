@@ -170,6 +170,15 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
         float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step));
         prob = probabilityAfterDensity (prob, density);
 
+        // Follow-rhythm bias: nudge our onset probability toward the leader's step activity.
+        // Strong drum hits encourage bass onsets at the same step; gaps slightly suppress them.
+        if (followRhythm > 0.01f)
+        {
+            const float act = rhythmActivity[(size_t) (step % 16)];
+            const float bias = (act - 0.4f) * 0.6f * followRhythm;
+            prob = juce::jlimit (0.0f, 1.0f, prob + bias);
+        }
+
         bool active = sampleProb (prob);
         const BassHit& prev = previous[(size_t) step];
 
@@ -659,16 +668,19 @@ int BassEngine::chooseDegreeForMorphAdd (int step, int preferredDegree, int prev
 
 int BassEngine::chooseDegreeProbabilistic (int step, int preferredDegree) const
 {
-    // At low complexity, almost always use the preferred degree.
-    // At high complexity, occasionally substitute adjacent chord tones.
-    if (complexity < 0.45f)
+    // Combined steering: complexity (interior variation) + melodyMotion (continuous walk).
+    // melodyMotion 0 anchors strictly on the preferred degree, 1 walks freely through chord tones.
+    const float devFromComplexity = (complexity > 0.45f) ? (complexity - 0.45f) * 0.55f : 0.0f;
+    const float devFromMotion     = juce::jmap (juce::jlimit (0.f, 1.f, melodyMotion), 0.f, 1.f, 0.0f, 0.55f);
+    const float deviateProbability = juce::jlimit (0.0f, 0.95f, devFromComplexity + devFromMotion);
+
+    if (deviateProbability <= 0.001f)
         return preferredDegree;
 
-    float deviateProbability = (complexity - 0.45f) * 0.55f; // up to ~0.30
-
-    // Only deviate on off-beat steps (1,2,3, 5,6,7, …)
+    // Hold downbeats stable unless motion is high (above 0.7 we let walks land on the 1).
     bool offBeat = (step % 4 != 0);
-    if (!offBeat) return preferredDegree;
+    if (! offBeat && melodyMotion < 0.7f)
+        return preferredDegree;
 
     if (sampleProb (deviateProbability))
     {
@@ -799,6 +811,10 @@ int BassEngine::calcNoteDuration (const BassHit& hit, double samplesPerStep) con
     }
 
     artDur *= 1.0f + hold * 0.55f;
+
+    // Slide articulation: extends note duration so subsequent notes overlap, simulating legato/glide.
+    if (slideAmount > 0.01f && ! hit.isGhost)
+        artDur *= 1.0f + slideAmount * 0.45f;
 
     return jmax (1, (int)(artDur * samplesPerStep));
 }

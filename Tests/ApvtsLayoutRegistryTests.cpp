@@ -40,6 +40,8 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             "mlPersRhythmTight", "mlPersDynamicRange", "mlPersTimbreTexture", "mlPersTensionArc",
             "mlPersTempoVolatility", "mlPersEmotionalTemp", "mlPersHarmAdventure", "mlPersStructPredict",
             "mlPersShowmanship", "mlPersGenreLoyalty", "mlPersonalityPresetName", "mlModelsLastUpdateCheckUnix",
+            // v12: arrangement section macro (Sting/Session-style intensity by section).
+            "arrSection", "sectionIntensity",
         };
         for (auto* id : mainIds)
             expectHasParam (*this, proc.apvtsMain, id);
@@ -55,6 +57,9 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             "style", "density", "swing", "humanize", "velocity", "fillRate", "complexity",
             "hold", "ghostAmount", "intensity", "midiChannel", "loopStart", "loopEnd",
             "loopOn", "jamInterval", "tickerSpeed",
+            // v12: per-layer locks, slow drift macro, hat articulation, velocity-shape macro.
+            "lockKick", "lockSnare", "lockHats", "lockPerc",
+            "life", "hatOpen", "velShape",
         };
         for (auto* id : drumsIds)
             expectHasParam (*this, proc.apvtsDrums, id);
@@ -70,6 +75,8 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             "velocity", "fillRate", "complexity", "ghostAmount", "staccato", "sustain",
             "intensity", "patternLen", "locked", "midiChannel", "phraseBars",
             "loopStart", "loopEnd", "loopOn", "tickerSpeed",
+            // v12: shared melodic ensemble + macro params.
+            "life", "melody", "followRhythm", "velShape",
         };
         for (auto* id : melodicIds)
         {
@@ -77,6 +84,20 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             expectHasParam (*this, proc.apvtsPiano, id);
             expectHasParam (*this, proc.apvtsGuitar, id);
         }
+
+        // v12: instrument-specific articulation params live only on their owning APVTS.
+        expectHasParam (*this, proc.apvtsBass,   "slideAmt");
+        expectHasParam (*this, proc.apvtsPiano,  "voicingSpread");
+        expectHasParam (*this, proc.apvtsGuitar, "palmMute");
+        expectHasParam (*this, proc.apvtsGuitar, "strumIntensity");
+        expectNoParam  (*this, proc.apvtsPiano,  "slideAmt");
+        expectNoParam  (*this, proc.apvtsGuitar, "slideAmt");
+        expectNoParam  (*this, proc.apvtsBass,   "voicingSpread");
+        expectNoParam  (*this, proc.apvtsGuitar, "voicingSpread");
+        expectNoParam  (*this, proc.apvtsBass,   "palmMute");
+        expectNoParam  (*this, proc.apvtsPiano,  "palmMute");
+        expectNoParam  (*this, proc.apvtsBass,   "strumIntensity");
+        expectNoParam  (*this, proc.apvtsPiano,  "strumIntensity");
         expectNoParam (*this, proc.apvtsBass, "perform");
         expectNoParam (*this, proc.apvtsPiano, "perform");
         expectNoParam (*this, proc.apvtsGuitar, "perform");
@@ -120,6 +141,32 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         near ((float) *proc.apvtsBass.getRawParameterValue ("intensity"), 0.f, "bass intensity");
         near ((float) *proc.apvtsBass.getRawParameterValue ("density"), 0.5f, "bass density");
         near ((float) *proc.apvtsBass.getRawParameterValue ("complexity"), 0.5f, "bass complexity");
+
+        beginTest ("v12 defaults: arrangement section macro starts at Verse / 0.5 intensity, ensemble macros at zero");
+
+        if (auto* arr = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("arrSection")))
+            expectEquals (arr->getIndex(), 1); // Verse
+        near ((float) *proc.apvtsMain.getRawParameterValue ("sectionIntensity"), 0.5f, "main sectionIntensity");
+
+        for (auto* drumLock : { "lockKick", "lockSnare", "lockHats", "lockPerc" })
+        {
+            const float v = (float) *proc.apvtsDrums.getRawParameterValue (drumLock);
+            expect (v < 0.5f, juce::String ("drums ") + drumLock + " default expected false");
+        }
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("life"),    0.f, "drums life");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("hatOpen"), 0.f, "drums hatOpen");
+
+        for (auto* apvts : { &proc.apvtsBass, &proc.apvtsPiano, &proc.apvtsGuitar })
+        {
+            near ((float) *apvts->getRawParameterValue ("life"),         0.f, "melodic life");
+            near ((float) *apvts->getRawParameterValue ("melody"),       0.5f, "melodic melody");
+            near ((float) *apvts->getRawParameterValue ("followRhythm"), 0.f, "melodic followRhythm");
+        }
+
+        near ((float) *proc.apvtsBass.getRawParameterValue ("slideAmt"),         0.f, "bass slideAmt");
+        near ((float) *proc.apvtsPiano.getRawParameterValue ("voicingSpread"),   0.5f, "piano voicingSpread");
+        near ((float) *proc.apvtsGuitar.getRawParameterValue ("palmMute"),       0.f, "guitar palmMute");
+        near ((float) *proc.apvtsGuitar.getRawParameterValue ("strumIntensity"), 0.5f, "guitar strumIntensity");
     }
 };
 

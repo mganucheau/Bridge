@@ -115,6 +115,23 @@ public:
     int  degreeToMidiNote (int degree, int prevMidi = -1) const;
     int  nearestDegreeForMidi (int midi, int prevMidi = -1) const;
 
+    // ── Sting/Session features ─────────────────────────────────────────────
+    void  setLifeAmount   (float v) noexcept { lifeAmount   = juce::jlimit (0.f, 1.f, v); }
+    float getLifeAmount   () const noexcept  { return lifeAmount; }
+    void  setMelodyMotion (float v) noexcept { melodyMotion = juce::jlimit (0.f, 1.f, v); }
+    float getMelodyMotion () const noexcept  { return melodyMotion; }
+    void  setFollowRhythm (float v) noexcept { followRhythm = juce::jlimit (0.f, 1.f, v); }
+    float getFollowRhythm () const noexcept  { return followRhythm; }
+    void  setRhythmActivityHint (const std::array<float, 16>& g) noexcept { rhythmActivity = g; }
+    void  setVelShape     (int s) noexcept   { velShape = juce::jlimit (0, 3, s); }
+    int   getVelShape     () const noexcept  { return velShape; }
+    /** Articulation: palm-mute amount (0..1) — biases toward shorter notes and lower velocities. */
+    void  setPalmMute       (float v) noexcept { palmMute = juce::jlimit (0.f, 1.f, v); }
+    float getPalmMute       () const noexcept  { return palmMute; }
+    /** Articulation: strum intensity (0..1) — amplifies down-beats and lengthens notes. */
+    void  setStrumIntensity (float v) noexcept { strumIntensity = juce::jlimit (0.f, 1.f, v); }
+    float getStrumIntensity () const noexcept  { return strumIntensity; }
+
 private:
     GuitarPattern  pattern;
     GuitarPattern  displayPattern {};  // pattern + optional fill-hold overlay for UI
@@ -159,4 +176,12 @@ private:
     std::array<float, 16> mlRhythmicGrid {};
 
     double hostSampleRate = 44100.0;
+
+    float lifeAmount     = 0.0f;
+    float melodyMotion   = 0.5f;
+    float followRhythm   = 0.0f;
+    float palmMute       = 0.0f;
+    float strumIntensity = 0.5f;
+    int   velShape       = 0;
+    std::array<float, 16> rhythmActivity {};
 };

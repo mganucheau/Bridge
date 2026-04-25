@@ -413,7 +413,8 @@ GuitarPanel::GuitarPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("rootNote", this);
     proc.apvtsMain.addParameterListener ("octave", this);
     for (const char* id : { "density", "swing", "humanize", "hold", "velocity", "fillRate", "complexity",
-                            "ghostAmount", "sustain", "temperature", "staccato", "intensity" })
+                            "ghostAmount", "sustain", "temperature", "staccato", "intensity",
+                            "life", "melody", "followRhythm", "palmMute", "strumIntensity", "velShape" })
         proc.apvtsGuitar.addParameterListener (id, this);
 
     addAndMakeVisible (melodicViewport);
@@ -426,6 +427,14 @@ GuitarPanel::GuitarPanel (BridgeProcessor& p)
     loopStrip.setStepLabelGutter ((int) bridge::kMelodicKeyStripWidth);
     addAndMakeVisible (bottomHalf);
     addAndMakeVisible (instrumentStrip);
+    addAndMakeVisible (velocityStrip);
+
+    velocityStrip.velocityAt = [this] (int step) -> int
+    {
+        if (step < 0 || step >= GuitarPreset::NUM_STEPS) return 0;
+        const auto& pat = proc.guitarEngine.getPatternForGrid();
+        return pat[(size_t) step].active ? (int) pat[(size_t) step].velocity : 0;
+    };
 
     instrumentStrip.getMuteButton().setTooltip ("Mute Guitar");
     instrumentStrip.getSoloButton().setTooltip ("Solo Guitar");
@@ -469,7 +478,8 @@ GuitarPanel::~GuitarPanel()
     proc.apvtsGuitar.removeParameterListener ("tickerSpeed", this);
     proc.apvtsGuitar.removeParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "hold", "velocity", "fillRate", "complexity",
-                            "ghostAmount", "sustain", "temperature", "staccato", "intensity" })
+                            "ghostAmount", "sustain", "temperature", "staccato", "intensity",
+                            "life", "melody", "followRhythm", "palmMute", "strumIntensity", "velShape" })
         proc.apvtsGuitar.removeParameterListener (id, this);
     proc.apvtsGuitar.state.removeListener (this);
 }
@@ -558,6 +568,11 @@ void GuitarPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentGuitar());
+    auto velStripRow = card.removeFromBottom (18);
+    velocityStrip.setBounds (velStripRow.reduced ((int) bridge::kMelodicKeyStripWidth, 0).withTrimmedTop (2));
+    int ls = 1, le = GuitarPreset::NUM_STEPS;
+    proc.getGuitarLoopBounds (ls, le);
+    velocityStrip.setStepRange (ls - 1, le - 1);
 
     melodicViewport.setBounds (card);
     const int viewW = juce::jmax (1, melodicViewport.getWidth());

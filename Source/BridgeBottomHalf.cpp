@@ -254,34 +254,27 @@ void BridgeBottomHalf::resized()
         }
     }
 
-    // Col 2: Tension XY + Complexity / Density
+    // Col 2: Tension XY is the single source of truth for complexity (X) / density (Y).
+    // Per-axis knobs were removed to avoid two controls writing the same APVTS param.
+    knobComplexity.setVisible (false);
+    knobDensity.setVisible (false);
     tensionLabel.setBounds (col2.removeFromTop (14));
     col2.removeFromTop (4);
     if (xyTension != nullptr)
-        xyTension->setBounds (col2.removeFromTop (kPadXY).withSizeKeepingCentre (kPadXY, kPadXY));
-    col2.removeFromTop (8);
     {
-        auto row = col2.removeFromTop (70);
-        const int kGap = 8;
-        const int kw = (row.getWidth() - kGap) / 2;
-        knobComplexity.setBounds (row.removeFromLeft (kw));
-        row.removeFromLeft (kGap);
-        knobDensity.setBounds (row);
+        const int padSide = juce::jmin (col2.getHeight(), juce::jmin (col2.getWidth(), kPadXY + 32));
+        xyTension->setBounds (col2.withSizeKeepingCentre (padSide, padSide));
     }
 
-    // Col 3: Feel XY + Humanize / Swing
+    // Col 3: Feel XY is the single source of truth for humanize (X) / swing (Y).
+    knobHumanize.setVisible (false);
+    knobSwing.setVisible (false);
     feelLabel.setBounds (col3.removeFromTop (14));
     col3.removeFromTop (4);
     if (xyFeel != nullptr)
-        xyFeel->setBounds (col3.removeFromTop (kPadXY).withSizeKeepingCentre (kPadXY, kPadXY));
-    col3.removeFromTop (8);
     {
-        auto row = col3.removeFromTop (70);
-        const int kGap = 8;
-        const int kw = (row.getWidth() - kGap) / 2;
-        knobHumanize.setBounds (row.removeFromLeft (kw));
-        row.removeFromLeft (kGap);
-        knobSwing.setBounds (row);
+        const int padSide = juce::jmin (col3.getHeight(), juce::jmin (col3.getWidth(), kPadXY + 32));
+        xyFeel->setBounds (col3.withSizeKeepingCentre (padSide, padSide));
     }
 
     // Col 4: Selectors + Actions

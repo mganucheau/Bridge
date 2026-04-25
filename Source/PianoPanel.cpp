@@ -414,7 +414,8 @@ PianoPanel::PianoPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("rootNote", this);
     proc.apvtsMain.addParameterListener ("octave", this);
     for (const char* id : { "density", "swing", "humanize", "hold", "velocity", "fillRate", "complexity",
-                            "ghostAmount", "sustain", "temperature", "staccato", "intensity" })
+                            "ghostAmount", "sustain", "temperature", "staccato", "intensity",
+                            "life", "melody", "followRhythm", "voicingSpread", "velShape" })
         proc.apvtsPiano.addParameterListener (id, this);
 
     addAndMakeVisible (melodicViewport);
@@ -427,6 +428,14 @@ PianoPanel::PianoPanel (BridgeProcessor& p)
     loopStrip.setStepLabelGutter ((int) bridge::kMelodicKeyStripWidth);
     addAndMakeVisible (bottomHalf);
     addAndMakeVisible (instrumentStrip);
+    addAndMakeVisible (velocityStrip);
+
+    velocityStrip.velocityAt = [this] (int step) -> int
+    {
+        if (step < 0 || step >= PianoPreset::NUM_STEPS) return 0;
+        const auto& pat = proc.pianoEngine.getPatternForGrid();
+        return pat[(size_t) step].active ? (int) pat[(size_t) step].velocity : 0;
+    };
 
     instrumentStrip.getMuteButton().setTooltip ("Mute Keys");
     instrumentStrip.getSoloButton().setTooltip ("Solo Keys");
@@ -470,7 +479,8 @@ PianoPanel::~PianoPanel()
     proc.apvtsPiano.removeParameterListener ("tickerSpeed", this);
     proc.apvtsPiano.removeParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "hold", "velocity", "fillRate", "complexity",
-                            "ghostAmount", "sustain", "temperature", "staccato", "intensity" })
+                            "ghostAmount", "sustain", "temperature", "staccato", "intensity",
+                            "life", "melody", "followRhythm", "voicingSpread", "velShape" })
         proc.apvtsPiano.removeParameterListener (id, this);
     proc.apvtsPiano.state.removeListener (this);
 }
@@ -559,6 +569,11 @@ void PianoPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentPiano());
+    auto velStripRow = card.removeFromBottom (18);
+    velocityStrip.setBounds (velStripRow.reduced ((int) bridge::kMelodicKeyStripWidth, 0).withTrimmedTop (2));
+    int ls = 1, le = PianoPreset::NUM_STEPS;
+    proc.getPianoLoopBounds (ls, le);
+    velocityStrip.setStepRange (ls - 1, le - 1);
 
     melodicViewport.setBounds (card);
     const int viewW = juce::jmax (1, melodicViewport.getWidth());

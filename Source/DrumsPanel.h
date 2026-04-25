@@ -5,6 +5,7 @@
 #include "BridgeBottomHalf.h"
 #include "BridgeLoopRangeStrip.h"
 #include "BridgeLookAndFeel.h"
+#include "BridgeVelocityStrip.h"
 #include "InstrumentControlBar.h"
 #include "drums/DrumsStylePresets.h"
 #include "drums/DrumsLookAndFeel.h"
@@ -64,6 +65,7 @@ private:
     InstrumentControlBar instrumentStrip;
     BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffff7f5c), NUM_STEPS };
     DrumGridComponent drumGrid;
+    BridgeVelocityStrip velocityStrip { NUM_STEPS, juce::Colour (0xffff7f5c) };
 
     struct StepTimer : public juce::Timer
     {
