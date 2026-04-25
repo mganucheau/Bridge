@@ -160,11 +160,13 @@ target_sources(BridgeTests PRIVATE
     Tests/ApvtsLayoutRegistryTests.cpp
     Tests/StateMigrationTests.cpp
     Tests/ProcessorMidiAndFlushTests.cpp
+    Tests/MLModelSmokeTests.cpp
     Tests/TonalityEngineSyncTests.cpp
     Tests/GridPatternParityTests.cpp
     Tests/SharedLayoutConstantsTests.cpp
     Tests/UnifiedStyleRegistryTests.cpp
     Tests/MorphRangeTests.cpp
+    Tests/DrumHumanFeelMetricsTests.cpp
 )
 if (BRIDGE_ENABLE_QA_HOOKS)
     target_compile_definitions(BridgeTests PRIVATE BRIDGE_ENABLE_QA_HOOKS=1)

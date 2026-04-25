@@ -109,7 +109,6 @@ public:
 
     void setMLPersonalityKnobs (const std::array<float, 10>& k) { mlPersonalityKnobs = k; }
     void captureMLContext();
-    void mergePatternFromML (const std::vector<float>& mlOutput);
 
     // ── Sting/Session features ─────────────────────────────────────────────
     /** 0 = static, 1 = constantly breathing. Drives a slow LFO over humanize / velocity at
@@ -165,9 +164,13 @@ private:
     uint8 sampleVelocity (int step, int drum, bool ghost) const;
     void  applyHumanize  (double samplesPerStep);
     float complexityMod  (int step, int drum) const;
+    void  mergeMLBlockAtQuarter (const std::vector<float>& mlOutput, int quarter0);
+    void  enforcePerStepPolyphonyInRange (int r0, int r1, int maxVoices);
+    int   maxPolyphonyForSettings() const noexcept;
 
     std::array<float, 10> mlPersonalityKnobs {};
     std::array<float, 32> mlPriorHits {};
+    void captureMLContextForQuarter (int quarter0);
 
     LayerMask layerLocks {};
     float     lifeAmount = 0.0f;

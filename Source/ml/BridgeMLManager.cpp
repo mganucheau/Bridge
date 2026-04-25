@@ -124,7 +124,11 @@ std::vector<float> BridgeMLManager::generateDrums (const std::array<float, 10>& 
     for (int i = 0; i < 4; ++i)
         in[(size_t) (42 + i)] = juce::jlimit (0.0f, 1.0f, grooveContext[(size_t) i]);
     jassert (in.size() == (size_t) kDrumMlIn);
-    return drumModel->run (in);
+    auto out = drumModel->run (in);
+    // Contract: 8×4 hit logits — see ml/training/drum_onnx_student.py
+    if (out.size() != 32)
+        return {};
+    return out;
 }
 
 std::vector<float> BridgeMLManager::generateBass (const std::vector<float>& personalityKnobs,

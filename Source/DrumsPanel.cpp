@@ -350,6 +350,7 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
 
 DrumsPanel::~DrumsPanel()
 {
+    densityComplexityDebounce.stopTimer();
     proc.apvtsMain.removeParameterListener ("drumsOn", this);
     proc.apvtsMain.removeParameterListener ("loopStart", this);
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
@@ -465,12 +466,7 @@ void DrumsPanel::parameterChanged (const juce::String& parameterID, float newVal
 
     if (parameterID == "density" || parameterID == "complexity")
     {
-        proc.syncDrumsEngineFromAPVTS();
-        int ls = 1, le = NUM_STEPS;
-        proc.getDrumsLoopBounds (ls, le);
-        proc.drumEngine.morphPatternForDensityAndComplexity (
-            ls - 1, juce::jmin (le - 1, proc.drumEngine.getPatternLen() - 1));
-        triggerAsyncUpdate();
+        densityComplexityDebounce.startTimer (48);
         return;
     }
     if (parameterID == "style")
@@ -494,6 +490,18 @@ void DrumsPanel::parameterChanged (const juce::String& parameterID, float newVal
     }
 
     proc.rebuildDrumsGridPreview();
+    triggerAsyncUpdate();
+}
+
+void DrumsPanel::DensityComplexityDebounce::timerCallback()
+{
+    stopTimer();
+    p.performDebouncedDrumRegenerate();
+}
+
+void DrumsPanel::performDebouncedDrumRegenerate()
+{
+    proc.regenerateDrumsAfterKnobChange();
     triggerAsyncUpdate();
 }
 

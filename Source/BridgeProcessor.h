@@ -121,6 +121,9 @@ public:
     /** Leader / QA: morph every engine using main loop selection (1-based APVTS → 0-based engines). */
     void morphAllEnginesToMainSelection();
 
+    /** Drums: sync from APVTS and regenerate the pattern (ML when loaded) for main selection / full bar. */
+    void regenerateDrumsAfterKnobChange();
+
     BridgeMLManager* getMLManager() const noexcept { return mlManager.get(); }
 
     /** At most one automatic check per 24h (tracked in APVTS); silent on network failure. */
@@ -158,6 +161,7 @@ public:
     void applyArrangementMacro (float& density, float& complexity, bool isDrums) const;
 
 private:
+    void runDrumGenerateForCurrentMainSelection();
     void handleModelUpdateCheckResult (BridgeUpdateChecker::UpdateInfo info);
 
     void syncDrumsMLPersonalityToEngine();

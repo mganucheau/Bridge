@@ -1127,20 +1127,33 @@ void BridgeProcessor::randomizeDrumsSettings()
     drumEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
 }
 
+void BridgeProcessor::runDrumGenerateForCurrentMainSelection()
+{
+    if (isMainSelectionFullClip (NUM_STEPS))
+    {
+        drumEngine.generatePattern (false, mlManager.get());
+    }
+    else
+    {
+        int a = 1, b = NUM_STEPS;
+        getMainSelectionBounds (NUM_STEPS, a, b);
+        drumEngine.generatePatternRange (a - 1, juce::jmin (b - 1, drumEngine.getPatternLen() - 1), false, mlManager.get());
+    }
+    publishDrumActivityToFollowers();
+}
+
+void BridgeProcessor::regenerateDrumsAfterKnobChange()
+{
+    syncDrumsEngineFromAPVTS();
+    runDrumGenerateForCurrentMainSelection();
+}
+
 void BridgeProcessor::triggerDrumsGenerate()
 {
     juce::Random r;
     drumEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncDrumsEngineFromAPVTS();
-    if (isMainSelectionFullClip (NUM_STEPS))
-        drumEngine.generatePattern (false, mlManager.get());
-    else
-    {
-        int a = 1, b = NUM_STEPS;
-        getMainSelectionBounds (NUM_STEPS, a, b);
-        drumEngine.generatePatternRange (a - 1, b - 1, false, mlManager.get());
-    }
-    publishDrumActivityToFollowers();
+    runDrumGenerateForCurrentMainSelection();
 }
 
 void BridgeProcessor::triggerDrumsFill (int fromStep)
@@ -1296,11 +1309,9 @@ void BridgeProcessor::morphAllEnginesToMainSelection()
     syncPianoEngineFromAPVTS();
     syncGuitarEngineFromAPVTS();
 
-    int ls = 1, le = 1;
-    getMainSelectionBounds (NUM_STEPS, ls, le);
-    drumEngine.morphPatternForDensityAndComplexity (
-        ls - 1, juce::jmin (le - 1, drumEngine.getPatternLen() - 1));
+    runDrumGenerateForCurrentMainSelection();
 
+    int ls = 1, le = 1;
     getMainSelectionBounds (BassPreset::NUM_STEPS, ls, le);
     bassEngine.morphPatternForDensityAndComplexity (
         ls - 1, juce::jmin (le - 1, bassEngine.getPatternLen() - 1));

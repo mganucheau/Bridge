@@ -5,7 +5,7 @@
 struct DrumMorphRangeTests final : public juce::UnitTest
 {
     DrumMorphRangeTests()
-        : juce::UnitTest ("Drum morph: density 1 fills every lane in range", "Bridge/QA")
+        : juce::UnitTest ("Drum morph: density 1 obeys activity budget in range (not 100% fill)", "Bridge/QA")
     {
     }
 
@@ -13,6 +13,8 @@ struct DrumMorphRangeTests final : public juce::UnitTest
     {
         DrumEngine e;
         e.setPatternLen (NUM_STEPS);
+        e.setStyle (0);
+        e.setSeed (1234);
         e.setDensity (0.0f);
         e.morphPatternForDensityAndComplexity (0, NUM_STEPS - 1);
 
@@ -27,8 +29,9 @@ struct DrumMorphRangeTests final : public juce::UnitTest
                 if (e.getStep (s)[(size_t) d].active)
                     ++active;
 
-        const int expected = (r1 - r0 + 1) * NUM_DRUMS;
-        expectEquals (active, expected);
+        const int  total = (r1 - r0 + 1) * NUM_DRUMS;
+        const double rate = (double) active / (double) juce::jmax (1, total);
+        expect (rate < 0.55, "morph in sub-range should not fill every cell at d=1");
     }
 };
 

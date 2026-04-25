@@ -8,7 +8,8 @@
 #   [42:46]  timing / groove context: swing, step_density, backbeat_strength, syncopation [0,1]
 #
 # Output (32 floats): hit probabilities in [0,1], same 8×4 layout (voice-major flatten).
-#   Runtime can threshold per voice-step or feed a sampler.
+#   Runtime (Bridge): BridgeMLManager::generateDrums enforces 32 outputs; DrumEngine runs
+#   four inferences per full bar (one per quarter of 16 steps) with captureMLContextForQuarter.
 from __future__ import annotations
 
 import os

@@ -74,6 +74,15 @@ private:
         void timerCallback() override { panel.updateStepAnimation(); }
     } stepTimer { *this };
 
+    struct DensityComplexityDebounce : public juce::Timer
+    {
+        DrumsPanel& p;
+        explicit DensityComplexityDebounce (DrumsPanel& o) : p (o) {}
+        void timerCallback() override;
+    } densityComplexityDebounce { *this };
+
+    void performDebouncedDrumRegenerate();
+
     void updateStepAnimation();
     int  lastAnimStep = -1;
 

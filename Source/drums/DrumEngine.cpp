@@ -15,9 +15,31 @@ static float probabilityAfterDensity (float base, float density)
     {
         const float fill = (density - 0.5f) * 2.0f;
         prob = base * (0.5f + 0.5f * fill);
-        prob += (1.0f - base) * base * fill * 0.25f;
+        // Toned down from 0.25f: high density no longer floods sparse style cells.
+        prob += (1.0f - base) * base * fill * 0.10f;
     }
-    return juce::jlimit (0.0f, 1.0f, prob);
+    return juce::jmin (0.92f, juce::jlimit (0.0f, 1.0f, prob));
+}
+
+/** Max fraction of the range×voice grid that morph / density budget targets (per genre bank). */
+static float maxActivityFractionForStyle (int style) noexcept
+{
+    static constexpr float kBankMax[NUM_PATTERN_BANKS] = {
+        0.48f, 0.50f, 0.48f, 0.45f, 0.44f, 0.50f, 0.47f, 0.48f
+    };
+    const int b = STYLE_PATTERN_MAP[juce::jlimit (0, NUM_STYLES - 1, style)];
+    return kBankMax[juce::jlimit (0, NUM_PATTERN_BANKS - 1, b)];
+}
+
+static int targetActiveCells (float density, int totalSlots, int style) noexcept
+{
+    if (density <= 0.001f || totalSlots <= 0)
+        return 0;
+    const float cap = maxActivityFractionForStyle (style);
+    const float minF = 0.055f;
+    const float t    = std::pow (juce::jlimit (0.f, 1.f, density), 0.7f);
+    const float f    = juce::jmap (t, 0.f, 1.f, minF, cap);
+    return juce::jlimit (0, totalSlots, (int) std::lround (f * (float) totalSlots));
 }
 
 // Velocity contour macro: shapes the 16-step velocity envelope after generation. Flat = identity;
@@ -61,8 +83,6 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
     to0   = juce::jlimit (0, NUM_STEPS - 1, to0);
     if (to0 < from0)
         std::swap (from0, to0);
-
-    captureMLContext();
 
     const DrumPattern previous = pattern;
     std::vector<std::tuple<int, int, int>> restoreTimeShift;
@@ -143,8 +163,9 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
             pattern[step][drum].active = false;
 
+    enforcePerStepPolyphonyInRange (0, patternLen - 1, maxPolyphonyForSettings());
+
     const bool partialRegenWindow = (from0 > 0 || to0 < patternLen - 1);
-    std::vector<float> mlOut;
     if (! partialRegenWindow && ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::DrumHumanizer))
     {
         const std::array<float, 4> groove {
@@ -153,10 +174,15 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
             juce::jlimit (0.0f, 1.0f, velocityMul * 0.85f + fillRate * 0.15f),
             juce::jlimit (0.0f, 1.0f, complexity * 0.65f + humanize * 0.35f),
         };
-        mlOut = ml->generateDrums (mlPersonalityKnobs, mlPriorHits, groove);
+        for (int q = 0; q < 4; ++q)
+        {
+            captureMLContextForQuarter (q);
+            const auto mlOut = ml->generateDrums (mlPersonalityKnobs, mlPriorHits, groove);
+            mergeMLBlockAtQuarter (mlOut, q);
+        }
     }
-    if (! partialRegenWindow)
-        mergePatternFromML (mlOut);
+
+    enforcePerStepPolyphonyInRange (0, patternLen - 1, maxPolyphonyForSettings());
     applyHumanize (playbackSamplesPerStep);
 
     // Apply velocity contour macro after humanize so users see and hear the shape.
@@ -590,49 +616,111 @@ void DrumEngine::applyHumanize (double samplesPerStep)
 void DrumEngine::captureMLContext()
 {
     static constexpr int mlVoices = 8;
-    const int last = patternLen > 0 ? patternLen - 1 : 0;
+    const int            last     = patternLen > 0 ? patternLen - 1 : 0;
     for (int v = 0; v < mlVoices; ++v)
         for (int t = 0; t < 4; ++t)
         {
-            const int step = juce::jlimit (0, last, last - t);
+            const int     step = juce::jlimit (0, last, last - t);
+            const auto&   h    = pattern[(size_t) step][(size_t) v];
+            mlPriorHits[(size_t) (v * 4 + t)] =
+                h.active ? juce::jlimit (0.0f, 1.0f, (float) h.velocity / 127.0f) : 0.0f;
+        }
+}
+
+void DrumEngine::captureMLContextForQuarter (int quarter0)
+{
+    static constexpr int mlVoices = 8;
+    quarter0 = juce::jlimit (0, 3, quarter0);
+    const int qStart = quarter0 * 4;
+    for (int v = 0; v < mlVoices; ++v)
+        for (int t = 0; t < 4; ++t)
+        {
+            int step = qStart - 1 - t;
+            if (step < 0)
+                step += patternLen;
+            step = juce::jlimit (0, patternLen - 1, step);
             const auto& h = pattern[(size_t) step][(size_t) v];
             mlPriorHits[(size_t) (v * 4 + t)] =
                 h.active ? juce::jlimit (0.0f, 1.0f, (float) h.velocity / 127.0f) : 0.0f;
         }
 }
 
-void DrumEngine::mergePatternFromML (const std::vector<float>& mlOutput)
+int DrumEngine::maxPolyphonyForSettings() const noexcept
+{
+    return juce::jlimit (3, 6, 3 + (int) std::lround (complexity * 2.5f));
+}
+
+void DrumEngine::enforcePerStepPolyphonyInRange (int r0, int r1, int maxVoices)
+{
+    r0 = juce::jlimit (0, patternLen - 1, r0);
+    r1 = juce::jlimit (0, patternLen - 1, r1);
+    if (r1 < r0)
+        std::swap (r0, r1);
+    maxVoices = juce::jmax (1, maxVoices);
+
+    for (int s = r0; s <= r1; ++s)
+    {
+        for (;;)
+        {
+            int n = 0;
+            for (int d = 0; d < NUM_DRUMS; ++d)
+                if (pattern[(size_t) s][(size_t) d].active)
+                    ++n;
+            if (n <= maxVoices)
+                break;
+
+            int bestD = -1;
+            float worst = 1e9f;
+            for (int d = 0; d < NUM_DRUMS; ++d)
+            {
+                if (! pattern[(size_t) s][(size_t) d].active)
+                    continue;
+                const float score = blendedStyleBase (s, d) + complexityMod (s, d);
+                if (score < worst)
+                {
+                    worst = score;
+                    bestD = d;
+                }
+            }
+            if (bestD < 0)
+                break;
+            pattern[(size_t) s][(size_t) bestD] = {};
+        }
+    }
+}
+
+void DrumEngine::mergeMLBlockAtQuarter (const std::vector<float>& mlOutput, int quarter0)
 {
     if (mlOutput.size() < 32)
         return;
 
     static constexpr int mlVoices = 8;
-    const int startMerge = juce::jmax (0, patternLen - 4);
+    quarter0 = juce::jlimit (0, 3, quarter0);
     for (int t = 0; t < 4; ++t)
     {
-        const int step = startMerge + t;
+        const int step = quarter0 * 4 + t;
         if (step >= patternLen)
             break;
 
         for (int v = 0; v < mlVoices && v < NUM_DRUMS; ++v)
         {
             const float p = mlOutput[(size_t) (v * 4 + t)];
-            auto& hit = pattern[(size_t) step][(size_t) v];
+            auto&       hit = pattern[(size_t) step][(size_t) v];
 
-            if (p >= 0.45f)
+            if (p >= 0.50f)
             {
                 if (! hit.active)
                 {
-                    hit.active = true;
+                    hit.active   = true;
                     hit.velocity = sampleVelocity (step, v, false);
                     hit.timeShift = 0;
                 }
                 hit.velocity = (uint8) juce::jlimit (
-                    1, 127, (int) ((float) hit.velocity * (0.75f + 0.5f * p)));
+                    1, 127, (int) ((float) hit.velocity * (0.78f + 0.45f * p)));
             }
-            else if (p < 0.2f)
+            else if (p < 0.18f)
             {
-                hit.active = false;
+                hit.active   = false;
                 hit.velocity = 0;
                 hit.timeShift = 0;
             }
@@ -703,13 +791,7 @@ void DrumEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int ra
 
     const int rangeSteps = r1 - r0 + 1;
     const int totalSlots = rangeSteps * NUM_DRUMS;
-    const int minTarget  = (density <= 0.001f ? 0
-                                               : juce::jmax (0, (int) std::lround ((float) totalSlots * 0.07f)));
-    const int maxTarget  = totalSlots;
-    int targetActive = (density >= 0.999f ? maxTarget
-                                          : (int) std::lround (juce::jmap (density, 0.f, 1.f,
-                                                                           (float) minTarget, (float) maxTarget)));
-    targetActive = juce::jlimit (0, maxTarget, targetActive);
+    int       targetActive = targetActiveCells (density, totalSlots, style);
 
     auto countActiveInRange = [&] {
         int c = 0;
@@ -750,39 +832,51 @@ void DrumEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int ra
         --activeInRange;
     }
 
+    const int maxP = maxPolyphonyForSettings();
     while (activeInRange < targetActive)
     {
         int bestS = -1, bestD = -1;
         float bestScore = -1.f;
         for (int s = r0; s <= r1; ++s)
         {
+            int nOn = 0;
+            for (int d = 0; d < NUM_DRUMS; ++d)
+                if (pattern[(size_t) s][(size_t) d].active)
+                    ++nOn;
+            if (nOn >= maxP)
+                continue;
+
             for (int d = 0; d < NUM_DRUMS; ++d)
             {
                 if (pattern[(size_t) s][(size_t) d].active)
                     continue;
                 const float base = blendedStyleBase (s, d);
-                const float score = (base + complexityMod (s, d)) * (1.0f + 0.18f * complexity);
+                // High complexity: prefer backbeat-adjacent + peripheral layers, not a second linear density ramp.
+                const float sync = 1.0f + 0.22f * std::abs (complexity - 0.5f) * 2.0f;
+                const float score = (base + complexityMod (s, d)) * sync;
                 if (score > bestScore)
                 {
                     bestScore = score;
-                    bestS = s;
-                    bestD = d;
+                    bestS     = s;
+                    bestD     = d;
                 }
             }
         }
         if (bestS < 0)
             break;
 
-        const int s = bestS;
-        const int d = bestD;
+        const int   s   = bestS;
+        const int   d   = bestD;
         const float base = blendedStyleBase (s, d);
         const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
-        const bool ghost = (base < ghostThresh);
-        pattern[(size_t) s][(size_t) d].active    = true;
+        const bool  ghost = (base < ghostThresh);
+        pattern[(size_t) s][(size_t) d].active   = true;
         pattern[(size_t) s][(size_t) d].velocity  = sampleVelocity (s, d, ghost);
         pattern[(size_t) s][(size_t) d].timeShift = 0;
         ++activeInRange;
     }
+
+    enforcePerStepPolyphonyInRange (r0, r1, maxP);
 
     rebuildGridPreview();
     if (onPatternChanged)
