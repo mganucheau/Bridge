@@ -24,11 +24,8 @@ static float probabilityAfterDensity (float base, float density)
 /** Max fraction of the range×voice grid that morph / density budget targets (per genre bank). */
 static float maxActivityFractionForStyle (int style) noexcept
 {
-    static constexpr float kBankMax[NUM_PATTERN_BANKS] = {
-        0.48f, 0.50f, 0.48f, 0.45f, 0.44f, 0.50f, 0.47f, 0.48f
-    };
     const int b = STYLE_PATTERN_MAP[juce::jlimit (0, NUM_STYLES - 1, style)];
-    return kBankMax[juce::jlimit (0, NUM_PATTERN_BANKS - 1, b)];
+    return STYLE_BANK_ACTIVITY_CAP[juce::jlimit (0, NUM_PATTERN_BANKS - 1, b)];
 }
 
 static int targetActiveCells (float density, int totalSlots, int style) noexcept
@@ -40,6 +37,115 @@ static int targetActiveCells (float density, int totalSlots, int style) noexcept
     const float t    = std::pow (juce::jlimit (0.f, 1.f, density), 0.7f);
     const float f    = juce::jmap (t, 0.f, 1.f, minF, cap);
     return juce::jlimit (0, totalSlots, (int) std::lround (f * (float) totalSlots));
+}
+
+// Per-voice "feel" timing bias as a fraction of one 16th step. Real session
+// drummers have voice-specific tendencies: kicks lean slightly forward, snares
+// lay back behind the click, hats stay tight, ride/crash sit slightly behind.
+// Values scaled by the user's `humanize` knob in the engine.
+static constexpr float kVoiceFeelBiasFrac[NUM_DRUMS] = {
+    -0.022f,  // 0 Kick  — anticipates
+    +0.030f,  // 1 Snare — backbeat lay-back
+    +0.005f,  // 2 HH closed — very slight lay-back
+    +0.010f,  // 3 HH open
+    -0.005f,  // 4 Tom Lo — slight anticipation on rolls
+    -0.008f,  // 5 Tom Mi
+    -0.012f,  // 6 Tom Hi
+    +0.020f,  // 7 Crash
+    +0.025f,  // 8 Ride
+};
+
+// Per-voice velocity random-multiplier window. Snare and toms get the widest
+// variance (where ghost / accent dynamics live), hats stay tighter so the
+// 16th-pulse doesn't feel jittery.
+static constexpr float kVoiceVelocityVariance[NUM_DRUMS] = {
+    0.20f,  // 0 Kick
+    0.32f,  // 1 Snare
+    0.16f,  // 2 HH closed
+    0.20f,  // 3 HH open
+    0.28f,  // 4 Tom Lo
+    0.28f,  // 5 Tom Mi
+    0.28f,  // 6 Tom Hi
+    0.18f,  // 7 Crash
+    0.22f,  // 8 Ride
+};
+
+static int voiceFeelTimingShift (int drum, double samplesPerStep, float humanize) noexcept
+{
+    const int d = juce::jlimit (0, NUM_DRUMS - 1, drum);
+    return (int) std::lround ((double) samplesPerStep
+                              * (double) kVoiceFeelBiasFrac[d]
+                              * (double) humanize);
+}
+
+// Loud notes pull forward, soft notes lay back. This single trick — when paired
+// with the per-voice bias above — accounts for most of the audible "in the pocket"
+// difference between a quantized programming and a session drummer.
+static int velocityFeelTimingShift (int velocity, double samplesPerStep, float humanize) noexcept
+{
+    const float velNorm = (float) juce::jlimit (1, 127, velocity) / 127.0f;
+    return (int) std::lround ((double) samplesPerStep
+                              * 0.05
+                              * (double) (0.55f - velNorm)
+                              * (double) humanize);
+}
+
+// Three-tier velocity sampler used by both deterministic and RNG-based paths.
+// `tier` 0 = soft / ghost-shadow, 1 = normal middle, 2 = accent. The three
+// segments are split into thirds of the supplied [vMin, vMax] range and then
+// a uniform pick within the chosen tier. This produces the multi-modal velocity
+// distribution real drumming has (clusters at ghost / normal / accent), instead
+// of the single tight Gaussian around the midpoint that a flat uniform pick gives.
+static int sampleVelocityFromTier (int vMin, int vMax, int tier, float u01) noexcept
+{
+    vMin = juce::jlimit (1, 127, vMin);
+    vMax = juce::jlimit (vMin, 127, vMax);
+    tier = juce::jlimit (0, 2, tier);
+    const int third = juce::jmax (1, (vMax - vMin) / 3);
+    int loSeg, hiSeg;
+    switch (tier)
+    {
+        case 2:  loSeg = vMax - third;          hiSeg = vMax; break;       // accent
+        case 1:  loSeg = vMin + third;          hiSeg = vMax - third; break; // normal
+        default: loSeg = vMin;                  hiSeg = vMin + third; break; // soft
+    }
+    if (hiSeg <= loSeg) hiSeg = loSeg + 1;
+    const int span = juce::jmax (1, hiSeg - loSeg + 1);
+    return juce::jlimit (loSeg, hiSeg, loSeg + (int) (u01 * (float) span));
+}
+
+// Pick a velocity tier biased by step position AND voice. Main beats lean
+// accent; off-beats stay middle; 16th syncopations lean ghost-shadow. Hats
+// stay close to the normal tier so consecutive 16th hats don't ping-pong
+// between ghost-shadow and accent (which read as "random velocity"). Snare
+// and toms keep the full multi-modal distribution where ghost / normal /
+// accent dynamics actually live.
+static int pickVelocityTier (int step, int drum, bool ghost, float u01) noexcept
+{
+    if (ghost) return 0;
+    const bool isMainBeat = (step % 4 == 0);
+    const bool isUpbeat   = (step % 4 == 2);
+    const bool isHat      = (drum == 2 || drum == 3); // HH closed / open
+    const bool isCymbal   = (drum == 7 || drum == 8); // crash / ride
+
+    if (isHat)
+    {
+        // Hats: mostly normal with light accent on main beats; almost never
+        // drop to ghost tier (those soft hats read as dropped notes).
+        if (isMainBeat) return (u01 < 0.40f) ? 2 : 1;
+        if (isUpbeat)   return (u01 < 0.20f) ? 2 : 1;
+        return (u01 < 0.08f) ? 2 : 1;
+    }
+    if (isCymbal)
+    {
+        // Crash / ride: bias toward accent (cymbals are statement strikes).
+        if (isMainBeat) return (u01 < 0.85f) ? 2 : 1;
+        return (u01 < 0.55f) ? 2 : 1;
+    }
+    // Kick / snare / toms — full multi-modal distribution.
+    if (isMainBeat) return (u01 < 0.65f) ? 2 : (u01 < 0.95f ? 1 : 0);
+    if (isUpbeat)   return (u01 < 0.30f) ? 2 : (u01 < 0.80f ? 1 : 0);
+    return (u01 < 0.15f) ? 2 : (u01 < 0.60f ? 1 : 0);
 }
 
 // Velocity contour macro: shapes the 16-step velocity envelope after generation. Flat = identity;
@@ -71,6 +177,8 @@ static float velocityShapeFactor (int shape, int step, int patternLen)
 DrumEngine::DrumEngine()
     : rng (std::random_device{}())
 {
+    pattern.resize ((size_t) bridge::phrase::kMaxSteps);
+    gridPreview.resize ((size_t) bridge::phrase::kMaxSteps);
     mlPersonalityKnobs.fill (0.5f);
     generatePattern (false, nullptr);
 }
@@ -79,8 +187,10 @@ DrumEngine::DrumEngine()
 
 void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform, BridgeMLManager* ml)
 {
-    from0 = juce::jlimit (0, NUM_STEPS - 1, from0);
-    to0   = juce::jlimit (0, NUM_STEPS - 1, to0);
+    if (patternLen < 1)
+        return;
+    from0 = juce::jlimit (0, patternLen - 1, from0);
+    to0   = juce::jlimit (0, patternLen - 1, to0);
     if (to0 < from0)
         std::swap (from0, to0);
 
@@ -159,10 +269,11 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
         }
     }
 
-    for (int step = patternLen; step < NUM_STEPS; ++step)
+    for (int step = patternLen; step < bridge::phrase::kMaxSteps; ++step)
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
-            pattern[step][drum].active = false;
+            pattern[(size_t) step][(size_t) drum].active = false;
 
+    applyVoiceExclusionAndPriority (0, patternLen - 1);
     enforcePerStepPolyphonyInRange (0, patternLen - 1, maxPolyphonyForSettings());
 
     const bool partialRegenWindow = (from0 > 0 || to0 < patternLen - 1);
@@ -182,6 +293,7 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
         }
     }
 
+    applyVoiceExclusionAndPriority (0, patternLen - 1);
     enforcePerStepPolyphonyInRange (0, patternLen - 1, maxPolyphonyForSettings());
     applyHumanize (playbackSamplesPerStep);
 
@@ -221,6 +333,8 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
     if (onPatternChanged)
         onPatternChanged();
+
+    rebuildGridPreview();
 }
 
 void DrumEngine::generatePattern (bool seamlessPerform, BridgeMLManager* ml)
@@ -433,17 +547,23 @@ uint8 DrumEngine::sampleVelocityDeterministic (int step, int drum, bool ghost, u
     int vMin = range[0];
     int vMax = range[1];
 
-    bool isMainBeat = (step % 4 == 0);
-    if (isMainBeat && !ghost)
-        vMin = (vMin + vMax) / 2;
+    // Three-tier distribution (ghost-shadow / normal / accent) instead of a flat
+    // uniform pick. Real drumming clusters velocities; uniform-fill of [vMin,vMax]
+    // produced the "every red note is the same shade" output.
+    const float tierRoll = pseudoRandom01 (salt ^ 0xA53C9E4Du);
+    const int tier = pickVelocityTier (step, drum, ghost, tierRoll);
+    const float pickRoll = pseudoRandom01 (salt ^ 0x517CC1B7u);
+    int vel = sampleVelocityFromTier (vMin, vMax, tier, pickRoll);
 
-    const int span = juce::jmax (1, vMax - vMin + 1);
-    int vel = vMin + (int)(pseudoRandom01 (salt ^ 0xA53C9E4Du) * (float)span);
-    vel = juce::jlimit (vMin, vMax, vel);
-    float hum = 0.87f + 0.13f * pseudoRandom01 (salt ^ 0xbeeff00du);
-    float stylePocket = 1.0f - 0.09f * STYLE_GROOVE_LOOSENESS[juce::jlimit (0, NUM_STYLES - 1, style)];
-    float userPocket  = juce::jmap (hold, 0.88f, 1.0f);
-    vel = (int)((float) vel * velocityMul * hum * stylePocket * userPocket);
+    // Per-voice variance window. Snare and toms get a wider random multiplier so
+    // ghost / normal / accent dynamics breathe; hats stay tighter.
+    const float voiceVar = kVoiceVelocityVariance[juce::jlimit (0, NUM_DRUMS - 1, drum)];
+    const float r3 = pseudoRandom01 (salt ^ 0xbeeff00du);
+    const float hum = (1.0f - voiceVar * 0.5f) + voiceVar * r3;
+
+    const float stylePocket = 1.0f - 0.09f * STYLE_GROOVE_LOOSENESS[juce::jlimit (0, NUM_STYLES - 1, style)];
+    const float userPocket  = juce::jmap (hold, 0.88f, 1.0f);
+    vel = (int) std::lround ((float) vel * velocityMul * hum * stylePocket * userPocket);
     return (uint8) juce::jlimit (1, 127, vel);
 }
 
@@ -495,10 +615,12 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
                 vel = (uint8) juce::jlimit (1, 127, (int) std::lround ((float) vel * lifeK));
             }
 
-            int humShift = (int)(samplesPerStep * 0.25 * (humanize + lifeAmount * 0.15f));
+            int humShift = (int)(samplesPerStep * 0.32 * (humanize + lifeAmount * 0.15f));
             if (humShift > 0)
                 tshift = (int)(pseudoRandom01 (salt ^ 0x85ebca6bu) * (float)(2 * humShift + 1)) - humShift;
-            tshift += (int) grooveMicroOffset (wrappedStep, drum, salt, samplesPerStep);
+            tshift += voiceFeelTimingShift     (drum, samplesPerStep, humanize);
+            tshift += velocityFeelTimingShift  ((int) vel, samplesPerStep, humanize);
+            tshift += (int) grooveMicroOffset  (wrappedStep, drum, salt, samplesPerStep);
         }
 
         out[(size_t) drum] = { active, vel, tshift };
@@ -523,11 +645,13 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
             const float ghostThresh = juce::jmap (ghostAmount, 0.40f, 0.12f);
             bool ghost = (base < ghostThresh);
             uint8 vel = sampleVelocityDeterministic (wrappedStep, drum, ghost, salt ^ 0x27d4eb2du);
-            int maxShift = (int)(samplesPerStep * 0.25 * humanize);
+            int maxShift = (int)(samplesPerStep * 0.32 * humanize);
             int tshift = 0;
             if (maxShift > 0)
                 tshift = (int)(pseudoRandom01 (salt ^ 0x85ebca6bu) * (float)(2 * maxShift + 1)) - maxShift;
-            tshift += (int) grooveMicroOffset (wrappedStep, drum, salt, samplesPerStep);
+            tshift += voiceFeelTimingShift     (drum, samplesPerStep, humanize);
+            tshift += velocityFeelTimingShift  ((int) vel, samplesPerStep, humanize);
+            tshift += (int) grooveMicroOffset  (wrappedStep, drum, salt, samplesPerStep);
 
             auto& hit = out[(size_t) drum];
             if (! hit.active || vel > hit.velocity)
@@ -556,34 +680,60 @@ uint8 DrumEngine::sampleVelocity (int step, int drum, bool ghost) const
     int vMin = range[0];
     int vMax = range[1];
 
-    // Main beats (0, 4, 8, 12) get fuller velocity
-    bool isMainBeat = (step % 4 == 0);
-    if (isMainBeat && !ghost)
-        vMin = (vMin + vMax) / 2;
+    auto* self = const_cast<DrumEngine*>(this);
+    auto u = [&] { return (float) self->rng() / (float) std::mt19937::max(); };
 
-    std::uniform_int_distribution<int> dist (vMin, vMax);
-    int vel = const_cast<DrumEngine*>(this)->rng() % (vMax - vMin + 1) + vMin;
+    // Same three-tier distribution as the deterministic playback sampler so the
+    // pattern baked at generation time has the same dynamic shape as the live
+    // re-evaluated hits.
+    const float tierRoll = u();
+    const int   tier     = pickVelocityTier (step, drum, ghost, tierRoll);
+    int vel = sampleVelocityFromTier (vMin, vMax, tier, u());
 
-    // Scale by overall velocity multiplier
-    vel = (int)(vel * velocityMul * (1.0f / 1.0f)); // velocityMul already 0–1
+    const float voiceVar = kVoiceVelocityVariance[juce::jlimit (0, NUM_DRUMS - 1, drum)];
+    const float hum = (1.0f - voiceVar * 0.5f) + voiceVar * u();
 
-    return (uint8)jlimit (1, 127, vel);
+    vel = (int) std::lround ((float) vel * velocityMul * hum);
+    return (uint8) jlimit (1, 127, vel);
 }
 
 float DrumEngine::complexityMod (int step, int drum) const
 {
     const bool offBeat = (step % 2 != 0);
     const float mod    = (complexity - 0.5f) * 0.5f;
-    float weight       = offBeat ? 1.4f : 0.4f;
-    if (drum >= 4 && drum <= 7)
-        weight *= 1.2f;
-    return mod * weight;
+
+    // Per-voice complexity sensitivity. Toms and crash should NOT scale with
+    // complexity — at max complexity that previously turned a 5% bank value
+    // into a 47% chance, carpet-bombing the pattern with random tom/crash hits.
+    // Hi-hats own the "complexity" axis (more 16ths, more open accents); kick
+    // and snare get a modest boost (more ghosts, more syncopated kicks).
+    float voiceWeight = 1.0f;
+    switch (drum)
+    {
+        case 0: voiceWeight = 0.70f; break; // Kick — modest syncopation boost
+        case 1: voiceWeight = 0.85f; break; // Snare — ghost-density boost
+        case 2: voiceWeight = 1.25f; break; // HH closed — owns complexity
+        case 3: voiceWeight = 0.80f; break; // HH open — modest accent boost
+        case 4:
+        case 5:
+        case 6: voiceWeight = 0.15f; break; // Toms — barely scale (fills only)
+        case 7: voiceWeight = 0.00f; break; // Crash — never scales (phrase boundary only)
+        case 8: voiceWeight = 0.50f; break; // Ride — moderate
+        default: break;
+    }
+
+    // Position weight: off-beats still get more boost than on-beats (where the
+    // bank already places the structural hits), but no longer 1.4× — that was
+    // pushing already-loud off-beat probabilities into "fires every bar" land.
+    const float positionWeight = offBeat ? 1.10f : 0.50f;
+    return mod * voiceWeight * positionWeight;
 }
 
-std::array<float, NUM_STEPS> DrumEngine::getStepActivityGrid() const noexcept
+std::array<float, bridge::phrase::kMaxSteps> DrumEngine::getStepActivityGrid() const noexcept
 {
-    std::array<float, NUM_STEPS> grid {};
-    for (int step = 0; step < NUM_STEPS; ++step)
+    std::array<float, bridge::phrase::kMaxSteps> grid {};
+    const int n = juce::jlimit (1, bridge::phrase::kMaxSteps, patternLen);
+    for (int step = 0; step < n; ++step)
     {
         float maxV = 0.0f;
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
@@ -595,22 +745,32 @@ std::array<float, NUM_STEPS> DrumEngine::getStepActivityGrid() const noexcept
 }
 
 // Groove invariant: humanize shifts are deterministic from seed + step + drum (no per-block RNG).
+// Composition: random scatter ± voice-specific feel bias ± velocity-correlated micro-timing.
 void DrumEngine::applyHumanize (double samplesPerStep)
 {
     if (humanize < 0.01f) return;
 
-    int maxShift = (int)(samplesPerStep * 0.25 * humanize); // up to 25% of a step
-    if (maxShift < 1) return;
+    const int maxShift = (int)(samplesPerStep * 0.32 * humanize); // up to 32% of a step
 
     for (int step = 0; step < patternLen; ++step)
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
-            if (pattern[step][drum].active)
+        {
+            auto& hit = pattern[step][drum];
+            if (! hit.active) continue;
+
+            const uint32_t salt = seed ^ (uint32_t) step * 2246822519u
+                                       ^ (uint32_t) drum * 3266489917u ^ 0x9E3779B9u;
+
+            int tshift = 0;
+            if (maxShift > 0)
             {
-                const uint32_t salt = seed ^ (uint32_t) step * 2246822519u ^ (uint32_t) drum * 3266489917u ^ 0x9E3779B9u;
                 const float u = pseudoRandom01 (salt);
-                pattern[step][drum].timeShift =
-                    (int) std::lround ((u * 2.0f - 1.0f) * (float) maxShift);
+                tshift = (int) std::lround ((u * 2.0f - 1.0f) * (float) maxShift);
             }
+            tshift += voiceFeelTimingShift    (drum, samplesPerStep, humanize);
+            tshift += velocityFeelTimingShift ((int) hit.velocity, samplesPerStep, humanize);
+            hit.timeShift = tshift;
+        }
 }
 
 void DrumEngine::captureMLContext()
@@ -647,11 +807,28 @@ void DrumEngine::captureMLContextForQuarter (int quarter0)
 
 int DrumEngine::maxPolyphonyForSettings() const noexcept
 {
-    return juce::jlimit (3, 6, 3 + (int) std::lround (complexity * 2.5f));
+    // 3 voices baseline (kick + snare + hat is the canonical max for backbeat),
+    // +1 at high complexity (room for an open-hat accent or a tom decoration).
+    // Real session drumming clusters at 2-3; 6 produced the "column stack" look.
+    return juce::jlimit (3, 4, 3 + (int) std::lround (complexity * 1.0f));
 }
 
 void DrumEngine::enforcePerStepPolyphonyInRange (int r0, int r1, int maxVoices)
 {
+    // Musical drop priority — when over-cap, drop the most disposable voice
+    // first and keep the most essential. Crash → ride → toms → HH open →
+    // HH closed → snare → kick. (Kick is never dropped if any other voice
+    // is also playing at the same step.)
+    static constexpr int kDropOrder[NUM_DRUMS] = {
+        7,  // Crash
+        8,  // Ride
+        4, 5, 6, // Toms (lo, mi, hi)
+        3,  // HH open
+        2,  // HH closed
+        1,  // Snare
+        0   // Kick (last resort)
+    };
+
     r0 = juce::jlimit (0, patternLen - 1, r0);
     r1 = juce::jlimit (0, patternLen - 1, r1);
     if (r1 < r0)
@@ -660,7 +837,7 @@ void DrumEngine::enforcePerStepPolyphonyInRange (int r0, int r1, int maxVoices)
 
     for (int s = r0; s <= r1; ++s)
     {
-        for (;;)
+        for (int i = 0; i < NUM_DRUMS; ++i)
         {
             int n = 0;
             for (int d = 0; d < NUM_DRUMS; ++d)
@@ -669,22 +846,73 @@ void DrumEngine::enforcePerStepPolyphonyInRange (int r0, int r1, int maxVoices)
             if (n <= maxVoices)
                 break;
 
-            int bestD = -1;
-            float worst = 1e9f;
-            for (int d = 0; d < NUM_DRUMS; ++d)
+            const int dropD = kDropOrder[i];
+            if (pattern[(size_t) s][(size_t) dropD].active)
+                pattern[(size_t) s][(size_t) dropD] = {};
+        }
+    }
+}
+
+void DrumEngine::applyVoiceExclusionAndPriority (int r0, int r1)
+{
+    // Musical exclusion / role rules. Run BEFORE polyphony enforcement so the
+    // polyphony pass operates on a pattern that already respects these
+    // physical-instrument constraints.
+    //
+    //   Rule 1 — Crash only on phrase boundary (step 0).
+    //            Crashes anywhere else are rolled in by complexity / morph and
+    //            are what makes the pattern look like "crashes everywhere".
+    //   Rule 2 — Hat mutex: HH Closed and HH Open cannot both fire on the
+    //            same step (the open-hat strike replaces the closed strike).
+    //   Rule 3 — Crash + HH Closed at the same step: keep Crash (the right
+    //            hand can't strike both).
+    //   Rule 4 — Multiple toms on one step: keep the tom with the highest
+    //            bank base probability and drop the others (a real drummer
+    //            can't strike two toms in the same 16th).
+    r0 = juce::jlimit (0, patternLen - 1, r0);
+    r1 = juce::jlimit (0, patternLen - 1, r1);
+    if (r1 < r0)
+        std::swap (r0, r1);
+
+    constexpr size_t kKick = 0, kSnare = 1, kHHC = 2, kHHO = 3;
+    constexpr size_t kTomLo = 4, kTomMi = 5, kTomHi = 6, kCrash = 7, kRide = 8;
+    juce::ignoreUnused (kKick, kSnare, kRide);
+
+    for (int s = r0; s <= r1; ++s)
+    {
+        auto& step = pattern[(size_t) s];
+
+        // Rule 1: crash only on step 0.
+        if (s != 0 && step[kCrash].active)
+            step[kCrash] = {};
+
+        // Rule 2: hat mutex — HH Open wins.
+        if (step[kHHC].active && step[kHHO].active)
+            step[kHHC] = {};
+
+        // Rule 3: crash + HH Closed → drop HH Closed.
+        if (step[kCrash].active && step[kHHC].active)
+            step[kHHC] = {};
+
+        // Rule 4: multiple toms → keep highest base.
+        const bool tomActive[3] = { step[kTomLo].active, step[kTomMi].active, step[kTomHi].active };
+        const int  activeTomCount = (tomActive[0] ? 1 : 0)
+                                  + (tomActive[1] ? 1 : 0)
+                                  + (tomActive[2] ? 1 : 0);
+        if (activeTomCount > 1)
+        {
+            const int tomDrums[3] = { (int) kTomLo, (int) kTomMi, (int) kTomHi };
+            int   keepDrum = tomDrums[tomActive[0] ? 0 : (tomActive[1] ? 1 : 2)];
+            float keepBase = blendedStyleBase (s, keepDrum);
+            for (int i = 0; i < 3; ++i)
             {
-                if (! pattern[(size_t) s][(size_t) d].active)
-                    continue;
-                const float score = blendedStyleBase (s, d) + complexityMod (s, d);
-                if (score < worst)
-                {
-                    worst = score;
-                    bestD = d;
-                }
+                if (! tomActive[i] || tomDrums[i] == keepDrum) continue;
+                const float b = blendedStyleBase (s, tomDrums[i]);
+                if (b > keepBase) { keepBase = b; keepDrum = tomDrums[i]; }
             }
-            if (bestD < 0)
-                break;
-            pattern[(size_t) s][(size_t) bestD] = {};
+            for (int i = 0; i < 3; ++i)
+                if (tomActive[i] && tomDrums[i] != keepDrum)
+                    step[(size_t) tomDrums[i]] = {};
         }
     }
 }
@@ -767,7 +995,7 @@ void DrumEngine::rebuildGridPreview()
         }
     }
 
-    for (int s = patternLen; s < NUM_STEPS; ++s)
+    for (int s = patternLen; s < bridge::phrase::kMaxSteps; ++s)
         for (int d = 0; d < NUM_DRUMS; ++d)
             gridPreview[(size_t) s][(size_t) d] = {};
 }
@@ -876,6 +1104,7 @@ void DrumEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int ra
         ++activeInRange;
     }
 
+    applyVoiceExclusionAndPriority (r0, r1);
     enforcePerStepPolyphonyInRange (r0, r1, maxP);
 
     rebuildGridPreview();
@@ -889,7 +1118,7 @@ void DrumEngine::adaptPatternToNewStyle (int newStyleIndex)
     style = newStyleIndex;
     if (patternLen < 1)
         return;
-    generatePatternRange (0, patternLen - 1, true, nullptr);
+    generatePatternRange (0, patternLen - 1, false, nullptr);
 }
 
 void DrumEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml)

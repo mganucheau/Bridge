@@ -46,6 +46,8 @@ static float probabilityAfterDensity (float base, float density)
 BassEngine::BassEngine()
     : rng (std::random_device{}())
 {
+    pattern.resize ((size_t) bridge::phrase::kMaxSteps);
+    displayPattern.resize ((size_t) bridge::phrase::kMaxSteps);
     generatePattern (false, nullptr);
     rebuildGridPreview();
 }
@@ -139,12 +141,14 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
 
     captureBassMLContextFromPattern();
 
-    fromStep0 = juce::jlimit (0, NUM_STEPS - 1, fromStep0);
-    toStep0   = juce::jlimit (0, NUM_STEPS - 1, toStep0);
+    if (patternLen < 1)
+        return;
+    fromStep0 = juce::jlimit (0, patternLen - 1, fromStep0);
+    toStep0   = juce::jlimit (0, patternLen - 1, toStep0);
     if (toStep0 < fromStep0)
         std::swap (fromStep0, toStep0);
 
-    std::array<BassHit, NUM_STEPS> previous = pattern;
+    const BassPattern previous = pattern;
 
     for (int step = fromStep0; step <= toStep0; ++step)
     {
@@ -166,7 +170,8 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
             continue;
         }
 
-        float base = BASS_NOTE_PROBS[style][step];
+        const int stepInBar = step % 16;
+        float base = BASS_NOTE_PROBS[style][stepInBar];
         float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step));
         prob = probabilityAfterDensity (prob, density);
 
@@ -188,10 +193,10 @@ void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamless
             continue;
         }
 
-        int   prefDeg = BASS_PREFERRED_DEGREE[style][step];
+        int   prefDeg = BASS_PREFERRED_DEGREE[style][stepInBar];
         int   deg     = chooseDegreeProbabilistic (step, prefDeg);
 
-        float ghostTend  = BASS_GHOST_TENDENCY[style][step] * ghostAmount;
+        float ghostTend  = BASS_GHOST_TENDENCY[style][stepInBar] * ghostAmount;
         bool  isGhost    = (deg != 6) && sampleProb (ghostTend);
         bool  isAccent   = (step % 4 == 0) && ! isGhost;
         juce::ignoreUnused (isAccent);
@@ -460,7 +465,7 @@ void BassEngine::adaptPatternToNewStyle (int newStyleIndex)
         }
         pattern[(size_t) s].degree = deg;
         pattern[(size_t) s].midiNote = degreeToMidiNote (deg, prevMidi);
-        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][s] * ghostAmount);
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][s % 16] * ghostAmount);
         pattern[(size_t) s].isGhost = (deg != 6) && sampleProb (ghostT);
     }
 
@@ -481,7 +486,7 @@ void BassEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLM
     if (toStep0 < fromStep0)
         std::swap (fromStep0, toStep0);
 
-    std::array<BassHit, NUM_STEPS> previous = pattern;
+    const BassPattern previous = pattern;
 
     for (int step = fromStep0; step <= toStep0; ++step)
     {
@@ -492,7 +497,8 @@ void BassEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLM
             continue;
         }
 
-        float base = BASS_NOTE_PROBS[style][step];
+        const int stepInBar = step % 16;
+        float base = BASS_NOTE_PROBS[style][stepInBar];
         float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step));
         prob = probabilityAfterDensity (prob, density);
         const bool active = sampleProb (prob);
@@ -503,9 +509,9 @@ void BassEngine::evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLM
             continue;
         }
 
-        const int prefDeg = BASS_PREFERRED_DEGREE[style][step];
+        const int prefDeg = BASS_PREFERRED_DEGREE[style][stepInBar];
         const int deg = chooseDegreeProbabilistic (step, prefDeg);
-        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][step] * ghostAmount);
+        const float ghostT = jlimit (0.0f, 1.0f, BASS_GHOST_TENDENCY[style][stepInBar] * ghostAmount);
         const bool isGhost = (deg != 6) && sampleProb (ghostT);
         const bool isAccent = (step % 4 == 0) && ! isGhost;
         int prevMidi = -1;

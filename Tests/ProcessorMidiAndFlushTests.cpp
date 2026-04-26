@@ -21,6 +21,7 @@ struct ProcessorMidiSustainTests final : public juce::UnitTest
         proc.setPlayHead (&playHead);
 
         proc.prepareToPlay (44100.0, 512);
+        bridgeQaSetFloatParam01 (proc.apvtsMain, "pianoOn", 1.0f);
         bridgeQaSetFloatParam01 (proc.apvtsPiano, "sustain", 1.0f);
 
         const int pianoCh = (int) *proc.apvtsPiano.getRawParameterValue ("midiChannel");

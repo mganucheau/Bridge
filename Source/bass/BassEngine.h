@@ -7,6 +7,8 @@
 #include <functional>
 #include <vector>
 
+#include "../BridgePhrase.h"
+
 class BridgeMLManager;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -23,7 +25,7 @@ struct BassHit
     int     durationSamples = 0;  // calculated at scheduling time
 };
 
-using BassPattern = std::array<BassHit, BassPreset::NUM_STEPS>;
+using BassPattern = std::vector<BassHit>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 class BassEngine
@@ -37,7 +39,12 @@ public:
     void generateFill (int fromStep = 12);
 
     // ── Pattern access ─────────────────────────────────────────────────────
-    const BassHit&     getStep    (int step) const { return pattern[(size_t)step]; }
+    const BassHit&     getStep    (int step) const
+    {
+        const int max = juce::jmax (1, patternLen);
+        const int s = juce::jlimit (0, max - 1, step);
+        return pattern[(size_t) s];
+    }
     const BassPattern& getPattern ()         const { return pattern; }
     const BassPattern& getPatternForGrid()   const { return displayPattern; }
     bool               isLocked  ()          const { return locked; }
@@ -63,7 +70,7 @@ public:
     void setComplexity  (float c){ complexity  = jlimit (0.0f,  1.0f,  c); }
     void setGhostAmount (float g){ ghostAmount = jlimit (0.0f,  1.0f,  g); }  // scales ghost tendency
     void setStaccato    (float s){ staccato    = jlimit (0.0f,  1.0f,  s); }  // 0=legato, 1=staccato
-    void setPatternLen  (int   l){ patternLen  = jlimit (1, BassPreset::NUM_STEPS, l); }
+    void setPatternLen  (int   l){ patternLen  = jlimit (1, bridge::phrase::kMaxSteps, l); }
     void setLocked      (bool  l){ locked      = l; }
     void setSeed        (uint32 s){ seed       = s; rng.seed (seed); }
     void setPhraseBars  (int bars){ phraseBars = jlimit (1, 64, bars); }
@@ -144,7 +151,7 @@ public:
 
 private:
     BassPattern  pattern;
-    BassPattern  displayPattern {};  // pattern + optional fill-hold overlay for UI
+    BassPattern  displayPattern;  // pattern + optional fill-hold overlay for UI
     std::mt19937 rng;
     bool         fillHoldActive = false;
 

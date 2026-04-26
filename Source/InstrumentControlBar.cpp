@@ -5,9 +5,19 @@
 #include "bass/BassStylePresets.h"
 #include "piano/PianoStylePresets.h"
 #include "guitar/GuitarStylePresets.h"
+#include <cmath>
 
 namespace
 {
+static int measuredStripComboWidth (juce::ComboBox& box, int minW, int extraPad = 28)
+{
+    float w = 0.0f;
+    auto f  = box.getLookAndFeel().getComboBoxFont (box);
+    for (int i = 0; i < box.getNumItems(); ++i)
+        w = juce::jmax (w, (float) f.getStringWidth (box.getItemText (i)));
+    return juce::jmax (minW, (int) std::ceil (w) + extraPad);
+}
+
 static void setupStripMute (juce::TextButton& b)
 {
     b.setClickingTogglesState (true);
@@ -121,8 +131,12 @@ void InstrumentControlBar::setupControls (const Config& cfg)
 {
     bridge::instrumentStripStyle::applyStripLabel (styleLabel, "Style");
     bridge::instrumentStripStyle::applyStripComboColours (styleBox);
+    // TEMP: until phrase + loop behavior is dialed in, only expose Breakbeat + House.
+    // Keep underlying style parameter indices intact to preserve saved state.
+    // Unified style list indices: 0 Funk, 1 Breakbeat, 2 Techno, 3 House, ...
     for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
-        styleBox.addItem (bridgeUnifiedStyleNames()[i], i + 1);
+        if (i == 1 || i == 3)
+            styleBox.addItem (bridgeUnifiedStyleNames()[i], i + 1);
 
     addAndMakeVisible (styleLabel);
     addAndMakeVisible (styleBox);
@@ -218,15 +232,19 @@ void InstrumentControlBar::resized()
         box.setBounds (row.removeFromLeft (bw).withY (comboY).withHeight (comboH));
     };
 
-    placeGroup (styleLabel, 42, styleBox, 164);
+    const int wStyle = measuredStripComboWidth (styleBox, 100);
+    placeGroup (styleLabel, 42, styleBox, wStyle);
     if (melodic)
     {
         row.removeFromLeft (kGapGroups);
-        placeGroup (rootLabel, 40, rootBox, 52);
+        const int wRoot = measuredStripComboWidth (rootBox, 52);
+        placeGroup (rootLabel, 40, rootBox, wRoot);
         row.removeFromLeft (kGapGroups);
-        placeGroup (scaleLabel, 45, scaleBox, 160);
+        const int wScale = measuredStripComboWidth (scaleBox, 160);
+        placeGroup (scaleLabel, 45, scaleBox, wScale);
         row.removeFromLeft (kGapGroups);
-        placeGroup (octaveLabel, 35, octaveBox, 52);
+        const int wOct = measuredStripComboWidth (octaveBox, 52);
+        placeGroup (octaveLabel, 35, octaveBox, wOct);
     }
 }
 

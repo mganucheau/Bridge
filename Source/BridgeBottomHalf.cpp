@@ -78,18 +78,18 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
                                     std::function<void(bool)> onFillHold)
     : instApvts (instApvtsToUse),
       mainApvts (mainApvtsToUse),
-      knobDensity ("density", "DENSITY", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobSwing ("swing", "SWING", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobHumanize ("humanize", "HUMANIZE", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobHold ("hold", "HOLD", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobVelocity ("velocity", "VELOCITY", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobFillRate ("fillRate", "FILL RATE", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobComplexity ("complexity", "COMPLEXITY", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobSustain ("sustain", "SUSTAIN", instApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobDensity ("density", "DENSITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobSwing ("swing", "SWING", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobHumanize ("humanize", "HUMANIZE", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobHold ("hold", "HOLD", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobVelocity ("velocity", "VELOCITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobFillRate ("fillRate", "FILL RATE", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobComplexity ("complexity", "COMPLEXITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobSustain ("sustain", "SUSTAIN", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
       xyTension (std::make_unique<BridgeXYPad> (instApvts, "complexity", "density", groupAccent)),
       xyFeel (std::make_unique<BridgeXYPad> (instApvts, "humanize", "swing", groupAccent)),
-      knobLoopStart ("loopStart", "START", mainApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
-      knobLoopEnd ("loopEnd", "END", mainApvts, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent),
+      knobLoopStart ("loopStart", "START", mainApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobLoopEnd ("loopEnd", "END", mainApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
       fillHoldCallback (onFillHold)
 {
     setLookAndFeel (&laf);
@@ -143,7 +143,6 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
     addAndMakeVisible (syncIconButton);
 
     generateButton.onClick = onGenerate;
-    fillButton.addMouseListener (&fillListener, false);
 
     auto setupAction = [&] (juce::TextButton& btn) {
         btn.setConnectedEdges (0);
@@ -152,20 +151,28 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
         addAndMakeVisible (btn);
     };
     setupAction (generateButton);
-    setupAction (fillButton);
 
-    jamKnob.setRange (0, 7, 1);
-    jamKnob.setDoubleClickReturnValue (true, 0.0);
-    jamKnob.setTooltip ("Jam: auto-evolve the main loop selection on a beat clock");
-    BridgeLookAndFeel::setKnobStyle (jamKnob, BridgeLookAndFeel::KnobStyle::BigRing, groupAccent);
-    if (instApvts.getParameter ("jamInterval") != nullptr)
-        jamKnobAttach = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-            instApvts, "jamInterval", jamKnob);
+    jamToggle.setButtonText ("JAM");
+    jamToggle.setTooltip ("Jam: periodically press Generate over the current selection (while playing)");
+    addAndMakeVisible (jamToggle);
+    if (instApvts.getParameter ("jamOn") != nullptr)
+        jamToggleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            instApvts, "jamOn", jamToggle);
+
+    jamPeriodBox.addItem ("4 bars",  1);
+    jamPeriodBox.addItem ("8 bars",  2);
+    jamPeriodBox.addItem ("16 bars", 3);
+    jamPeriodBox.setJustificationType (juce::Justification::centredLeft);
+    jamPeriodBox.setTooltip ("Jam period (bars)");
+    addAndMakeVisible (jamPeriodBox);
+    if (instApvts.getParameter ("jamPeriodBars") != nullptr)
+        jamPeriodAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            instApvts, "jamPeriodBars", jamPeriodBox);
+
     jamLabel.setText ("JAM", juce::dontSendNotification);
     jamLabel.setJustificationType (juce::Justification::centred);
     jamLabel.setColour (juce::Label::textColourId, bridge::colors::textDim());
     jamLabel.setFont (bridge::hig::uiFont (10.0f, "Semibold"));
-    addAndMakeVisible (jamKnob);
     addAndMakeVisible (jamLabel);
 }
 
@@ -201,8 +208,7 @@ void BridgeBottomHalf::resized()
     constexpr int kColGap = 12;
     constexpr int kTopGap = 12;
     constexpr int kMargin = 16;
-    constexpr int kPadXY = 160;
-    constexpr int kLoopBtnSide = 28;
+    constexpr int kLoopBtnSide = 48;
     constexpr int kBtnPairGap = 4;
     constexpr int kOuterGap = 8;
     constexpr int kKnobW = 48;
@@ -254,27 +260,44 @@ void BridgeBottomHalf::resized()
         }
     }
 
-    // Col 2: Tension XY is the single source of truth for complexity (X) / density (Y).
-    // Per-axis knobs were removed to avoid two controls writing the same APVTS param.
-    knobComplexity.setVisible (false);
-    knobDensity.setVisible (false);
+    // Col 2: Tension XY + per-axis knobs (same params).
+    knobComplexity.setVisible (true);
+    knobDensity.setVisible (true);
     tensionLabel.setBounds (col2.removeFromTop (14));
     col2.removeFromTop (4);
-    if (xyTension != nullptr)
     {
-        const int padSide = juce::jmin (col2.getHeight(), juce::jmin (col2.getWidth(), kPadXY + 32));
-        xyTension->setBounds (col2.withSizeKeepingCentre (padSide, padSide));
+        auto knobsRow = col2.removeFromBottom (70);
+        const int kGap = 8;
+        const int kw = (knobsRow.getWidth() - kGap) / 2;
+        knobComplexity.setBounds (knobsRow.removeFromLeft (kw));
+        knobsRow.removeFromLeft (kGap);
+        knobDensity.setBounds (knobsRow);
+
+        if (xyTension != nullptr)
+        {
+            const int padSide = juce::jmin (col2.getWidth(), col2.getHeight());
+            xyTension->setBounds (col2.withSizeKeepingCentre (padSide, padSide));
+        }
     }
 
-    // Col 3: Feel XY is the single source of truth for humanize (X) / swing (Y).
-    knobHumanize.setVisible (false);
-    knobSwing.setVisible (false);
+    // Col 3: Feel XY + per-axis knobs (same params).
+    knobHumanize.setVisible (true);
+    knobSwing.setVisible (true);
     feelLabel.setBounds (col3.removeFromTop (14));
     col3.removeFromTop (4);
-    if (xyFeel != nullptr)
     {
-        const int padSide = juce::jmin (col3.getHeight(), juce::jmin (col3.getWidth(), kPadXY + 32));
-        xyFeel->setBounds (col3.withSizeKeepingCentre (padSide, padSide));
+        auto knobsRow = col3.removeFromBottom (70);
+        const int kGap = 8;
+        const int kw = (knobsRow.getWidth() - kGap) / 2;
+        knobHumanize.setBounds (knobsRow.removeFromLeft (kw));
+        knobsRow.removeFromLeft (kGap);
+        knobSwing.setBounds (knobsRow);
+
+        if (xyFeel != nullptr)
+        {
+            const int padSide = juce::jmin (col3.getWidth(), col3.getHeight());
+            xyFeel->setBounds (col3.withSizeKeepingCentre (padSide, padSide));
+        }
     }
 
     // Col 4: Selectors + Actions
@@ -302,19 +325,17 @@ void BridgeBottomHalf::resized()
     actionsLabel.setBounds (actArea.removeFromTop (14));
     actArea.removeFromTop (4);
     {
+        constexpr int kActionSide = 48;
         constexpr int btnGap = 6;
         constexpr int outerMargin = 8;
         actArea.reduce (outerMargin, outerMargin);
         auto row = actArea;
-        const int btnW = (row.getWidth() - btnGap * 2) / 4;
-        const int bh = juce::jmin (row.getHeight(), btnW + 4);
-        auto r2 = row.withHeight (bh);
-        generateButton.setBounds (r2.removeFromLeft (btnW));
-        r2.removeFromLeft (btnGap);
-        fillButton.setBounds (r2.removeFromLeft (btnW));
-        r2.removeFromLeft (btnGap);
-        auto jamArea = r2;
-        jamLabel.setBounds (jamArea.removeFromBottom (14));
-        jamKnob.setBounds (jamArea.reduced (2, 0));
+        const int genY = row.getY() + (row.getHeight() - kActionSide) / 2;
+        generateButton.setBounds (row.getX(), genY, kActionSide, kActionSide);
+        auto jamCol = row.withTrimmedLeft (kActionSide + btnGap);
+        jamLabel.setBounds (jamCol.removeFromBottom (14));
+        auto top = jamCol.removeFromTop (juce::jmax (18, jamCol.getHeight() / 2));
+        jamToggle.setBounds (top.reduced (2, 0));
+        jamPeriodBox.setBounds (jamCol.reduced (2, 0));
     }
 }

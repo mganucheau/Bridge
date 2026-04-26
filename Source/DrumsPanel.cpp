@@ -10,8 +10,11 @@
 
 namespace
 {
-/** Match melodic grid: lane column + step columns use same cellW / rowH as Bass/Piano/Guitar grid. */
+/** Match melodic grid: lane column + step columns use same cellW / rowH as Bass/Piano/Guitar grid.
+    PatternFlow-style: when `barCount` is > 1, the visible grid contains barCount * NUM_STEPS cells
+    sharing the same container width — `cellW` shrinks accordingly so everything still fits. */
 void computeDrumGridGeometry (juce::Rectangle<float> fullBounds,
+                              int barCount,
                               float& laneX, float& laneW,
                               float& originX, float& originY,
                               float& cellW, float& rowH)
@@ -21,7 +24,8 @@ void computeDrumGridGeometry (juce::Rectangle<float> fullBounds,
     const float gridLeft = laneW;
     const float gridW = juce::jmax (1.0f, fullBounds.getWidth() - laneW);
     const float gridBodyH = fullBounds.getHeight();
-    cellW = gridW / (float) NUM_STEPS;
+    const int totalCells = juce::jmax (1, barCount) * NUM_STEPS;
+    cellW = gridW / (float) totalCells;
     rowH = gridBodyH / (float) bridge::kMelodicOctaveRows;
     originX = gridLeft;
     const float drumBlockH = rowH * (float) NUM_DRUMS;
@@ -42,7 +46,18 @@ void DrumGridComponent::syncGeometryFromBounds()
     const auto full = getLocalBounds().toFloat();
     if (full.getWidth() < 1.0f || full.getHeight() < 1.0f)
         return;
-    computeDrumGridGeometry (full, geomLaneX, geomLaneW, geomOriginX, geomOriginY, geomCellW, geomRowH);
+    computeDrumGridGeometry (full, barCount, geomLaneX, geomLaneW, geomOriginX, geomOriginY, geomCellW, geomRowH);
+}
+
+void DrumGridComponent::setBarCount (int bars)
+{
+    bars = juce::jlimit (1, 64, bars);
+    if (bars == barCount)
+        return;
+    barCount = bars;
+    syncGeometryFromBounds();
+    resized();
+    repaint();
 }
 
 DrumGridComponent::DrumGridComponent (BridgeProcessor& p)
@@ -111,7 +126,7 @@ void DrumGridComponent::paint (juce::Graphics& g)
     g.setColour (bridge::hig::tertiaryGroupedBackground);
     g.fillRect (geomLaneX, full.getY(), geomLaneW, full.getHeight());
     g.setColour (bridge::hig::separatorOpaque.withAlpha (0.5f));
-    g.drawVerticalLine ((int) geomOriginX, (int) full.getY(), (int) full.getBottom());
+    g.drawVerticalLine ((int) geomOriginX, full.getY(), full.getBottom());
 
     const float pad = 2.0f;
 
@@ -128,6 +143,9 @@ void DrumGridComponent::paint (juce::Graphics& g)
         g.drawText (DRUM_NAMES[drum], nameArea.toNearestInt(), juce::Justification::centredLeft, true);
     }
 
+    const int bars       = juce::jmax (1, barCount);
+    const int totalCells = bars * NUM_STEPS;
+
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
         const int drum = visualRowToDrum (visualRow);
@@ -141,9 +159,11 @@ void DrumGridComponent::paint (juce::Graphics& g)
 
         const bool audible = anySolo ? soloed : ! muted;
 
-        for (int step = 0; step < NUM_STEPS; ++step)
+        for (int cellIdx = 0; cellIdx < totalCells; ++cellIdx)
         {
-            float cx = geomOriginX + (float) step * geomCellW + pad;
+            const int  step       = cellIdx;          // unique across the phrase
+            const int  stepInBar  = cellIdx % NUM_STEPS;
+            float cx = geomOriginX + (float) cellIdx * geomCellW + pad;
             auto  cell = juce::Rectangle<float> (cx, cy + pad,
                                                  geomCellW - pad * 2.0f, geomRowH - pad * 2.0f);
 
@@ -158,7 +178,7 @@ void DrumGridComponent::paint (juce::Graphics& g)
                 continue;
             }
 
-            bool isBeat = (step % 4 == 0);
+            bool isBeat = (stepInBar % 4 == 0);
 
             if (! inLoop)
             {
@@ -214,9 +234,23 @@ void DrumGridComponent::paint (juce::Graphics& g)
                 g.fillRect (cell);
             }
 
-            auto borderCol = isBeat ? outline.withAlpha (0.55f) : outlineVariant.withAlpha (0.45f);
+            auto borderCol = isBeat ? outline.withAlpha (0.55f)
+                                    : outlineVariant.withAlpha (0.45f);
             g.setColour (borderCol);
             g.drawRect (cell, 1.0f);
+        }
+    }
+
+    // Heavier separators on bar boundaries so the phrase structure is legible at any zoom level.
+    if (bars > 1)
+    {
+        g.setColour (outline.withAlpha (0.7f));
+        const float by0 = geomOriginY;
+        const float by1 = geomOriginY + geomRowH * (float) NUM_DRUMS;
+        for (int bar = 1; bar < bars; ++bar)
+        {
+            const float bx = geomOriginX + (float) (bar * NUM_STEPS) * geomCellW;
+            g.drawVerticalLine ((int) bx, by0, by1);
         }
     }
 
@@ -247,12 +281,19 @@ void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
 
     if (e.position.x < geomOriginX) return;
 
-    int step = (int) ((e.position.x - geomOriginX) / geomCellW);
+    const int bars = juce::jmax (1, barCount);
+    const int totalCells = bars * NUM_STEPS;
+
+    int cellIdx = (int) ((e.position.x - geomOriginX) / geomCellW);
     int visualRow = (int) ((e.position.y - geomOriginY) / geomRowH);
     int drum = visualRowToDrum (visualRow);
 
-    if (step < 0 || step >= patLen || visualRow < 0 || visualRow >= NUM_DRUMS
+    if (cellIdx < 0 || cellIdx >= totalCells || visualRow < 0 || visualRow >= NUM_DRUMS
         || drum < 0 || drum >= NUM_DRUMS) return;
+
+    // Phrase length is a true multi-bar pattern; each cell index maps directly to the step.
+    int step = cellIdx;
+    if (step >= patLen) return;
 
     auto& pat = proc.drumEngine.editPattern();
     pat[(size_t) step][(size_t) drum].active   = ! pat[(size_t) step][(size_t) drum].active;
@@ -294,9 +335,6 @@ void DrumGridComponent::update (int activeStep)
 
 DrumsPanel::DrumsPanel (BridgeProcessor& p)
     : proc (p),
-      bottomHalf (p.apvtsDrums, p.apvtsMain, laf, bridge::colors::accentDrums(),
-                  [this] { proc.triggerDrumsGenerate(); },
-                  [this] (bool active) { proc.drumEngine.setFillHoldActive (active); }),
       instrumentStrip (InstrumentControlBar::makeDrumsConfig (p)),
       drumGrid (p)
 {
@@ -305,6 +343,7 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("loopStart", this);
     proc.apvtsMain.addParameterListener ("loopEnd", this);
     proc.apvtsMain.addParameterListener ("playbackLoopOn", this);
+    proc.apvtsMain.addParameterListener ("phraseBars", this);
     proc.apvtsDrums.addParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.addParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
@@ -319,9 +358,172 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     addAndMakeVisible (drumGrid);
     addAndMakeVisible (loopStrip);
     loopStrip.setStepLabelGutter ((int) bridge::kMelodicKeyStripWidth);
-    addAndMakeVisible (bottomHalf);
     addAndMakeVisible (instrumentStrip);
     addAndMakeVisible (velocityStrip);
+
+    // ── Knob column (SWING / HUMANIZE / HOLD) ─────────────────────────────
+    const auto accent = bridge::colors::accentDrums();
+    auto setupKnob = [&] (juce::Slider& s, juce::Label& l, const juce::String& name,
+                          const juce::String& paramId,
+                          std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& att)
+    {
+        s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        BridgeLookAndFeel::setKnobStyle (s, BridgeLookAndFeel::KnobStyle::SmallLane, accent);
+        addAndMakeVisible (s);
+        l.setText (name, juce::dontSendNotification);
+        l.setJustificationType (juce::Justification::centredTop);
+        l.setColour (juce::Label::textColourId, bridge::colors::textDim());
+        l.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
+        addAndMakeVisible (l);
+        if (proc.apvtsDrums.getParameter (paramId) != nullptr)
+            att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                proc.apvtsDrums, paramId, s);
+    };
+    setupKnob (knobSwing,    labelSwing,    "SWING",    "swing",    attSwing);
+    setupKnob (knobHumanize, labelHumanize, "HUMANIZE", "humanize", attHumanize);
+    setupKnob (knobHold,     labelHold,     "HOLD",     "hold",     attHold);
+
+    // ── XY pads (PATTERN, FILLS) ──────────────────────────────────────────
+    auto setupSectionLabel = [] (juce::Label& l, const juce::String& text,
+                                  juce::Justification just = juce::Justification::centred)
+    {
+        l.setText (text, juce::dontSendNotification);
+        l.setFont (bridge::hig::uiFont (10.0f, "Bold"));
+        l.setColour (juce::Label::textColourId, bridge::colors::textSecondary());
+        l.setJustificationType (just);
+    };
+    auto setupAxisLabel = [] (juce::Label& l, const juce::String& text, juce::Justification just)
+    {
+        l.setText (text, juce::dontSendNotification);
+        l.setFont (bridge::hig::uiFont (9.0f, "Semibold"));
+        l.setColour (juce::Label::textColourId, bridge::colors::textDim());
+        l.setJustificationType (just);
+        l.setInterceptsMouseClicks (false, false);
+    };
+
+    patternPad = std::make_unique<BridgeXYPad> (proc.apvtsDrums, "complexity", "intensity", accent);
+    fillsPad   = std::make_unique<BridgeXYPad> (proc.apvtsDrums, "fillRate",   "ghostAmount", accent);
+    addAndMakeVisible (*patternPad);
+    addAndMakeVisible (*fillsPad);
+
+    setupSectionLabel (patternHeader, "PATTERN");
+    setupSectionLabel (fillsHeader,   "FILLS");
+    setupAxisLabel (patternXLabel, "COMPLEXITY \xe2\x86\x92", juce::Justification::centred);
+    setupAxisLabel (patternYLabel, "DYN",                       juce::Justification::centred);
+    setupAxisLabel (fillsXLabel,   "FILL RATE \xe2\x86\x92",    juce::Justification::centred);
+    setupAxisLabel (fillsYLabel,   "DEPTH",                     juce::Justification::centred);
+    addAndMakeVisible (patternHeader);
+    addAndMakeVisible (fillsHeader);
+    addAndMakeVisible (patternXLabel);
+    addAndMakeVisible (patternYLabel);
+    addAndMakeVisible (fillsXLabel);
+    addAndMakeVisible (fillsYLabel);
+
+    // XY pad readout knobs (same params as the pads).
+    auto setupSmallKnob = [&] (juce::Slider& s, juce::Label& l,
+                               const juce::String& labelText,
+                               const juce::String& paramId,
+                               std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& att)
+    {
+        s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        BridgeLookAndFeel::setKnobStyle (s, BridgeLookAndFeel::KnobStyle::SmallLane, accent);
+        addAndMakeVisible (s);
+
+        l.setText (labelText, juce::dontSendNotification);
+        l.setJustificationType (juce::Justification::centredTop);
+        l.setColour (juce::Label::textColourId, bridge::colors::textDim());
+        l.setFont (bridge::hig::uiFont (9.0f, "Semibold"));
+        addAndMakeVisible (l);
+
+        if (proc.apvtsDrums.getParameter (paramId) != nullptr)
+            att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                proc.apvtsDrums, paramId, s);
+    };
+    setupSmallKnob (patternKnobX, patternKnobXLabel, "COMPLEX", "complexity", attPatternKnobX);
+    setupSmallKnob (patternKnobY, patternKnobYLabel, "DYN",     "intensity",  attPatternKnobY);
+    setupSmallKnob (fillsKnobX,   fillsKnobXLabel,   "FILL",    "fillRate",   attFillsKnobX);
+    setupSmallKnob (fillsKnobY,   fillsKnobYLabel,   "DEPTH",   "ghostAmount", attFillsKnobY);
+
+    // ── Selectors + Actions (right column) ───────────────────────────────
+    setupSectionLabel (selectorsHeader, "SELECTORS", juce::Justification::centredLeft);
+    setupSectionLabel (actionsHeader,   "ACTIONS",   juce::Justification::centredLeft);
+    addAndMakeVisible (selectorsHeader);
+    addAndMakeVisible (actionsHeader);
+
+    auto setupLoopKnob = [&] (juce::Slider& s, juce::Label& l, const juce::String& name,
+                              const juce::String& paramId,
+                              std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& att)
+    {
+        s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
+        s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        BridgeLookAndFeel::setKnobStyle (s, BridgeLookAndFeel::KnobStyle::SmallLane, accent);
+        addAndMakeVisible (s);
+        l.setText (name, juce::dontSendNotification);
+        l.setJustificationType (juce::Justification::centredTop);
+        l.setColour (juce::Label::textColourId, bridge::colors::textDim());
+        l.setFont (bridge::hig::uiFont (10.0f, "Semibold"));
+        addAndMakeVisible (l);
+        if (proc.apvtsMain.getParameter (paramId) != nullptr)
+            att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                proc.apvtsMain, paramId, s);
+    };
+    setupLoopKnob (knobLoopStart, labelLoopStart, "START", "loopStart", attLoopStart);
+    setupLoopKnob (knobLoopEnd,   labelLoopEnd,   "END",   "loopEnd",   attLoopEnd);
+
+    auto setupToggleButton = [&] (juce::TextButton& b, const juce::String& tooltip,
+                                  const juce::String& paramId,
+                                  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>& att)
+    {
+        b.setClickingTogglesState (true);
+        b.setConnectedEdges (0);
+        b.setTooltip (tooltip);
+        b.setColour (juce::TextButton::buttonColourId,   bridge::colors::knobTrack());
+        b.setColour (juce::TextButton::buttonOnColourId, accent);
+        b.setColour (juce::TextButton::textColourOffId,  bridge::colors::textDim());
+        b.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
+        addAndMakeVisible (b);
+        if (proc.apvtsMain.getParameter (paramId) != nullptr)
+            att = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                proc.apvtsMain, paramId, b);
+    };
+    setupToggleButton (loopPlaybackButton, "Playback loop (wrap transport in selection)",
+                       "playbackLoopOn", attLoopPlayback);
+    setupToggleButton (syncIconButton, "Lock loop width: moving start or end keeps the same span",
+                       "loopSpanLock", attLoopSpan);
+
+    auto setupAction = [&] (juce::TextButton& b)
+    {
+        b.setConnectedEdges (0);
+        b.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack());
+        b.setColour (juce::TextButton::textColourOffId, bridge::colors::textDim());
+        addAndMakeVisible (b);
+    };
+    setupAction (generateButton);
+    generateButton.onClick = [this] { proc.triggerDrumsGenerate(); };
+
+    jamToggle.setButtonText ("JAM");
+    jamToggle.setTooltip ("Jam: periodically press Generate over the current selection (while playing)");
+    addAndMakeVisible (jamToggle);
+    if (proc.apvtsDrums.getParameter ("jamOn") != nullptr)
+        jamToggleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            proc.apvtsDrums, "jamOn", jamToggle);
+
+    jamPeriodBox.addItem ("4 bars",  1);
+    jamPeriodBox.addItem ("8 bars",  2);
+    jamPeriodBox.addItem ("16 bars", 3);
+    jamPeriodBox.setJustificationType (juce::Justification::centredLeft);
+    jamPeriodBox.setTooltip ("Jam period (bars)");
+    addAndMakeVisible (jamPeriodBox);
+    if (proc.apvtsDrums.getParameter ("jamPeriodBars") != nullptr)
+        jamPeriodAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            proc.apvtsDrums, "jamPeriodBars", jamPeriodBox);
+    jamLabel.setText ("JAM", juce::dontSendNotification);
+    jamLabel.setJustificationType (juce::Justification::centred);
+    jamLabel.setColour (juce::Label::textColourId, bridge::colors::textDim());
+    jamLabel.setFont (bridge::hig::uiFont (10.0f, "Semibold"));
+    addAndMakeVisible (jamLabel);
 
     velocityStrip.velocityAt = [this] (int step) -> int
     {
@@ -346,6 +548,7 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     proc.rebuildDrumsGridPreview();
     stepTimer.startTimerHz (30);
     applyDrumsPageState();
+    applyPhraseBars();
 }
 
 DrumsPanel::~DrumsPanel()
@@ -355,6 +558,7 @@ DrumsPanel::~DrumsPanel()
     proc.apvtsMain.removeParameterListener ("loopStart", this);
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
     proc.apvtsMain.removeParameterListener ("playbackLoopOn", this);
+    proc.apvtsMain.removeParameterListener ("phraseBars", this);
     proc.apvtsDrums.removeParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.removeParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
@@ -375,20 +579,49 @@ void DrumsPanel::setLoopIntParameter (juce::AudioProcessorValueTreeState& apvts,
             ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) value));
 }
 
+int DrumsPanel::currentPhraseBarCount() const
+{
+    if (auto* pc = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("phraseBars")))
+        return bridge::phrase::phraseBarsFromChoiceIndex (pc->getIndex());
+    return bridge::phrase::phraseBarsFromChoiceIndex (0);
+}
+
+void DrumsPanel::applyPhraseBars()
+{
+    const int bars = currentPhraseBarCount();
+    drumGrid.setBarCount (bars);
+    const int phraseSteps = bridge::phrase::phraseStepsForBars (bars);
+    loopStrip.setBarRepeats (1);
+    loopStrip.setNumSteps (phraseSteps);
+    velocityStrip.setBarRepeats (1);
+    velocityStrip.setNumSteps (phraseSteps);
+    proc.drumEngine.setPhraseBars (bars);
+    resized();
+    repaint();
+}
+
 void DrumsPanel::applyDrumsPageState()
 {
     const bool on = proc.apvtsMain.getRawParameterValue ("drumsOn") != nullptr
                         && proc.apvtsMain.getRawParameterValue ("drumsOn")->load() > 0.5f;
 
-    bottomHalf.setEnabled (on);
     instrumentStrip.setTrackPowered (on);
     drumGrid.setEnabled (on);
     loopStrip.setEnabled (on);
 
+    auto enableAll = [on] (std::initializer_list<juce::Component*> cs)
+    {
+        for (auto* c : cs) if (c != nullptr) c->setEnabled (on);
+    };
+    enableAll ({ &knobSwing, &knobHumanize, &knobHold,
+                 patternPad.get(), fillsPad.get(),
+                 &knobLoopStart, &knobLoopEnd,
+                 &loopPlaybackButton, &syncIconButton,
+                 &generateButton, &jamToggle, &jamPeriodBox });
+
     const float dim = on ? 1.0f : 0.42f;
     drumGrid.setAlpha (dim);
     loopStrip.setAlpha (dim);
-    bottomHalf.setAlpha (dim);
 }
 
 void DrumsPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&)
@@ -418,7 +651,153 @@ void DrumsPanel::resized()
     proc.getDrumsLoopBounds (ls, le);
     velocityStrip.setStepRange (ls - 1, le - 1);
 
-    bottomHalf.setBounds (shell.bottomStrip);
+    layoutBottomControls (shell.bottomStrip);
+}
+
+void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
+{
+    constexpr int smallGap = 6;
+
+    if (bottom.isEmpty())
+        return;
+
+    const int bottomHeight = bottom.getHeight();
+    const int totalW       = bottom.getWidth();
+    const int x0           = bottom.getX();
+    const int y0           = bottom.getY();
+
+    // Step 1: knob column width + provisional pad size, then shrink pads if they overflow.
+    const int knobColWidth  = juce::jmax (40, (int) std::round ((float) bottomHeight * 0.45f));
+    const int rightColWidth = juce::jmax (knobColWidth, (int) std::round ((float) bottomHeight * 1.25f));
+    const int minPad        = juce::jmax (1, (int) std::round ((float) bottomHeight * 0.85f));
+    int padSize             = bottomHeight;
+    {
+        const int gaps = smallGap * 3;
+        const int avail = totalW - knobColWidth - rightColWidth - gaps;
+        if (padSize * 2 > avail)
+            padSize = juce::jmax (minPad, avail / 2);
+    }
+
+    // Step 2: knob column.
+    juce::Rectangle<int> knobCol (x0, y0, knobColWidth, bottomHeight);
+    auto layoutKnob = [&] (juce::Slider& s, juce::Label& l, juce::Rectangle<int> third)
+    {
+        const int knobSide = juce::jmax (24, (int) std::round ((float) third.getHeight() * 0.60f));
+        const int labelH   = juce::jmin (third.getHeight() - knobSide, 14);
+        auto labelArea = third.removeFromBottom (labelH);
+        auto knobArea  = third.withSizeKeepingCentre (knobSide, knobSide);
+        s.setBounds (knobArea);
+        l.setBounds (labelArea);
+    };
+    const int thirdH = bottomHeight / 3;
+    layoutKnob (knobSwing,    labelSwing,    knobCol.removeFromTop (thirdH));
+    layoutKnob (knobHumanize, labelHumanize, knobCol.removeFromTop (thirdH));
+    layoutKnob (knobHold,     labelHold,     knobCol);
+
+    // Steps 3-4: PATTERN and FILLS XY pads (square: jmin column width, space above the readout row).
+    auto placePad = [&] (BridgeXYPad* pad, int colLeftX, juce::Label& header, juce::Label& xLab,
+                          juce::Label& yLab)
+    {
+        if (pad == nullptr) return;
+        constexpr int knobRowH = 54;
+        constexpr int knobGap  = 6;
+        const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap);
+        const int side = juce::jmax (48, juce::jmin (padSize, spaceAboveReadouts));
+        const int px   = colLeftX + (padSize - side) / 2;
+        juce::Rectangle<int> padRect (px, y0, side, side);
+        pad->setBounds (padRect);
+        const int hdrH  = juce::jmin (14, side / 5);
+        const int axisH = juce::jmin (12, side / 6);
+        const int yLabW = juce::jmin (24, side / 5);
+        header.setBounds (padRect.getX(), padRect.getY() + 2, padRect.getWidth(), hdrH);
+        xLab.setBounds  (padRect.getX(), padRect.getBottom() - axisH - 2, padRect.getWidth(), axisH);
+        yLab.setBounds  (padRect.getX() + 2, padRect.getY() + (padRect.getHeight() - axisH) / 2,
+                         yLabW, axisH);
+    };
+    const int patternX = x0 + knobColWidth + smallGap;
+    const int fillsX   = patternX + padSize + smallGap;
+    placePad (patternPad.get(), patternX, patternHeader, patternXLabel, patternYLabel);
+    placePad (fillsPad.get(),   fillsX,   fillsHeader,   fillsXLabel,   fillsYLabel);
+
+    // Knobs under pads (same params as pads).
+    auto layoutTwoKnobsRow = [&] (int colLeftX, juce::Slider& a, juce::Label& aL, juce::Slider& b, juce::Label& bL)
+    {
+        constexpr int knobRowH = 54;
+        constexpr int knobGap  = 6;
+        const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap);
+        const int side = juce::jmax (48, juce::jmin (padSize, spaceAboveReadouts));
+        const int px   = colLeftX + (padSize - side) / 2;
+        juce::Rectangle<int> padTop (px, y0, side, side);
+        juce::Rectangle<int> below (colLeftX, padTop.getBottom() + knobGap, padSize, knobRowH);
+        auto row = below;
+        const int kw = (row.getWidth() - 8) / 2;
+        auto left = row.removeFromLeft (kw);
+        row.removeFromLeft (8);
+        auto right = row;
+
+        auto place = [&] (juce::Slider& s, juce::Label& l, juce::Rectangle<int> r)
+        {
+            const int knobSide = juce::jmax (20, r.getHeight() - 14);
+            l.setBounds (r.removeFromBottom (14));
+            s.setBounds (r.withSizeKeepingCentre (knobSide, knobSide));
+        };
+        place (a, aL, left);
+        place (b, bL, right);
+    };
+    layoutTwoKnobsRow (patternX, patternKnobX, patternKnobXLabel, patternKnobY, patternKnobYLabel);
+    layoutTwoKnobsRow (fillsX,   fillsKnobX,   fillsKnobXLabel,   fillsKnobY,   fillsKnobYLabel);
+
+    // Step 5: selectors + actions column.
+    const int rightX = fillsX + padSize + smallGap;
+    juce::Rectangle<int> rightCol (rightX, y0, juce::jmax (1, x0 + totalW - rightX), bottomHeight);
+
+    const int halfH = (rightCol.getHeight() - 8) / 2;
+    auto selArea = rightCol.removeFromTop (halfH);
+    rightCol.removeFromTop (8);
+    auto actArea = rightCol;
+
+    selectorsHeader.setBounds (selArea.removeFromTop (14));
+    selArea.removeFromTop (4);
+    {
+        constexpr int kKnobW       = 48;
+        constexpr int kKnobLabelH  = 14;
+        constexpr int kLoopBtnSide = 48;
+        constexpr int kBtnPairGap  = 4;
+        constexpr int kOuterGap    = 8;
+        const int kKnobH = kKnobLabelH + kKnobW;
+
+        const int blockW = kKnobW + kOuterGap + kLoopBtnSide + kOuterGap + kKnobW;
+        const int sx0    = selArea.getX() + (selArea.getWidth() - blockW) / 2;
+        const int sy0    = selArea.getY() + (selArea.getHeight() - kKnobH) / 2;
+        const int xBtn   = sx0 + kKnobW + kOuterGap;
+        const int stackH = kLoopBtnSide + kBtnPairGap + kLoopBtnSide;
+        const int yTop   = selArea.getCentreY() - stackH / 2;
+
+        knobLoopStart.setBounds (sx0, sy0, kKnobW, kKnobW);
+        labelLoopStart.setBounds (sx0, sy0 + kKnobW, kKnobW, kKnobLabelH);
+        loopPlaybackButton.setBounds (xBtn, yTop, kLoopBtnSide, kLoopBtnSide);
+        syncIconButton.setBounds (xBtn, yTop + kLoopBtnSide + kBtnPairGap, kLoopBtnSide, kLoopBtnSide);
+        const int xEnd = sx0 + kKnobW + kOuterGap + kLoopBtnSide + kOuterGap;
+        knobLoopEnd.setBounds (xEnd, sy0, kKnobW, kKnobW);
+        labelLoopEnd.setBounds (xEnd, sy0 + kKnobW, kKnobW, kKnobLabelH);
+    }
+
+    actionsHeader.setBounds (actArea.removeFromTop (14));
+    actArea.removeFromTop (4);
+    {
+        constexpr int kActionSide = 48;
+        constexpr int btnGap     = 6;
+        constexpr int outerMargin = 8;
+        actArea.reduce (outerMargin, outerMargin);
+        auto row = actArea;
+        const int genY = row.getY() + (row.getHeight() - kActionSide) / 2;
+        generateButton.setBounds (row.getX(), genY, kActionSide, kActionSide);
+        auto jamCol = row.withTrimmedLeft (kActionSide + btnGap);
+        jamLabel.setBounds (jamCol.removeFromBottom (14));
+        auto top = jamCol.removeFromTop (juce::jmax (18, jamCol.getHeight() / 2));
+        jamToggle.setBounds (top.reduced (2, 0));
+        jamPeriodBox.setBounds (jamCol.reduced (2, 0));
+    }
 }
 
 void DrumsPanel::paint (juce::Graphics& g)
@@ -457,6 +836,11 @@ void DrumsPanel::parameterChanged (const juce::String& parameterID, float newVal
         applyDrumsPageState();
         return;
     }
+    if (parameterID == "phraseBars")
+    {
+        applyPhraseBars();
+        return;
+    }
     if (parameterID == "loopStart" || parameterID == "loopEnd" || parameterID == "playbackLoopOn"
         || parameterID == "uiTheme")
     {
@@ -476,6 +860,7 @@ void DrumsPanel::parameterChanged (const juce::String& parameterID, float newVal
         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsDrums.getParameter ("style")))
             si = c->getIndex();
         proc.drumEngine.adaptPatternToNewStyle (si);
+        proc.rebuildDrumsGridPreview();
         triggerAsyncUpdate();
         return;
     }

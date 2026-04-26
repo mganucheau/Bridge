@@ -19,6 +19,16 @@ public:
     void paint (juce::Graphics& g) override;
     void setStepRange (int from0, int to0); // optional dimming outside the loop range
 
+    /** Update how many steps the strip visualises. */
+    void setNumSteps (int steps);
+    int  getNumSteps() const noexcept { return numSteps; }
+
+    /** PatternFlow-style tiling: visually repeat the per-step velocity bars across N bars. The
+        callback `velocityAt` continues to be sampled for `numSteps` cells (one bar) and the strip
+        tiles them — so the bar contour repeats and stays aligned with the grid. */
+    void setBarRepeats (int repeats);
+    int  getBarRepeats() const noexcept { return barRepeats; }
+
 private:
     void timerCallback() override;
 
@@ -26,5 +36,6 @@ private:
     juce::Colour        accent;
     int                 rangeFrom = 0;
     int                 rangeTo   = -1;
-    std::array<float, 64> snapshot {};
+    int                 barRepeats = 1;
+    std::array<float, 256> snapshot {};
 };

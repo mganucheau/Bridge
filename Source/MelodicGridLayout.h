@@ -121,7 +121,8 @@ inline void setOneOctaveMelodicRange (const BassEngine& engine, int& minMidi, in
 {
     int pMin = 127, pMax = 0;
     const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < BassPreset::NUM_STEPS; ++s)
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
     {
         const auto& h = pat[(size_t) s];
         if (! h.active) continue;
@@ -145,7 +146,8 @@ inline void setOneOctaveMelodicRange (const PianoEngine& engine, int& minMidi, i
 {
     int pMin = 127, pMax = 0;
     const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < PianoPreset::NUM_STEPS; ++s)
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
     {
         const auto& h = pat[(size_t) s];
         if (! h.active) continue;
@@ -169,7 +171,8 @@ inline void setOneOctaveMelodicRange (const GuitarEngine& engine, int& minMidi, 
 {
     int pMin = 127, pMax = 0;
     const auto& pat = engine.getPatternForGrid();
-    for (int s = 0; s < GuitarPreset::NUM_STEPS; ++s)
+    const int plen = engine.getPatternLen();
+    for (int s = 0; s < plen; ++s)
     {
         const auto& h = pat[(size_t) s];
         if (! h.active) continue;

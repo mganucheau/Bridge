@@ -40,11 +40,33 @@ void BridgeLoopRangeStrip::writeIntParam (juce::AudioProcessorValueTreeState& ap
             ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) v));
 }
 
+void BridgeLoopRangeStrip::setBarRepeats (int repeats)
+{
+    repeats = juce::jlimit (1, 64, repeats);
+    if (repeats == barRepeats)
+        return;
+    barRepeats = repeats;
+    repaint();
+}
+
+void BridgeLoopRangeStrip::setNumSteps (int steps)
+{
+    steps = juce::jlimit (2, 256, steps);
+    if (steps == numSteps)
+        return;
+    numSteps = steps;
+    repaint();
+}
+
 int BridgeLoopRangeStrip::xToStep (float x) const
 {
     auto b = trackBounds (getLocalBounds().toFloat(), stepLabelGutterLeft);
+    const int totalCells = numSteps * juce::jmax (1, barRepeats);
     float t = (x - b.getX()) / juce::jmax (1.0f, b.getWidth());
-    int s = 1 + (int) (t * (float) numSteps);
+    int cell = (int) (t * (float) totalCells);
+    cell = juce::jlimit (0, totalCells - 1, cell);
+    // Map any visible bar back to bar 1 — the underlying loop selection lives in 1..numSteps.
+    int s = 1 + (cell % numSteps);
     return juce::jlimit (1, numSteps, s);
 }
 
@@ -84,20 +106,27 @@ void BridgeLoopRangeStrip::syncFromMouse (const juce::MouseEvent& e, bool isDrag
 void BridgeLoopRangeStrip::mouseDown (const juce::MouseEvent& e)
 {
     auto b = trackBounds (getLocalBounds().toFloat(), stepLabelGutterLeft);
-    const float cell = b.getWidth() / (float) numSteps;
+    const int repeats = juce::jmax (1, barRepeats);
+    const float cell = b.getWidth() / (float) (numSteps * repeats);
     int ls = readIntParam (apvts, "loopStart", 1);
     int le = readIntParam (apvts, "loopEnd", numSteps);
     ls = juce::jlimit (1, numSteps, ls);
     le = juce::jlimit (1, numSteps, le);
 
-    const float sx = b.getX() + ((float) ls - 0.5f) * cell;
-    const float ex = b.getX() + ((float) le - 0.5f) * cell;
+    // Pick the nearest handle by considering every bar repeat — feels right when the user clicks
+    // any bar in the tiled phrase view.
     const float px = e.position.x;
+    float bestStartDist = std::numeric_limits<float>::max();
+    float bestEndDist   = std::numeric_limits<float>::max();
+    for (int bar = 0; bar < repeats; ++bar)
+    {
+        const float sx = b.getX() + ((float) (bar * numSteps + ls) - 0.5f) * cell;
+        const float ex = b.getX() + ((float) (bar * numSteps + le) - 0.5f) * cell;
+        bestStartDist = juce::jmin (bestStartDist, std::abs (px - sx));
+        bestEndDist   = juce::jmin (bestEndDist,   std::abs (px - ex));
+    }
 
-    if (std::abs (px - sx) <= std::abs (px - ex))
-        dragMode = 1;
-    else
-        dragMode = 2;
+    dragMode = bestStartDist <= bestEndDist ? 1 : 2;
 
     syncFromMouse (e, false);
 }
@@ -143,58 +172,92 @@ void BridgeLoopRangeStrip::paint (juce::Graphics& g)
         le = t;
     }
 
-    const float cell = b.getWidth() / (float) numSteps;
+    const int   repeats   = juce::jmax (1, barRepeats);
+    const int   totalCells = numSteps * repeats;
+    const float cell      = b.getWidth() / (float) totalCells;
 
-    g.setColour (accent.withAlpha (0.52f));
-    g.fillRect (b.getX() + (float) (ls - 1) * cell, b.getY(),
-                (float) (le - ls + 1) * cell, b.getHeight());
-    g.setColour (accent.brighter (0.12f).withAlpha (0.55f));
-    g.drawRect (b.getX() + (float) (ls - 1) * cell, b.getY(),
-                (float) (le - ls + 1) * cell, b.getHeight(), 1.0f);
-
-    g.setColour (juce::Colours::white.withAlpha (0.14f));
-    for (int i = 1; i < numSteps; ++i)
+    // Loop fill — tiled across each bar of the phrase.
+    for (int bar = 0; bar < repeats; ++bar)
     {
-        float x = b.getX() + (float) i * cell;
-        g.drawVerticalLine ((int) x, (int) b.getY(), (int) b.getBottom());
+        const float x0 = b.getX() + (float) (bar * numSteps + ls - 1) * cell;
+        const float w  = (float) (le - ls + 1) * cell;
+        g.setColour (accent.withAlpha (bar == 0 ? 0.52f : 0.34f));
+        g.fillRect (x0, b.getY(), w, b.getHeight());
+        g.setColour (accent.brighter (0.12f).withAlpha (bar == 0 ? 0.55f : 0.35f));
+        g.drawRect (x0, b.getY(), w, b.getHeight(), 1.0f);
     }
 
-    auto drawHandle = [&] (int step, bool start)
+    // Step grid lines — keep heavy bar boundaries even when phrase > 1 bar.
+    for (int i = 1; i < totalCells; ++i)
     {
-        float cx = b.getX() + ((float) step - 0.5f) * cell;
-        float cy = b.getCentreY();
-        juce::Path tri;
-        const float h = juce::jmin (b.getHeight() * 0.42f, 12.0f);
-        if (start)
+        const bool barBoundary = (i % numSteps) == 0;
+        g.setColour (juce::Colours::white.withAlpha (barBoundary ? 0.32f : 0.10f));
+        const float x = b.getX() + (float) i * cell;
+        g.drawVerticalLine ((int) x, b.getY(), b.getBottom());
+    }
+
+    auto drawHandle = [&] (int step, bool start, float alpha)
+    {
+        for (int bar = 0; bar < repeats; ++bar)
         {
-            tri.addTriangle (cx - 5.0f, cy,
-                             cx + 6.0f, cy - h * 0.55f,
-                             cx + 6.0f, cy + h * 0.55f);
+            float cx = b.getX() + ((float) (bar * numSteps + step) - 0.5f) * cell;
+            float cy = b.getCentreY();
+            juce::Path tri;
+            const float h = juce::jmin (b.getHeight() * 0.42f, 12.0f);
+            if (start)
+            {
+                tri.addTriangle (cx - 5.0f, cy,
+                                 cx + 6.0f, cy - h * 0.55f,
+                                 cx + 6.0f, cy + h * 0.55f);
+            }
+            else
+            {
+                tri.addTriangle (cx + 5.0f, cy,
+                                 cx - 6.0f, cy - h * 0.55f,
+                                 cx - 6.0f, cy + h * 0.55f);
+            }
+            const float a = bar == 0 ? alpha : alpha * 0.55f;
+            g.setColour (accent.brighter (0.15f).withAlpha (a));
+            g.fillPath (tri);
+            g.setColour (juce::Colours::white.withAlpha (0.5f * a));
+            g.strokePath (tri, juce::PathStrokeType (0.8f));
         }
-        else
-        {
-            tri.addTriangle (cx + 5.0f, cy,
-                             cx - 6.0f, cy - h * 0.55f,
-                             cx - 6.0f, cy + h * 0.55f);
-        }
-        g.setColour (accent.brighter (0.15f));
-        g.fillPath (tri);
-        g.setColour (juce::Colours::white.withAlpha (0.5f));
-        g.strokePath (tri, juce::PathStrokeType (0.8f));
     };
 
-    drawHandle (ls, true);
-    drawHandle (le, false);
+    drawHandle (ls, true,  1.0f);
+    drawHandle (le, false, 1.0f);
 
-    g.setFont (bridge::hig::uiFont (10.5f, "Semibold"));
-    for (int i = 0; i < numSteps; ++i)
+    // Step number labels — only draw when there is room (otherwise the labels overlap).
+    const bool drawStepNumbers = cell >= 12.0f;
+    if (drawStepNumbers)
     {
-        float cx = b.getX() + (float) i * cell;
-        auto rc = juce::Rectangle<float> (cx, b.getY(), cell, b.getHeight());
-        g.setColour (juce::Colours::black.withAlpha (0.55f));
-        g.drawText (juce::String (i + 1), rc.translated (0.5f, 0.5f), juce::Justification::centred, false);
-        g.setColour (juce::Colours::white.withAlpha (0.95f));
-        g.drawText (juce::String (i + 1), rc, juce::Justification::centred, false);
+        g.setFont (bridge::hig::uiFont (10.5f, "Semibold"));
+        for (int i = 0; i < totalCells; ++i)
+        {
+            float cx = b.getX() + (float) i * cell;
+            auto rc = juce::Rectangle<float> (cx, b.getY(), cell, b.getHeight());
+            const int label = 1 + (i % numSteps);
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.drawText (juce::String (label), rc.translated (0.5f, 0.5f), juce::Justification::centred, false);
+            g.setColour (juce::Colours::white.withAlpha (0.95f));
+            g.drawText (juce::String (label), rc, juce::Justification::centred, false);
+        }
+    }
+    else if (repeats > 1)
+    {
+        // When the per-step label is too small, surface bar numbers (1..N) so the user can still
+        // orient themselves inside the phrase.
+        g.setFont (bridge::hig::uiFont (10.5f, "Semibold"));
+        const float barW = (float) numSteps * cell;
+        for (int bar = 0; bar < repeats; ++bar)
+        {
+            auto rc = juce::Rectangle<float> (b.getX() + (float) bar * barW, b.getY(), barW, b.getHeight());
+            const juce::String s ("Bar " + juce::String (bar + 1));
+            g.setColour (juce::Colours::black.withAlpha (0.55f));
+            g.drawText (s, rc.translated (0.5f, 0.5f), juce::Justification::centred, false);
+            g.setColour (juce::Colours::white.withAlpha (0.85f));
+            g.drawText (s, rc, juce::Justification::centred, false);
+        }
     }
 
     g.setColour (juce::Colours::black.withAlpha (0.35f));

@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include <cmath>
 #include "BridgeProcessor.h"
+#include "BridgePhrase.h"
 
 namespace
 {
@@ -36,7 +37,7 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             "fillRate", "complexity", "ghostAmount", "loopStart", "loopEnd",
             "loopOn", "playbackLoopOn", "loopSpanLock", "tickerSpeed",
             "scale", "rootNote", "octave", "hostSync", "transportPlaying", "internalBpm",
-            "timeDivision", "uiTheme",
+            "timeDivision", "phraseBars", "uiTheme",
             "mlPersRhythmTight", "mlPersDynamicRange", "mlPersTimbreTexture", "mlPersTensionArc",
             "mlPersTempoVolatility", "mlPersEmotionalTemp", "mlPersHarmAdventure", "mlPersStructPredict",
             "mlPersShowmanship", "mlPersGenreLoyalty", "mlPersonalityPresetName", "mlModelsLastUpdateCheckUnix",
@@ -108,7 +109,7 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         expectNoParam (*this, proc.apvtsPiano, "presence");
         expectNoParam (*this, proc.apvtsGuitar, "presence");
 
-        beginTest ("Fresh processor: groove-style floats default to 0 (drums velocity modest default), density and complexity to 0.5");
+        beginTest ("Fresh processor: groove-style floats default to 0 (drums velocity modest default)");
 
         auto near = [this] (float a, float b, const char* label)
         {
@@ -120,8 +121,8 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         near ((float) *proc.apvtsMain.getRawParameterValue ("velocity"), 0.f, "main velocity");
         near ((float) *proc.apvtsMain.getRawParameterValue ("ghostAmount"), 0.f, "main ghostAmount");
         near ((float) *proc.apvtsMain.getRawParameterValue ("fillRate"), 0.f, "main fillRate");
-        near ((float) *proc.apvtsMain.getRawParameterValue ("density"), 0.5f, "main density");
-        near ((float) *proc.apvtsMain.getRawParameterValue ("complexity"), 0.5f, "main complexity");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("density"), 0.0f, "main density");
+        near ((float) *proc.apvtsMain.getRawParameterValue ("complexity"), 0.0f, "main complexity");
 
         near ((float) *proc.apvtsDrums.getRawParameterValue ("humanize"), 0.f, "drums humanize");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("velocity"), 0.72f, "drums velocity");
@@ -167,6 +168,14 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         near ((float) *proc.apvtsPiano.getRawParameterValue ("voicingSpread"),   0.5f, "piano voicingSpread");
         near ((float) *proc.apvtsGuitar.getRawParameterValue ("palmMute"),       0.f, "guitar palmMute");
         near ((float) *proc.apvtsGuitar.getRawParameterValue ("strumIntensity"), 0.5f, "guitar strumIntensity");
+
+        beginTest ("v13 defaults: Drums tab, 2-bar phrase, loop end matches phrase (32 steps)");
+
+        expectEquals (proc.activeTab.load(), 1);
+        if (auto* ph = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("phraseBars")))
+            expectEquals (ph->getIndex(), 0);
+        if (auto* le = dynamic_cast<juce::AudioParameterInt*> (proc.apvtsMain.getParameter ("loopEnd")))
+            expectEquals ((int) le->get(), bridge::phrase::kStepsPerBar * 2);
     }
 };
 

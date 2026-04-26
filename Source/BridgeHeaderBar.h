@@ -44,6 +44,7 @@ private:
     juce::ShapeButton playButton  { "Play",  juce::Colours::white, juce::Colours::white, juce::Colours::white };
     juce::ShapeButton stopButton  { "Stop",  juce::Colours::white, juce::Colours::white, juce::Colours::white };
     juce::ComboBox   timeDivisionBox;
+    juce::ComboBox   phraseBarsBox;
     juce::TextButton hostSyncButton { "Host sync" };
     juce::ShapeButton gearButton { "Settings", juce::Colours::transparentBlack, juce::Colours::transparentBlack,
                                    juce::Colours::transparentBlack };
@@ -52,6 +53,7 @@ private:
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>     transportAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   timeDivisionAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   phraseBarsAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>     hostSyncAttach;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BridgeHeaderBar)
@@ -72,5 +74,6 @@ inline constexpr int   kTransportBtnSide = 16;
 inline constexpr int   kBpmFieldW      = 64;
 inline constexpr int   kBpmLabelW      = 36;
 inline constexpr int   kDivComboW      = 128;
+inline constexpr int   kPhraseComboW   = 88;
 inline constexpr auto  kBarBg          = juce::uint32 (0xff1e1e1e);
 } // namespace bridge::headerSpec

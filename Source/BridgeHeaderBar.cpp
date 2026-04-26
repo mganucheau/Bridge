@@ -7,6 +7,16 @@
 
 namespace
 {
+/** Minimum width for combo + longest item text (arrow/padding). */
+static int measuredComboWidth (juce::ComboBox& box, int minW, int extraPad = 28)
+{
+    float w = 0.0f;
+    auto f = box.getLookAndFeel().getComboBoxFont (box);
+    for (int i = 0; i < box.getNumItems(); ++i)
+        w = juce::jmax (w, (float) f.getStringWidth (box.getItemText (i)));
+    return juce::jmax (minW, (int) std::ceil (w) + extraPad);
+}
+
 static bool paramOn (juce::AudioProcessorValueTreeState& ap, const char* id)
 {
     if (auto* v = ap.getRawParameterValue (id))
@@ -142,6 +152,22 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
         timeDivisionAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             proc.apvtsMain, "timeDivision", timeDivisionBox);
 
+    phraseBarsBox.getProperties().set ("bridgeHeaderStrip", true);
+    phraseBarsBox.setLookAndFeel (&chromeLaf);
+    phraseBarsBox.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff2a2a2a));
+    phraseBarsBox.setColour (juce::ComboBox::textColourId, juce::Colours::white);
+    phraseBarsBox.setColour (juce::ComboBox::outlineColourId, juce::Colours::white.withAlpha (0.2f));
+    phraseBarsBox.setColour (juce::ComboBox::arrowColourId, juce::Colours::white.withAlpha (0.55f));
+    phraseBarsBox.addItem ("2 bars", 1);
+    phraseBarsBox.addItem ("4 bars", 2);
+    phraseBarsBox.addItem ("8 bars", 3);
+    phraseBarsBox.addItem ("16 bars", 4);
+    phraseBarsBox.setTooltip ("Phrase length: how many bars the grid shows and loops");
+    addAndMakeVisible (phraseBarsBox);
+    if (proc.apvtsMain.getParameter ("phraseBars") != nullptr)
+        phraseBarsAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
+            proc.apvtsMain, "phraseBars", phraseBarsBox);
+
     tabRail = std::make_unique<BridgeInstrumentTabRail> (proc, std::move (onSelectInstrumentTab));
     addAndMakeVisible (*tabRail);
 
@@ -177,6 +203,7 @@ BridgeHeaderBar::~BridgeHeaderBar()
     stopButton.setLookAndFeel (nullptr);
     hostSyncButton.setLookAndFeel (nullptr);
     timeDivisionBox.setLookAndFeel (nullptr);
+    phraseBarsBox.setLookAndFeel (nullptr);
 }
 
 void BridgeHeaderBar::paint (juce::Graphics& g)
@@ -211,8 +238,10 @@ void BridgeHeaderBar::resized()
 
     constexpr int transportGap = kTransportGap;
     const int trBtn = kTransportBtnSide;
+    const int divW    = measuredComboWidth (timeDivisionBox, kDivComboW);
+    const int phraseW = measuredComboWidth (phraseBarsBox, kPhraseComboW);
     const int centerW = kBpmFieldW + transportGap + kBpmLabelW + transportGap + trBtn + transportGap + trBtn
-                        + transportGap + kDivComboW + transportGap + hostW;
+                        + transportGap + divW + transportGap + phraseW + transportGap + hostW;
 
     const int tabsW = BridgeInstrumentTabRail::contentWidth();
     const int rightClusterW = kTabToSettingsGap + tabsW + kGearSide;
@@ -232,7 +261,9 @@ void BridgeHeaderBar::resized()
         playButton.setBounds (row.removeFromLeft (trBtn));
         stopButton.setBounds (row.removeFromLeft (trBtn));
         row.removeFromLeft (transportGap);
-        timeDivisionBox.setBounds (row.removeFromLeft (kDivComboW));
+        timeDivisionBox.setBounds (row.removeFromLeft (divW));
+        row.removeFromLeft (transportGap);
+        phraseBarsBox.setBounds (row.removeFromLeft (phraseW));
         row.removeFromLeft (transportGap);
         hostSyncButton.setBounds (row.removeFromLeft (hostW));
     }

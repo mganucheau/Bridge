@@ -2,13 +2,14 @@
 
 #include <JuceHeader.h>
 #include "BridgeProcessor.h"
-#include "BridgeBottomHalf.h"
 #include "BridgeLoopRangeStrip.h"
 #include "BridgeLookAndFeel.h"
 #include "BridgeVelocityStrip.h"
+#include "BridgeXYPad.h"
 #include "InstrumentControlBar.h"
 #include "drums/DrumsStylePresets.h"
 #include "drums/DrumsLookAndFeel.h"
+#include "BridgePhrase.h"
 
 class DrumGridComponent : public juce::Component
 {
@@ -20,9 +21,16 @@ public:
     void resized() override;
     void update (int activeStep);
 
+    /** PatternFlow-style phrase length: how many bars the grid visualises. cellW is recomputed
+        so the full N-bar grid fits the same container width. The underlying engine pattern is
+        always 1 bar (NUM_STEPS) and is tiled across the visible bars. Default 1. */
+    void setBarCount (int bars);
+    int  getBarCount() const noexcept { return barCount; }
+
 private:
     BridgeProcessor& proc;
     int currentStep = -1;
+    int barCount    = 1;
 
     float geomLaneX = 0.0f, geomLaneW = 0.0f, geomOriginX = 0.0f, geomOriginY = 0.0f, geomCellW = 0.0f, geomRowH = 0.0f;
     void syncGeometryFromBounds();
@@ -54,6 +62,7 @@ public:
 private:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void layoutBottomControls (juce::Rectangle<int> bottom);
 
                 static void setLoopIntParameter (juce::AudioProcessorValueTreeState& apvts,
                                      const juce::String& id, int value);
@@ -61,11 +70,46 @@ private:
     BridgeProcessor& proc;
     BridgeLookAndFeel laf;
 
-    BridgeBottomHalf bottomHalf;
     InstrumentControlBar instrumentStrip;
-    BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffff7f5c), NUM_STEPS };
+    BridgeLoopRangeStrip loopStrip { proc.apvtsMain, juce::Colour (0xffff7f5c), bridge::phrase::kMaxSteps };
     DrumGridComponent drumGrid;
-    BridgeVelocityStrip velocityStrip { NUM_STEPS, juce::Colour (0xffff7f5c) };
+    BridgeVelocityStrip velocityStrip { bridge::phrase::kMaxSteps, juce::Colour (0xffff7f5c) };
+
+    // ── Bottom controls (laid out by DrumsPanel::resized) ─────────────────────
+    juce::Slider knobSwing,    knobHumanize, knobHold;
+    juce::Label  labelSwing,   labelHumanize, labelHold;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
+        attSwing, attHumanize, attHold;
+
+    juce::Label  patternHeader, fillsHeader;
+    juce::Label  patternXLabel, patternYLabel;
+    juce::Label  fillsXLabel,   fillsYLabel;
+    std::unique_ptr<BridgeXYPad> patternPad;
+    std::unique_ptr<BridgeXYPad> fillsPad;
+
+    juce::Slider patternKnobX, patternKnobY;
+    juce::Slider fillsKnobX, fillsKnobY;
+    juce::Label  patternKnobXLabel, patternKnobYLabel;
+    juce::Label  fillsKnobXLabel, fillsKnobYLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
+        attPatternKnobX, attPatternKnobY, attFillsKnobX, attFillsKnobY;
+
+    juce::Slider knobLoopStart, knobLoopEnd;
+    juce::Label  labelLoopStart, labelLoopEnd;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
+        attLoopStart, attLoopEnd;
+    juce::TextButton loopPlaybackButton { "L" };
+    juce::TextButton syncIconButton    { "S" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        attLoopPlayback, attLoopSpan;
+    juce::Label selectorsHeader, actionsHeader;
+
+    juce::TextButton generateButton { "GENERATE" };
+    juce::ToggleButton jamToggle;
+    juce::ComboBox     jamPeriodBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> jamToggleAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> jamPeriodAttach;
+    juce::Label      jamLabel;
 
     struct StepTimer : public juce::Timer
     {
@@ -87,6 +131,10 @@ private:
     int  lastAnimStep = -1;
 
     void applyDrumsPageState();
+    /** Read the global phraseBars choice on apvtsMain (0 → 4, 1 → 8, 2 → 16). */
+    int  currentPhraseBarCount() const;
+    /** Push the current phrase length to grid + loop strip + velocity strip + engine. */
+    void applyPhraseBars();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DrumsPanel)
 };

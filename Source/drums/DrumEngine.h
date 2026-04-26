@@ -7,6 +7,8 @@
 #include <functional>
 #include <vector>
 
+#include "../BridgePhrase.h"
+
 class BridgeMLManager;
 
 struct DrumHit
@@ -17,7 +19,7 @@ struct DrumHit
 };
 
 using DrumStep   = std::array<DrumHit, NUM_DRUMS>;
-using DrumPattern = std::array<DrumStep, NUM_STEPS>;
+using DrumPattern = std::vector<DrumStep>;
 
 // ─────────────────────────────────────────────────────────────────────────────
 class DrumEngine
@@ -50,7 +52,9 @@ public:
     // ── Pattern access ─────────────────────────────────────────────────────
     const DrumStep& getStep (int step) const
     {
-        return pattern[(size_t) juce::jlimit (0, NUM_STEPS - 1, step)];
+        const int max = juce::jmax (1, patternLen);
+        const int s = juce::jlimit (0, max - 1, step);
+        return pattern[(size_t) s];
     }
     const DrumPattern& getPattern()       const { return pattern; }
     const DrumPattern& getPatternForGrid() const { return gridPreview; }
@@ -74,7 +78,7 @@ public:
     void setComplexity (float c) { complexity  = jlimit(0.0f,  1.0f,  c); }
     void setHold       (float h) { hold        = jlimit(0.0f,  1.0f,  h); }
     void setGhostAmount(float g) { ghostAmount = jlimit(0.0f,  1.0f,  g); }
-    void setPatternLen (int   l) { patternLen  = jlimit(1, NUM_STEPS, l); }
+    void setPatternLen (int   l) { patternLen  = jlimit(1, bridge::phrase::kMaxSteps, l); }
     void setSeed       (uint32 s){ seed        = s; rng.seed(seed); }
     void setPhraseBars (int bars) { phraseBars = jlimit (1, 64, bars); }
 
@@ -125,7 +129,7 @@ public:
     int  getVelShape() const noexcept { return velShape; }
 
     /** Per-step activity (max velocity per step / 127) — exported for melodic followers. */
-    std::array<float, NUM_STEPS> getStepActivityGrid() const noexcept;
+    std::array<float, bridge::phrase::kMaxSteps> getStepActivityGrid() const noexcept;
 
     // Called each bar — may auto-trigger a fill based on fillRate
     bool shouldTriggerFill();
@@ -135,7 +139,7 @@ public:
 
 private:
     DrumPattern pattern;
-    DrumPattern gridPreview {};
+    DrumPattern gridPreview;
     std::mt19937 rng;
 
     int   style       = 0;
@@ -148,7 +152,7 @@ private:
     float complexity  = 0.5f;
     float hold        = 0.5f;
     float ghostAmount = 0.5f;
-    int   patternLen  = NUM_STEPS;
+    int   patternLen  = NUM_STEPS; // steps in current phrase (<= bridge::phrase::kMaxSteps)
     uint32 seed       = 42;
 
     int   barCount    = 0;
@@ -166,6 +170,7 @@ private:
     float complexityMod  (int step, int drum) const;
     void  mergeMLBlockAtQuarter (const std::vector<float>& mlOutput, int quarter0);
     void  enforcePerStepPolyphonyInRange (int r0, int r1, int maxVoices);
+    void  applyVoiceExclusionAndPriority (int r0, int r1);
     int   maxPolyphonyForSettings() const noexcept;
 
     std::array<float, 10> mlPersonalityKnobs {};

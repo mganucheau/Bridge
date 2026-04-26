@@ -190,7 +190,7 @@ void BassGridComponent::paint (juce::Graphics& g)
     auto& engine  = proc.bassEngine;
     auto& pattern = engine.getPatternForGrid();
 
-    int loopStart = 1, loopEnd = BassPreset::NUM_STEPS;
+    int loopStart = 1, loopEnd = engine.getPatternLen();
     proc.getBassLoopBounds (loopStart, loopEnd);
     const int ls0 = loopStart - 1;
     const int le0 = loopEnd - 1;
@@ -203,7 +203,7 @@ void BassGridComponent::paint (juce::Graphics& g)
     int minMidi = 60, maxMidi = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int nSteps = BassPreset::NUM_STEPS;
+    const int nSteps = engine.getPatternLen();
 
     const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
     const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
@@ -238,11 +238,11 @@ void BassGridComponent::paint (juce::Graphics& g)
     // Dim out-of-loop areas
     if (ls0 > 0) {
         g.setColour (juce::Colours::black.withAlpha (0.52f));
-        g.fillRect (0.0f, 0.0f, ls0 * cellW, full.getHeight());
+        g.fillRect (0.0f, 0.0f, (float) ls0 * cellW, full.getHeight());
     }
     if (le0 < nSteps - 1) {
         g.setColour (juce::Colours::black.withAlpha (0.52f));
-        g.fillRect ((le0 + 1) * cellW, 0.0f, (nSteps - le0 - 1) * cellW, full.getHeight());
+        g.fillRect ((float) (le0 + 1) * cellW, 0.0f, (float) (nSteps - le0 - 1) * cellW, full.getHeight());
     }
 
     // Draw Active Notes (Capsules)
@@ -293,7 +293,7 @@ void BassGridComponent::mouseDown (const juce::MouseEvent& e)
     int minMidi = 60, maxMidi = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int nSteps = BassPreset::NUM_STEPS;
+    const int nSteps = engine.getPatternLen();
     const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
     const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
@@ -331,7 +331,7 @@ void BassGridComponent::mouseDrag (const juce::MouseEvent& e)
     int minMidi = 60, maxMidi = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int nSteps = BassPreset::NUM_STEPS;
+    const int nSteps = engine.getPatternLen();
     const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
     const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
 
@@ -371,7 +371,7 @@ void BassGridComponent::mouseDoubleClick (const juce::MouseEvent& e)
 {
     auto& engine = proc.bassEngine;
     auto full = getLocalBounds().toFloat();
-    const int nSteps = BassPreset::NUM_STEPS;
+    const int nSteps = engine.getPatternLen();
     const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
     int step = (int)(e.x / cellW);
     
@@ -431,7 +431,8 @@ BassPanel::BassPanel (BridgeProcessor& p)
 
     velocityStrip.velocityAt = [this] (int step) -> int
     {
-        if (step < 0 || step >= BassPreset::NUM_STEPS) return 0;
+        const int n = proc.bassEngine.getPatternLen();
+        if (step < 0 || step >= n) return 0;
         const auto& pat = proc.bassEngine.getPatternForGrid();
         return pat[(size_t) step].active ? (int) pat[(size_t) step].velocity : 0;
     };
@@ -487,7 +488,7 @@ BassPanel::~BassPanel()
 void BassPanel::setLoopIntParameter (juce::AudioProcessorValueTreeState& apvts,
                                         const juce::String& id, int value)
 {
-    value = jlimit (1, BassPreset::NUM_STEPS, value);
+    value = jlimit (1, bridge::phrase::kMaxSteps, value);
     if (auto* p = apvts.getParameter (id))
         if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
             ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) value));
@@ -570,7 +571,10 @@ void BassPanel::resized()
     loopStrip.setAccent (bridge::colors::accentBass());
     auto velStripRow = card.removeFromBottom (18);
     velocityStrip.setBounds (velStripRow.reduced ((int) bridge::kMelodicKeyStripWidth, 0).withTrimmedTop (2));
-    int ls = 1, le = BassPreset::NUM_STEPS;
+    const int phraseSteps = proc.bassEngine.getPatternLen();
+    loopStrip.setNumSteps (phraseSteps);
+    velocityStrip.setNumSteps (phraseSteps);
+    int ls = 1, le = phraseSteps;
     proc.getBassLoopBounds (ls, le);
     velocityStrip.setStepRange (ls - 1, le - 1);
 
@@ -581,7 +585,7 @@ void BassPanel::resized()
     int minMidi = 60, maxMidi = 72;
     bridge::computeMelodicPitchWindowFromCommittedPattern (proc.bassEngine, minMidi, maxMidi);
     const int nRows  = juce::jmax (1, maxMidi - minMidi + 1);
-    const int nSteps = BassPreset::NUM_STEPS;
+    const int nSteps = phraseSteps;
     const int strip  = (int) bridge::kMelodicKeyStripWidth;
 
     const float baseCellW = (float) (viewW - strip) / (float) juce::jmax (1, nSteps);
@@ -650,7 +654,7 @@ void BassPanel::parameterChanged (const juce::String& parameterID, float newValu
     if (parameterID == "density" || parameterID == "complexity")
     {
         proc.syncBassEngineFromAPVTS();
-        int ls = 1, le = BassPreset::NUM_STEPS;
+        int ls = 1, le = proc.bassEngine.getPatternLen();
         proc.getBassLoopBounds (ls, le);
         proc.bassEngine.morphPatternForDensityAndComplexity (
             ls - 1, juce::jmin (le - 1, proc.bassEngine.getPatternLen() - 1));

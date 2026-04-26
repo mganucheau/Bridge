@@ -71,7 +71,7 @@ public:
     juce::AudioProcessorValueTreeState apvtsGuitar;
 
     // UI tab: 0 Main, 1 Drums, 2 Bass, 3 Piano, 4 Guitar
-    std::atomic<int> activeTab { 0 };
+    std::atomic<int> activeTab { 1 };
 
     // Last BPM the processor saw from the host (or fell back to). Read by the header BPM display.
     std::atomic<double> currentHostBpm { 120.0 };
@@ -235,6 +235,12 @@ private:
 
     double drumsLastBpm = 120.0;
     int    drumsLastProcessedStep = -1;
+    // One-block forward look-ahead so anticipated (negative-shift) hits whose
+    // nominal step boundary lies past the current block end can still be emitted
+    // in this block. The mask remembers which drums of `…GlobalStep` were already
+    // fired so the next block's main loop skips them and avoids double-strikes.
+    int      drumsAnticipatedGlobalStep = INT_MIN;
+    uint32_t drumsAnticipatedDrumMask   = 0;
     bool   drumsFillQueued = false;
     int    drumsFillFromStep = 12;
     double drumsJamDebtBeats = 0.0;

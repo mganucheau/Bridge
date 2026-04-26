@@ -68,31 +68,13 @@ private:
 
     juce::Label actionsLabel;
     juce::TextButton generateButton { "GENERATE" };
-    juce::TextButton fillButton { "FILL" };
-    juce::Slider jamKnob { juce::Slider::RotaryVerticalDrag, juce::Slider::NoTextBox };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> jamKnobAttach;
+    juce::ToggleButton jamToggle;
+    juce::ComboBox     jamPeriodBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> jamToggleAttach;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> jamPeriodAttach;
     juce::Label jamLabel;
 
     std::function<void(bool)> fillHoldCallback;
-
-    class FillMouseListener : public juce::MouseListener
-    {
-    public:
-        FillMouseListener (BridgeBottomHalf& o) : owner (o) {}
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            if (e.eventComponent == &owner.fillButton && owner.fillHoldCallback)
-                owner.fillHoldCallback (true);
-        }
-        void mouseUp (const juce::MouseEvent& e) override
-        {
-            if (e.eventComponent == &owner.fillButton && owner.fillHoldCallback)
-                owner.fillHoldCallback (false);
-        }
-
-    private:
-        BridgeBottomHalf& owner;
-    } fillListener { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BridgeBottomHalf)
 };
