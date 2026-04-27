@@ -65,6 +65,16 @@ inline void computeMelodicPitchWindowFromCommittedPattern (const GuitarEngine&, 
     maxMidi = kMelodicMaxMidi;
 }
 
+/** Visible piano-roll rows: root base through root + rollSpanSemitones − 1 (12 or 24). */
+template <typename MelodicEngineT>
+inline void applyRollSpanMelodicWindow (const MelodicEngineT& engine, int& minMidi, int& maxMidi)
+{
+    const int base = engine.getRootMidiBaseAbs();
+    const int span = juce::jmax (1, engine.getRollSpanSemitones());
+    minMidi = juce::jlimit (0, 127, base);
+    maxMidi = juce::jlimit (0, 127, base + span - 1);
+}
+
 inline std::pair<int, int> getPatternMidiExtent (const PianoEngine& engine)
 {
     int pMin = 127, pMax = 0;
@@ -114,6 +124,8 @@ inline std::pair<int, int> getPatternMidiExtent (const GuitarEngine& engine)
 }
 /** Left column: piano roll (melodic) or drum lane labels + M/S (drums). */
 inline constexpr int kMelodicKeyStripWidth = 64;
+/** Velocity row under the step grid (melodic panels match drums). */
+inline constexpr int kVelocityStripHeightPx = 36;
 /** Loop + step division strip under the instrument control bar. */
 inline constexpr int kLoopRangeStripHeightPx = 18;
 

@@ -78,6 +78,8 @@ public:
     void setLocked      (bool  l){ locked      = l; }
     void setSeed        (uint32 s){ seed       = s; rng.seed (seed); }
     void setPhraseBars  (int bars){ phraseBars = jlimit (1, 64, bars); }
+    void setRollSpanSemitones (int semis) noexcept { rollSpanSemitones = juce::jlimit (12, 24, semis); }
+    int  getRollSpanSemitones() const noexcept { return rollSpanSemitones; }
 
     int   getStyle      () const { return style; }
     int   getScale      () const { return scale; }
@@ -98,6 +100,7 @@ public:
     int   getPhraseBars () const { return phraseBars; }
 
     int  getRootMidiBase () const { return rootMidiBase(); }
+    int  getRootMidiBaseAbs() const noexcept { return rootMidiBase(); }
 
     void setHostSampleRate (double sr) { hostSampleRate = juce::jmax (1.0, sr); }
     void remapPatternAfterTonalityChange (int previousRootMidiBase, int previousScaleIndex);
@@ -165,6 +168,7 @@ private:
     uint32 seed       = 42;
     int   barCount    = 0;
     int   phraseBars  = 4;
+    int   rollSpanSemitones = 12;
 
     int   rootMidiBase() const;            // = rootNote + (octave + 1) * 12
     int   snapMidiToCurrentScale (int midi) const;

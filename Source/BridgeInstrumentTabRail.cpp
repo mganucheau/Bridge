@@ -19,19 +19,19 @@ BridgeInstrumentTabRail::BridgeInstrumentTabRail (BridgeProcessor& processor,
     setOpaque (false);
     setInterceptsMouseClicks (false, true);
 
-    struct TabSpec { int idx; const char* cap; const char* pid; };
+    struct TabSpec { int idx; const char* cap; const char* pid; const char* muteId; const char* soloId; };
     static const TabSpec specs[] = {
-        { 0, "LEA", "leaderTabOn" },
-        { 1, "DRU", "drumsOn" },
-        { 2, "BAS", "bassOn" },
-        { 3, "PIA", "pianoOn" },
-        { 4, "GUI", "guitarOn" },
+        { 0, "LEA", "leaderTabOn", "", "" },
+        { 1, "DRU", "drumsOn", "mainMuteDrums", "mainSoloDrums" },
+        { 2, "BAS", "bassOn", "mainMuteBass", "mainSoloBass" },
+        { 3, "PIA", "pianoOn", "mainMutePiano", "mainSoloPiano" },
+        { 4, "GUI", "guitarOn", "mainMuteGuitar", "mainSoloGuitar" },
     };
 
     for (const auto& s : specs)
     {
         tiles[(size_t) s.idx] = std::make_unique<BridgeInstrumentTabTile> (
-            proc, s.idx, s.cap, s.pid, kAccents[(size_t) s.idx], onSelectTab);
+            proc, s.idx, s.cap, s.pid, kAccents[(size_t) s.idx], onSelectTab, s.muteId, s.soloId);
         addAndMakeVisible (*tiles[(size_t) s.idx]);
     }
 }

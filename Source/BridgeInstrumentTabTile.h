@@ -15,7 +15,9 @@ public:
                              const juce::String& shortCaption,
                              const juce::String& powerParameterId,
                              juce::Colour accentColour,
-                             std::function<void (int)> onSelectTab);
+                             std::function<void (int)> onSelectTab,
+                             const juce::String& mixerMuteParamId = {},
+                             const juce::String& mixerSoloParamId = {});
 
     ~BridgeInstrumentTabTile() override;
 
@@ -35,6 +37,8 @@ private:
     int tabIndex = 0;
     juce::String caption;
     juce::String powerParamId;
+    juce::String mixerMuteParamId;
+    juce::String mixerSoloParamId;
     juce::Colour accent;
     std::function<void (int)> onSelect;
     bool selected = false;

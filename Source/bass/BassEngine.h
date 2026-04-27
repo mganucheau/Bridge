@@ -74,6 +74,9 @@ public:
     void setLocked      (bool  l){ locked      = l; }
     void setSeed        (uint32 s){ seed       = s; rng.seed (seed); }
     void setPhraseBars  (int bars){ phraseBars = jlimit (1, 64, bars); }
+    /** 12 = one octave above root MIDI base; 24 = two octaves (roll span UI). */
+    void setRollSpanSemitones (int semis) noexcept { rollSpanSemitones = juce::jlimit (12, 24, semis); }
+    int  getRollSpanSemitones() const noexcept { return rollSpanSemitones; }
 
     int   getStyle      () const { return style; }
     int   getScale      () const { return scale; }
@@ -92,6 +95,7 @@ public:
     int   getPatternLen () const { return patternLen; }
     uint32 getSeed      () const { return seed; }
     int   getPhraseBars () const { return phraseBars; }
+    int   getRootMidiBaseAbs() const noexcept { return rootMidiBase(); }
 
     int  getRootMidiBase () const { return rootMidiBase(); }
 
@@ -174,8 +178,9 @@ private:
     uint32 seed       = 42;
     int   barCount    = 0;
     int   phraseBars  = 4;
+    int   rollSpanSemitones = 12;
 
-    int   rootMidiBase() const;            // = rootNote + (octave + 1) * 12
+    int   rootMidiBase() const;
     int   snapMidiToCurrentScale (int midi) const;
     float sampleProb (float p) const;
     uint8 sampleVelocity (int step, bool ghost, bool accent) const;

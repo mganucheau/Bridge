@@ -1,5 +1,6 @@
 #include "DrumsPanel.h"
 #include "BridgeAppleHIG.h"
+#include "BridgeControlMetrics.h"
 #include "BridgeLookAndFeel.h"
 #include "BridgePanelLayout.h"
 #include "BridgeInstrumentStyles.h"
@@ -145,6 +146,8 @@ void DrumGridComponent::paint (juce::Graphics& g)
 
     const int bars       = juce::jmax (1, barCount);
     const int totalCells = bars * NUM_STEPS;
+    const int tdIdx      = bridge::phrase::readTimeDivisionChoiceIndex (proc.apvtsMain);
+    const int accentPeriod = bridge::phrase::accentColumnPeriodInSixteenthsFromTimeDivisionIndex (tdIdx);
 
     for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
     {
@@ -178,7 +181,7 @@ void DrumGridComponent::paint (juce::Graphics& g)
                 continue;
             }
 
-            bool isBeat = (stepInBar % 4 == 0);
+            bool isBeat = ((stepInBar % accentPeriod) == 0);
 
             if (! inLoop)
             {
@@ -257,7 +260,8 @@ void DrumGridComponent::paint (juce::Graphics& g)
     const bool drumsOn = proc.apvtsMain.getRawParameterValue ("drumsOn") != nullptr
                              && proc.apvtsMain.getRawParameterValue ("drumsOn")->load() > 0.5f;
 
-    if (drumsOn && currentStep >= 0 && currentStep < NUM_STEPS)
+    const int phraseCells = juce::jmin (patLen, totalCells);
+    if (drumsOn && currentStep >= 0 && currentStep < phraseCells)
     {
         float cx = geomOriginX + (float) currentStep * geomCellW;
         g.setColour (primary().withAlpha (0.08f));
@@ -344,6 +348,7 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     proc.apvtsMain.addParameterListener ("loopEnd", this);
     proc.apvtsMain.addParameterListener ("playbackLoopOn", this);
     proc.apvtsMain.addParameterListener ("phraseBars", this);
+    proc.apvtsMain.addParameterListener ("timeDivision", this);
     proc.apvtsDrums.addParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.addParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
@@ -383,6 +388,7 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     setupKnob (knobSwing,    labelSwing,    "SWING",    "swing",    attSwing);
     setupKnob (knobHumanize, labelHumanize, "HUMANIZE", "humanize", attHumanize);
     setupKnob (knobHold,     labelHold,     "HOLD",     "hold",     attHold);
+    setupKnob (knobVelocity, labelVelocity, "VELOCITY", "velocity", attVelocity);
 
     // ── XY pads (PATTERN, FILLS) ──────────────────────────────────────────
     auto setupSectionLabel = [] (juce::Label& l, const juce::String& text,
@@ -419,6 +425,10 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     addAndMakeVisible (patternYLabel);
     addAndMakeVisible (fillsXLabel);
     addAndMakeVisible (fillsYLabel);
+    patternXLabel.setVisible (false);
+    patternYLabel.setVisible (false);
+    fillsXLabel.setVisible (false);
+    fillsYLabel.setVisible (false);
 
     // XY pad readout knobs (same params as the pads).
     auto setupSmallKnob = [&] (juce::Slider& s, juce::Label& l,
@@ -472,26 +482,28 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     setupLoopKnob (knobLoopStart, labelLoopStart, "START", "loopStart", attLoopStart);
     setupLoopKnob (knobLoopEnd,   labelLoopEnd,   "END",   "loopEnd",   attLoopEnd);
 
-    auto setupToggleButton = [&] (juce::TextButton& b, const juce::String& tooltip,
-                                  const juce::String& paramId,
-                                  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>& att)
+    auto setupLoopStripToggle = [] (juce::TextButton& b, const juce::String& stripTag, const juce::String& letter)
     {
+        b.setButtonText (letter);
         b.setClickingTogglesState (true);
         b.setConnectedEdges (0);
-        b.setTooltip (tooltip);
-        b.setColour (juce::TextButton::buttonColourId,   bridge::colors::knobTrack());
-        b.setColour (juce::TextButton::buttonOnColourId, accent);
-        b.setColour (juce::TextButton::textColourOffId,  bridge::colors::textDim());
-        b.setColour (juce::TextButton::textColourOnId,   juce::Colours::white);
-        addAndMakeVisible (b);
-        if (proc.apvtsMain.getParameter (paramId) != nullptr)
-            att = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
-                proc.apvtsMain, paramId, b);
+        b.getProperties().set ("bridgeStripTag", stripTag);
+        b.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        b.setColour (juce::TextButton::buttonOnColourId, juce::Colours::transparentBlack);
     };
-    setupToggleButton (loopPlaybackButton, "Playback loop (wrap transport in selection)",
-                       "playbackLoopOn", attLoopPlayback);
-    setupToggleButton (syncIconButton, "Lock loop width: moving start or end keeps the same span",
-                       "loopSpanLock", attLoopSpan);
+    setupLoopStripToggle (loopPlaybackButton, "loop", "L");
+    loopPlaybackButton.setTooltip ("Playback loop (wrap transport in selection)");
+    addAndMakeVisible (loopPlaybackButton);
+    if (proc.apvtsMain.getParameter ("playbackLoopOn") != nullptr)
+        attLoopPlayback = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            proc.apvtsMain, "playbackLoopOn", loopPlaybackButton);
+
+    setupLoopStripToggle (syncIconButton, "spanLock", "S");
+    syncIconButton.setTooltip ("Lock loop width: moving start or end keeps the same span");
+    addAndMakeVisible (syncIconButton);
+    if (proc.apvtsMain.getParameter ("loopSpanLock") != nullptr)
+        attLoopSpan = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+            proc.apvtsMain, "loopSpanLock", syncIconButton);
 
     auto setupAction = [&] (juce::TextButton& b)
     {
@@ -503,32 +515,31 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     setupAction (generateButton);
     generateButton.onClick = [this] { proc.triggerDrumsGenerate(); };
 
+    setupAction (jamToggle);
     jamToggle.setButtonText ("JAM");
+    jamToggle.setClickingTogglesState (true);
     jamToggle.setTooltip ("Jam: periodically press Generate over the current selection (while playing)");
-    addAndMakeVisible (jamToggle);
+    jamToggle.setColour (juce::TextButton::textColourOnId, juce::Colours::white.withAlpha (0.95f));
+    jamToggle.setColour (juce::TextButton::buttonOnColourId, bridge::colors::knobTrack().brighter (0.12f));
     if (proc.apvtsDrums.getParameter ("jamOn") != nullptr)
         jamToggleAttach = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
             proc.apvtsDrums, "jamOn", jamToggle);
 
-    jamPeriodBox.addItem ("4 bars",  1);
-    jamPeriodBox.addItem ("8 bars",  2);
-    jamPeriodBox.addItem ("16 bars", 3);
+    bridge::phrase::stylePhraseLengthComboBox (jamPeriodBox);
+    bridge::phrase::addPhraseLengthBarItems (jamPeriodBox);
     jamPeriodBox.setJustificationType (juce::Justification::centredLeft);
     jamPeriodBox.setTooltip ("Jam period (bars)");
     addAndMakeVisible (jamPeriodBox);
     if (proc.apvtsDrums.getParameter ("jamPeriodBars") != nullptr)
         jamPeriodAttach = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (
             proc.apvtsDrums, "jamPeriodBars", jamPeriodBox);
-    jamLabel.setText ("JAM", juce::dontSendNotification);
-    jamLabel.setJustificationType (juce::Justification::centred);
-    jamLabel.setColour (juce::Label::textColourId, bridge::colors::textDim());
-    jamLabel.setFont (bridge::hig::uiFont (10.0f, "Semibold"));
-    addAndMakeVisible (jamLabel);
+    jamLabel.setVisible (false);
 
     velocityStrip.velocityAt = [this] (int step) -> int
     {
         const auto& pat = proc.drumEngine.getPatternForGrid();
-        if (step < 0 || step >= NUM_STEPS) return 0;
+        const int plen = proc.drumEngine.getPatternLen();
+        if (step < 0 || step >= plen) return 0;
         int maxV = 0;
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
             if (pat[(size_t) step][(size_t) drum].active)
@@ -559,6 +570,7 @@ DrumsPanel::~DrumsPanel()
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
     proc.apvtsMain.removeParameterListener ("playbackLoopOn", this);
     proc.apvtsMain.removeParameterListener ("phraseBars", this);
+    proc.apvtsMain.removeParameterListener ("timeDivision", this);
     proc.apvtsDrums.removeParameterListener ("tickerSpeed", this);
     proc.apvtsDrums.removeParameterListener ("style", this);
     for (const char* id : { "density", "swing", "humanize", "velocity", "fillRate", "complexity",
@@ -613,7 +625,7 @@ void DrumsPanel::applyDrumsPageState()
     {
         for (auto* c : cs) if (c != nullptr) c->setEnabled (on);
     };
-    enableAll ({ &knobSwing, &knobHumanize, &knobHold,
+    enableAll ({ &knobSwing, &knobHumanize, &knobHold, &knobVelocity,
                  patternPad.get(), fillsPad.get(),
                  &knobLoopStart, &knobLoopEnd,
                  &loopPlaybackButton, &syncIconButton,
@@ -643,11 +655,15 @@ void DrumsPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentDrums());
-    auto velStripRow = card.removeFromBottom (18);
-    velocityStrip.setBounds (velStripRow.reduced ((int) bridge::kMelodicKeyStripWidth, 0).withTrimmedTop (2));
+    auto velStripRow = card.removeFromBottom ((int) bridge::kVelocityStripHeightPx);
+    {
+        auto vel = velStripRow.withTrimmedTop (2);
+        vel.removeFromLeft ((int) bridge::kMelodicKeyStripWidth);
+        velocityStrip.setBounds (vel);
+    }
     drumGrid.setBounds (card);
 
-    int ls = 1, le = NUM_STEPS;
+    int ls = 1, le = bridge::phrase::kMaxSteps;
     proc.getDrumsLoopBounds (ls, le);
     velocityStrip.setStepRange (ls - 1, le - 1);
 
@@ -656,7 +672,10 @@ void DrumsPanel::resized()
 
 void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
 {
-    constexpr int smallGap = 6;
+    constexpr int smallGap = bridge::controlMetrics::kLayoutSmallGapPx;
+    constexpr int kKnobW = bridge::controlMetrics::kKnobBodySidePx;
+    constexpr int kKnobLabelH = bridge::controlMetrics::kKnobLabelBandHPx;
+    constexpr int kLoopBtnSide = bridge::controlMetrics::kLoopSyncToggleSide;
 
     if (bottom.isEmpty())
         return;
@@ -666,8 +685,7 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
     const int x0           = bottom.getX();
     const int y0           = bottom.getY();
 
-    // Step 1: knob column width + provisional pad size, then shrink pads if they overflow.
-    const int knobColWidth  = juce::jmax (40, (int) std::round ((float) bottomHeight * 0.45f));
+    const int knobColWidth  = kKnobW * 2 + smallGap;
     const int rightColWidth = juce::jmax (knobColWidth, (int) std::round ((float) bottomHeight * 1.25f));
     const int minPad        = juce::jmax (1, (int) std::round ((float) bottomHeight * 0.85f));
     int padSize             = bottomHeight;
@@ -678,23 +696,27 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
             padSize = juce::jmax (minPad, avail / 2);
     }
 
-    // Step 2: knob column.
     juce::Rectangle<int> knobCol (x0, y0, knobColWidth, bottomHeight);
-    auto layoutKnob = [&] (juce::Slider& s, juce::Label& l, juce::Rectangle<int> third)
+    auto layKnobCell = [&] (juce::Slider& s, juce::Label& l, juce::Rectangle<int> cell)
     {
-        const int knobSide = juce::jmax (24, (int) std::round ((float) third.getHeight() * 0.60f));
-        const int labelH   = juce::jmin (third.getHeight() - knobSide, 14);
-        auto labelArea = third.removeFromBottom (labelH);
-        auto knobArea  = third.withSizeKeepingCentre (knobSide, knobSide);
-        s.setBounds (knobArea);
+        auto labelArea = cell.removeFromBottom (kKnobLabelH);
+        s.setBounds (cell.withSizeKeepingCentre (kKnobW, kKnobW));
         l.setBounds (labelArea);
     };
-    const int thirdH = bottomHeight / 3;
-    layoutKnob (knobSwing,    labelSwing,    knobCol.removeFromTop (thirdH));
-    layoutKnob (knobHumanize, labelHumanize, knobCol.removeFromTop (thirdH));
-    layoutKnob (knobHold,     labelHold,     knobCol);
+    {
+        const int cellH = (bottomHeight - smallGap) / 2;
+        auto topRow = knobCol.removeFromTop (cellH);
+        knobCol.removeFromTop (smallGap);
+        auto botRow = knobCol;
+        const int cw = (knobColWidth - smallGap) / 2;
+        layKnobCell (knobSwing, labelSwing, topRow.removeFromLeft (cw));
+        topRow.removeFromLeft (smallGap);
+        layKnobCell (knobHumanize, labelHumanize, topRow);
+        layKnobCell (knobHold, labelHold, botRow.removeFromLeft (cw));
+        botRow.removeFromLeft (smallGap);
+        layKnobCell (knobVelocity, labelVelocity, botRow);
+    }
 
-    // Steps 3-4: PATTERN and FILLS XY pads (square: jmin column width, space above the readout row).
     auto placePad = [&] (BridgeXYPad* pad, int colLeftX, juce::Label& header, juce::Label& xLab,
                           juce::Label& yLab)
     {
@@ -702,30 +724,31 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
         constexpr int knobRowH = 54;
         constexpr int knobGap  = 6;
         const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap);
-        const int side = juce::jmax (48, juce::jmin (padSize, spaceAboveReadouts));
+        const int rawSide = juce::jmax (bridge::controlMetrics::kKnobBodySidePx,
+                                        juce::jmin (padSize, spaceAboveReadouts));
+        const int side = juce::jmax (bridge::controlMetrics::kXyPadMinSidePx,
+                                     (int) std::round ((float) rawSide * bridge::controlMetrics::kXyPadScaleOfMinDim));
         const int px   = colLeftX + (padSize - side) / 2;
         juce::Rectangle<int> padRect (px, y0, side, side);
         pad->setBounds (padRect);
-        const int hdrH  = juce::jmin (14, side / 5);
-        const int axisH = juce::jmin (12, side / 6);
-        const int yLabW = juce::jmin (24, side / 5);
+        const int hdrH = juce::jmin (14, side / 5);
         header.setBounds (padRect.getX(), padRect.getY() + 2, padRect.getWidth(), hdrH);
-        xLab.setBounds  (padRect.getX(), padRect.getBottom() - axisH - 2, padRect.getWidth(), axisH);
-        yLab.setBounds  (padRect.getX() + 2, padRect.getY() + (padRect.getHeight() - axisH) / 2,
-                         yLabW, axisH);
+        juce::ignoreUnused (xLab, yLab);
     };
     const int patternX = x0 + knobColWidth + smallGap;
     const int fillsX   = patternX + padSize + smallGap;
     placePad (patternPad.get(), patternX, patternHeader, patternXLabel, patternYLabel);
     placePad (fillsPad.get(),   fillsX,   fillsHeader,   fillsXLabel,   fillsYLabel);
 
-    // Knobs under pads (same params as pads).
     auto layoutTwoKnobsRow = [&] (int colLeftX, juce::Slider& a, juce::Label& aL, juce::Slider& b, juce::Label& bL)
     {
         constexpr int knobRowH = 54;
         constexpr int knobGap  = 6;
         const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap);
-        const int side = juce::jmax (48, juce::jmin (padSize, spaceAboveReadouts));
+        const int rawSide = juce::jmax (bridge::controlMetrics::kKnobBodySidePx,
+                                        juce::jmin (padSize, spaceAboveReadouts));
+        const int side = juce::jmax (bridge::controlMetrics::kXyPadMinSidePx,
+                                     (int) std::round ((float) rawSide * bridge::controlMetrics::kXyPadScaleOfMinDim));
         const int px   = colLeftX + (padSize - side) / 2;
         juce::Rectangle<int> padTop (px, y0, side, side);
         juce::Rectangle<int> below (colLeftX, padTop.getBottom() + knobGap, padSize, knobRowH);
@@ -737,9 +760,8 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
 
         auto place = [&] (juce::Slider& s, juce::Label& l, juce::Rectangle<int> r)
         {
-            const int knobSide = juce::jmax (20, r.getHeight() - 14);
             l.setBounds (r.removeFromBottom (14));
-            s.setBounds (r.withSizeKeepingCentre (knobSide, knobSide));
+            s.setBounds (r.withSizeKeepingCentre (kKnobW, kKnobW));
         };
         place (a, aL, left);
         place (b, bL, right);
@@ -747,7 +769,6 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
     layoutTwoKnobsRow (patternX, patternKnobX, patternKnobXLabel, patternKnobY, patternKnobYLabel);
     layoutTwoKnobsRow (fillsX,   fillsKnobX,   fillsKnobXLabel,   fillsKnobY,   fillsKnobYLabel);
 
-    // Step 5: selectors + actions column.
     const int rightX = fillsX + padSize + smallGap;
     juce::Rectangle<int> rightCol (rightX, y0, juce::jmax (1, x0 + totalW - rightX), bottomHeight);
 
@@ -756,12 +777,9 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
     rightCol.removeFromTop (8);
     auto actArea = rightCol;
 
-    selectorsHeader.setBounds (selArea.removeFromTop (14));
-    selArea.removeFromTop (4);
+    selectorsHeader.setBounds (selArea.removeFromTop (12));
+    selArea.removeFromTop (2);
     {
-        constexpr int kKnobW       = 48;
-        constexpr int kKnobLabelH  = 14;
-        constexpr int kLoopBtnSide = 48;
         constexpr int kBtnPairGap  = 4;
         constexpr int kOuterGap    = 8;
         const int kKnobH = kKnobLabelH + kKnobW;
@@ -770,8 +788,7 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
         const int sx0    = selArea.getX() + (selArea.getWidth() - blockW) / 2;
         const int sy0    = selArea.getY() + (selArea.getHeight() - kKnobH) / 2;
         const int xBtn   = sx0 + kKnobW + kOuterGap;
-        const int stackH = kLoopBtnSide + kBtnPairGap + kLoopBtnSide;
-        const int yTop   = selArea.getCentreY() - stackH / 2;
+        const int yTop   = selArea.getCentreY() - (kLoopBtnSide + kBtnPairGap + kLoopBtnSide) / 2;
 
         knobLoopStart.setBounds (sx0, sy0, kKnobW, kKnobW);
         labelLoopStart.setBounds (sx0, sy0 + kKnobW, kKnobW, kKnobLabelH);
@@ -782,21 +799,20 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
         labelLoopEnd.setBounds (xEnd, sy0 + kKnobW, kKnobW, kKnobLabelH);
     }
 
-    actionsHeader.setBounds (actArea.removeFromTop (14));
-    actArea.removeFromTop (4);
+    actionsHeader.setBounds (actArea.removeFromTop (12));
+    actArea.removeFromTop (2);
     {
-        constexpr int kActionSide = 48;
-        constexpr int btnGap     = 6;
+        constexpr int kActionSide = bridge::controlMetrics::kKnobBodySidePx;
+        constexpr int btnGap     = bridge::controlMetrics::kLayoutSmallGapPx;
         constexpr int outerMargin = 8;
         actArea.reduce (outerMargin, outerMargin);
         auto row = actArea;
         const int genY = row.getY() + (row.getHeight() - kActionSide) / 2;
         generateButton.setBounds (row.getX(), genY, kActionSide, kActionSide);
-        auto jamCol = row.withTrimmedLeft (kActionSide + btnGap);
-        jamLabel.setBounds (jamCol.removeFromBottom (14));
-        auto top = jamCol.removeFromTop (juce::jmax (18, jamCol.getHeight() / 2));
-        jamToggle.setBounds (top.reduced (2, 0));
-        jamPeriodBox.setBounds (jamCol.reduced (2, 0));
+        jamToggle.setBounds (row.getX() + kActionSide + btnGap, genY, kActionSide, kActionSide);
+        auto comboArea = row.withTrimmedLeft (kActionSide + btnGap + kActionSide + btnGap);
+        const int comboH = juce::jmin (28, juce::jmax (22, row.getHeight() - 4));
+        jamPeriodBox.setBounds (comboArea.withSizeKeepingCentre (comboArea.getWidth(), comboH));
     }
 }
 
@@ -839,6 +855,11 @@ void DrumsPanel::parameterChanged (const juce::String& parameterID, float newVal
     if (parameterID == "phraseBars")
     {
         applyPhraseBars();
+        return;
+    }
+    if (parameterID == "timeDivision")
+    {
+        drumGrid.repaint();
         return;
     }
     if (parameterID == "loopStart" || parameterID == "loopEnd" || parameterID == "playbackLoopOn"

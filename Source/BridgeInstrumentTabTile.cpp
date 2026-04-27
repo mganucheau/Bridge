@@ -16,11 +16,15 @@ BridgeInstrumentTabTile::BridgeInstrumentTabTile (BridgeProcessor& processor,
                                                 const juce::String& shortCaption,
                                                 const juce::String& powerParameterId,
                                                 juce::Colour accentColour,
-                                                std::function<void (int)> onSelectTab)
+                                                std::function<void (int)> onSelectTab,
+                                                const juce::String& mixerMuteId,
+                                                const juce::String& mixerSoloId)
     : proc (processor),
       tabIndex (tabIndexInEditor),
       caption (shortCaption),
       powerParamId (powerParameterId),
+      mixerMuteParamId (mixerMuteId),
+      mixerSoloParamId (mixerSoloId),
       accent (accentColour),
       onSelect (std::move (onSelectTab))
 {
@@ -29,16 +33,24 @@ BridgeInstrumentTabTile::BridgeInstrumentTabTile (BridgeProcessor& processor,
     setMouseCursor (juce::MouseCursor::PointingHandCursor);
     setWantsKeyboardFocus (false);
     proc.apvtsMain.addParameterListener (powerParamId, this);
+    if (mixerMuteParamId.isNotEmpty())
+        proc.apvtsMain.addParameterListener (mixerMuteParamId, this);
+    if (mixerSoloParamId.isNotEmpty())
+        proc.apvtsMain.addParameterListener (mixerSoloParamId, this);
 }
 
 BridgeInstrumentTabTile::~BridgeInstrumentTabTile()
 {
     proc.apvtsMain.removeParameterListener (powerParamId, this);
+    if (mixerMuteParamId.isNotEmpty())
+        proc.apvtsMain.removeParameterListener (mixerMuteParamId, this);
+    if (mixerSoloParamId.isNotEmpty())
+        proc.apvtsMain.removeParameterListener (mixerSoloParamId, this);
 }
 
 void BridgeInstrumentTabTile::parameterChanged (const juce::String& parameterID, float)
 {
-    if (parameterID == powerParamId)
+    if (parameterID == powerParamId || parameterID == mixerMuteParamId || parameterID == mixerSoloParamId)
         repaint();
 }
 
@@ -52,10 +64,19 @@ void BridgeInstrumentTabTile::setTileSelected (bool isSelectedTab)
 
 void BridgeInstrumentTabTile::paint (juce::Graphics& g)
 {
-    const auto r = getLocalBounds().toFloat();
+    auto r = getLocalBounds().toFloat();
 
     const bool engineOn = readPowerOn (proc.apvtsMain, powerParamId);
     const bool powered  = (tabIndex == 0) || engineOn;
+
+    auto mixerFlagOn = [] (juce::AudioProcessorValueTreeState& ap, const juce::String& id) -> bool
+    {
+        if (id.isEmpty() || ap.getRawParameterValue (id) == nullptr)
+            return false;
+        return ap.getRawParameterValue (id)->load() > 0.5f;
+    };
+    const bool rowMuted = mixerFlagOn (proc.apvtsMain, mixerMuteParamId);
+    const bool rowSolo  = mixerFlagOn (proc.apvtsMain, mixerSoloParamId);
 
     if (! powered)
         g.saveState();
@@ -64,13 +85,13 @@ void BridgeInstrumentTabTile::paint (juce::Graphics& g)
         g.setOpacity (0.5f);
 
     const juce::Colour inactiveBg (0xff2a2a2a);
-    const juce::Colour inactiveBorder (0xff3a3a3a);
+    const juce::Colour inactiveBorder (0xff4a4a4a);
 
     if (selected)
     {
-        g.setColour (accent.withAlpha (0.20f));
+        g.setColour (juce::Colours::white.withAlpha (0.05f));
         g.fillRect (r);
-        g.setColour (accent);
+        g.setColour (accent.withAlpha (0.42f));
         g.drawRect (r.reduced (0.5f), 1.0f);
     }
     else
@@ -82,8 +103,27 @@ void BridgeInstrumentTabTile::paint (juce::Graphics& g)
     }
 
     g.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
-    g.setColour (powered ? juce::Colours::white : juce::Colour (0xff666666));
-    g.drawText (caption, getLocalBounds(), juce::Justification::centred, false);
+    juce::Colour textCol = powered ? juce::Colours::white.withAlpha (0.95f) : juce::Colour (0xff8a8a8a);
+    if (powered && rowMuted)
+        textCol = juce::Colour (0xffffb74d).withAlpha (0.95f);
+    else if (powered && rowSolo)
+        textCol = juce::Colour (0xff82b1ff).withAlpha (0.98f);
+    g.setColour (textCol);
+    g.drawText (caption, getLocalBounds().reduced (2, 0), juce::Justification::centred, false);
+
+    if (rowMuted || rowSolo)
+    {
+        const float badge = 9.0f;
+        auto br = r.removeFromBottom (badge + 3.0f).removeFromRight (badge + 3.0f)
+                      .withSizeKeepingCentre (badge, badge);
+        g.setColour (juce::Colours::black.withAlpha (0.45f));
+        g.fillRoundedRectangle (br.translated (0.5f, 0.5f), 2.0f);
+        g.setColour (rowSolo ? juce::Colour (0xff82b1ff) : juce::Colour (0xffffb74d));
+        g.fillRoundedRectangle (br, 2.0f);
+        g.setFont (bridge::hig::uiFont (7.5f, "Bold"));
+        g.setColour (juce::Colours::white.withAlpha (0.95f));
+        g.drawText (rowSolo ? "S" : "M", br.toNearestInt(), juce::Justification::centred, false);
+    }
 
     if (! powered)
         g.restoreState();

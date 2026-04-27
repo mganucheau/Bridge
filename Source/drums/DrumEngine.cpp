@@ -180,7 +180,13 @@ DrumEngine::DrumEngine()
     pattern.resize ((size_t) bridge::phrase::kMaxSteps);
     gridPreview.resize ((size_t) bridge::phrase::kMaxSteps);
     mlPersonalityKnobs.fill (0.5f);
-    generatePattern (false, nullptr);
+    for (auto& step : pattern)
+        for (auto& hit : step)
+            hit = {};
+    for (auto& step : gridPreview)
+        for (auto& hit : step)
+            hit = {};
+    rebuildGridPreview();
 }
 
 // ─── Core generation ──────────────────────────────────────────────────────────

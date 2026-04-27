@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "BridgeProcessor.h"
+#include "BridgePhrase.h"
 
 namespace
 {
@@ -214,6 +215,30 @@ struct StateMigrationTests final : public juce::UnitTest
         expectWithinAbsoluteError ((double) *dst.apvtsDrums.getRawParameterValue ("life"),         0.6, 0.02);
         expectWithinAbsoluteError ((double) *dst.apvtsBass.getRawParameterValue ("followRhythm"),  0.7, 0.02);
         expectWithinAbsoluteError ((double) *dst.apvtsGuitar.getRawParameterValue ("palmMute"),    0.4, 0.02);
+
+        beginTest ("v14 → v15: phraseBars normalized 1.0 (old 16 bars) becomes 8-bar choice");
+
+        BridgeProcessor pv15;
+        juce::MemoryBlock mbV15;
+        pv15.getStateInformation (mbV15);
+        auto xmlV15 = juce::AudioProcessor::getXmlFromBinary (mbV15.getData(), (int) mbV15.getSize());
+        expect (xmlV15 != nullptr);
+        xmlV15->setAttribute ("bridgeVersion", 14);
+        auto* mainV15 = findChildWithTag (*xmlV15, pv15.apvtsMain.state.getType().toString());
+        expect (mainV15 != nullptr);
+        setParamValueRecursive (*mainV15, "phraseBars", "1");
+
+        juce::MemoryBlock mbV15Out;
+        juce::AudioProcessor::copyXmlToBinary (*xmlV15, mbV15Out);
+        BridgeProcessor pv15loaded;
+        pv15loaded.setStateInformation (mbV15Out.getData(), (int) mbV15Out.getSize());
+        if (auto* ph = dynamic_cast<juce::AudioParameterChoice*> (pv15loaded.apvtsMain.getParameter ("phraseBars")))
+        {
+            expectEquals (ph->getIndex(), 2);
+            expectEquals (bridge::phrase::phraseBarsFromChoiceIndex (ph->getIndex()), 8);
+        }
+        else
+            expect (false, "phraseBars missing");
     }
 };
 

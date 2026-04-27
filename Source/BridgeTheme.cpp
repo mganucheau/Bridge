@@ -75,10 +75,10 @@ static const T kTable[20] = {
 static T g = kTable[1];
 } // namespace detail
 
-void applyThemeChoiceIndex (int index)
+void applyThemeChoiceIndex (int)
 {
-    index = juce::jlimit (0, 19, index);
-    detail::g = detail::kTable[(size_t) index];
+    // Single supported palette: first dark row (Material-style).
+    detail::g = detail::kTable[1];
 }
 
 juce::Colour background()    { return detail::g.bg; }

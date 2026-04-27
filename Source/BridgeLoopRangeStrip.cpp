@@ -227,39 +227,6 @@ void BridgeLoopRangeStrip::paint (juce::Graphics& g)
     drawHandle (ls, true,  1.0f);
     drawHandle (le, false, 1.0f);
 
-    // Step number labels — only draw when there is room (otherwise the labels overlap).
-    const bool drawStepNumbers = cell >= 12.0f;
-    if (drawStepNumbers)
-    {
-        g.setFont (bridge::hig::uiFont (10.5f, "Semibold"));
-        for (int i = 0; i < totalCells; ++i)
-        {
-            float cx = b.getX() + (float) i * cell;
-            auto rc = juce::Rectangle<float> (cx, b.getY(), cell, b.getHeight());
-            const int label = 1 + (i % numSteps);
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.drawText (juce::String (label), rc.translated (0.5f, 0.5f), juce::Justification::centred, false);
-            g.setColour (juce::Colours::white.withAlpha (0.95f));
-            g.drawText (juce::String (label), rc, juce::Justification::centred, false);
-        }
-    }
-    else if (repeats > 1)
-    {
-        // When the per-step label is too small, surface bar numbers (1..N) so the user can still
-        // orient themselves inside the phrase.
-        g.setFont (bridge::hig::uiFont (10.5f, "Semibold"));
-        const float barW = (float) numSteps * cell;
-        for (int bar = 0; bar < repeats; ++bar)
-        {
-            auto rc = juce::Rectangle<float> (b.getX() + (float) bar * barW, b.getY(), barW, b.getHeight());
-            const juce::String s ("Bar " + juce::String (bar + 1));
-            g.setColour (juce::Colours::black.withAlpha (0.55f));
-            g.drawText (s, rc.translated (0.5f, 0.5f), juce::Justification::centred, false);
-            g.setColour (juce::Colours::white.withAlpha (0.85f));
-            g.drawText (s, rc, juce::Justification::centred, false);
-        }
-    }
-
     g.setColour (juce::Colours::black.withAlpha (0.35f));
     g.drawRect (b, 1.0f);
 }

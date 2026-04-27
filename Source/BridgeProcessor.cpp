@@ -76,6 +76,22 @@ static int readJamPeriodBars (juce::AudioProcessorValueTreeState& ap) noexcept
     return 4;
 }
 
+/** v15: phrase / jam used 4 choices (norm i/3); remap saved norm to 3-choice indices 0..2 (16 bars → 8). */
+static void migrateFourChoiceNormToThree (juce::AudioProcessorValueTreeState& ap,
+                                          const juce::String& paramId,
+                                          const juce::var& legacyNorm01)
+{
+    if (legacyNorm01.isVoid())
+        return;
+    auto* c = dynamic_cast<juce::AudioParameterChoice*> (ap.getParameter (paramId));
+    if (c == nullptr || c->choices.size() != 3)
+        return;
+    const float v = juce::jlimit (0.f, 1.f, (float) static_cast<double> (legacyNorm01));
+    const int oldIdx = juce::roundToInt (v * 3.f);
+    const int newIdx = juce::jlimit (0, 2, oldIdx);
+    c->setValueNotifyingHost (c->convertTo0to1 ((float) newIdx));
+}
+
 static juce::var findNestedParamValue (const juce::ValueTree& v, const juce::String& paramId)
 {
     for (int i = 0; i < v.getNumChildren(); ++i)
@@ -356,25 +372,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     // Underlying engine patterns remain 1 bar (NUM_STEPS) — generation only fills the loop
     // selection (the "session"); the grid simply tiles that bar across the chosen phrase.
     layout.add (std::make_unique<juce::AudioParameterChoice> ("phraseBars", "Phrase length",
-                                                              juce::StringArray { "2 bars", "4 bars", "8 bars", "16 bars" }, 0));
+                                                              juce::StringArray { "2 bars", "4 bars", "8 bars" }, 0));
 
-    juce::StringArray themeNames;
-    const char* pairs[] = {
-        "Material Light", "Material Dark",
-        "Apple HIG Light", "Apple HIG Dark",
-        "Fluent Light", "Fluent Dark",
-        "Carbon Light", "Carbon Dark",
-        "Spectrum Light", "Spectrum Dark",
-        "Atlassian Light", "Atlassian Dark",
-        "Ant Light", "Ant Dark",
-        "Radix Sand", "Radix Slate",
-        "Nord Snow", "Nord Polar Night",
-        "Tokyo Day", "Tokyo Night",
-        "Rose Pine Dawn", "Rose Pine Moon"
-    };
-    for (auto* n : pairs)
-        themeNames.add (n);
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("uiTheme", "UI theme", themeNames, 1));
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("uiTheme", "UI theme",
+                                                              juce::StringArray { "Material Dark" }, 0));
 
     // ML Personality knobs (0–1) — condition ONNX bass; mapped to MusicVAE latent offsets in training
     layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersRhythmTight", "Rhythmic tightness", 0.f, 1.f, 0.5f));
@@ -411,20 +412,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
 juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
-    // Swing, humanize, fill, hold at 0 (neutral). Drums velocity starts above 0 so GM hits stay
-    // audible after leader gain; melodic lanes keep velocity at 0 for neutral expression.
+    // Swing, humanize, fill, hold, density/complexity/velocity at 0 (neutral, empty-friendly).
 
     juce::StringArray styleNames;
     for (int i = 0; i < bridgeUnifiedStyleCount(); ++i)
         styleNames.add (bridgeUnifiedStyleNames()[i]);
 
     layout.add (std::make_unique<juce::AudioParameterChoice> ("style", "Style", styleNames, 0));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.72f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("hold",        "Hold",        0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("intensity",   "Intensity",   0.0f,  1.0f, 0.0f));
@@ -444,7 +444,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsL
     layout.add (std::make_unique<juce::AudioParameterChoice> ("jamInterval", "Jam", jamChoices, 0));
     layout.add (std::make_unique<juce::AudioParameterBool> ("jamOn", "Jam on", false));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("jamPeriodBars", "Jam period",
-                                                              juce::StringArray { "4 bars", "8 bars", "16 bars" }, 0));
+                                                              juce::StringArray { "2 bars", "4 bars", "8 bars" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("tickerSpeed", "Speed",
                                                               juce::StringArray { "x2", "1", "1/2" }, 1));
 
@@ -502,15 +502,17 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
     }
     layout.add (std::make_unique<juce::AudioParameterBool> ("jamOn", "Jam on", false));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("jamPeriodBars", "Jam period",
-                                                              juce::StringArray { "4 bars", "8 bars", "16 bars" }, 0));
+                                                              juce::StringArray { "2 bars", "4 bars", "8 bars" }, 0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("rollSpanOctaves", "Roll span",
+                                                              juce::StringArray { "1 oct", "2 oct" }, 0));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("temperature", "Temperature", 0.01f, 2.0f, 1.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("hold",        "Hold",        0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("velocity",    "Velocity",    0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("fillRate",    "Fill Rate",   0.0f,  1.0f, 0.0f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.50f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("complexity",  "Complexity",  0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("ghostAmount", "Ghost",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("staccato",    "Staccato",    0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("sustain",     "Sustain",     0.0f,  1.0f, 0.0f));
@@ -519,7 +521,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
     layout.add (std::make_unique<juce::AudioParameterBool>  ("locked",      "Locked",      false));
     layout.add (std::make_unique<juce::AudioParameterInt> ("midiChannel",  "MIDI Channel", 1, 16, defaultMidiChannel));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("phraseBars", "Bar Grid",
-                                                              juce::StringArray { "4 bars", "8 bars", "16 bars" }, 0));
+                                                              juce::StringArray { "2 bars", "4 bars", "8 bars" }, 0));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart",   "Loop Start",   1, BassPreset::NUM_STEPS, 1));
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd",     "Loop End",     1, BassPreset::NUM_STEPS, BassPreset::NUM_STEPS));
     layout.add (std::make_unique<juce::AudioParameterBool>  ("loopOn", "Loop On", false));
@@ -734,8 +736,7 @@ void BridgeProcessor::prepareToPlay (double sr, int spb)
 
     drumsLastProcessedStep = -1;
     drumsPendingNoteOffs.clear();
-    drumEngine.generatePattern (false, mlManager.get());
-    drumEngine.setPlaybackSamplesPerStep (sampleRate * 60.0 / 120.0 / 4.0);
+    drumEngine.setPlaybackSamplesPerStep (sampleRate * 60.0 / 120.0 * getTransportPpqPerPatternStep());
     syncDrumsEngineFromAPVTS();
     drumEngine.rebuildGridPreview();
 
@@ -744,20 +745,17 @@ void BridgeProcessor::prepareToPlay (double sr, int spb)
     syncBassEngineFromAPVTS();
     refreshBassKickHintFromDrums();
     publishDrumActivityToFollowers();
-    bassEngine.generatePattern (false, mlManager.get());
     bassEngine.rebuildGridPreview();
     refreshChordsBassHintFromBass();
 
     pianoLastProcessedStep = -1;
     pianoPendingNoteOffs.clear();
     syncPianoEngineFromAPVTS();
-    pianoEngine.generatePattern (false, mlManager.get());
     pianoEngine.rebuildGridPreview();
 
     guitarLastProcessedStep = -1;
     guitarPendingNoteOffs.clear();
     syncGuitarEngineFromAPVTS();
-    guitarEngine.generatePattern (false, mlManager.get());
     guitarEngine.rebuildGridPreview();
 }
 
@@ -854,28 +852,9 @@ void BridgeProcessor::getBassLoopBounds (int& loopStart, int& loopEnd) const
     getMainSelectionBounds (phraseSteps, loopStart, loopEnd);
 }
 
-double BridgeProcessor::getMainPpqPerStep() const noexcept
+double BridgeProcessor::getTransportPpqPerPatternStep() const noexcept
 {
-    int idx = 3;
-    if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("timeDivision")))
-        idx = p->getIndex();
-    else if (auto* v = apvtsMain.getRawParameterValue ("timeDivision"))
-        idx = (int) v->load();
-
-    idx = juce::jlimit (0, 9, idx);
-    static constexpr double table[10] = {
-        0.0625,              // 1/64
-        0.125,               // 1/32
-        1.0 / 6.0,           // 1/24 T
-        0.25,                // 1/16
-        1.0 / 3.0,           // 1/12 T
-        0.5,                 // 1/8
-        2.0 / 3.0,           // 1/6 T
-        1.0,                 // 1/4
-        2.0,                 // 1/2
-        4.0                  // 1 bar
-    };
-    return table[(size_t) idx];
+    return 0.25; // Always one 16th note per pattern step; timeDivision only affects UI accents.
 }
 
 void BridgeProcessor::queueMelodicPreviewNote (int midiChannel, int noteNumber, int velocity)
@@ -1294,6 +1273,13 @@ void BridgeProcessor::syncBassEngineFromAPVTS()
     if (auto* vs = dynamic_cast<juce::AudioParameterChoice*> (apvtsBass.getParameter ("velShape")))
         bassEngine.setVelShape (vs->getIndex());
 
+    {
+        int rollIdx = 0;
+        if (auto* rc = dynamic_cast<juce::AudioParameterChoice*> (apvtsBass.getParameter ("rollSpanOctaves")))
+            rollIdx = rc->getIndex();
+        bassEngine.setRollSpanSemitones (rollIdx >= 1 ? 24 : 12);
+    }
+
     syncBassMLPersonalityToEngine (apvtsMain, bassEngine);
 }
 
@@ -1468,6 +1454,13 @@ void BridgeProcessor::syncPianoEngineFromAPVTS()
     if (auto* vs = dynamic_cast<juce::AudioParameterChoice*> (apvtsPiano.getParameter ("velShape")))
         pianoEngine.setVelShape (vs->getIndex());
 
+    {
+        int rollIdx = 0;
+        if (auto* rc = dynamic_cast<juce::AudioParameterChoice*> (apvtsPiano.getParameter ("rollSpanOctaves")))
+            rollIdx = rc->getIndex();
+        pianoEngine.setRollSpanSemitones (rollIdx >= 1 ? 24 : 12);
+    }
+
     syncChordsMLPersonalityToEngine();
 }
 
@@ -1522,6 +1515,13 @@ void BridgeProcessor::syncGuitarEngineFromAPVTS()
     guitarEngine.setStrumIntensity (readApvts01 (apvtsGuitar, "strumIntensity", 0.5f));
     if (auto* vs = dynamic_cast<juce::AudioParameterChoice*> (apvtsGuitar.getParameter ("velShape")))
         guitarEngine.setVelShape (vs->getIndex());
+
+    {
+        int rollIdx = 0;
+        if (auto* rc = dynamic_cast<juce::AudioParameterChoice*> (apvtsGuitar.getParameter ("rollSpanOctaves")))
+            rollIdx = rc->getIndex();
+        guitarEngine.setRollSpanSemitones (rollIdx >= 1 ? 24 : 12);
+    }
 
     syncMelodyMLPersonalityToEngine();
 }
@@ -1781,7 +1781,7 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
     currentHostBpm.store (bpm);
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    const double ppqPerStep = getMainPpqPerStep();
+    const double ppqPerStep = getTransportPpqPerPatternStep();
     double samplesPerStep = samplesPerBeat * ppqPerStep;
     drumEngine.setPlaybackSamplesPerStep (samplesPerStep);
 
@@ -1951,7 +1951,7 @@ void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::
     bassLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    const double ppqPerStep = getMainPpqPerStep();
+    const double ppqPerStep = getTransportPpqPerPatternStep();
     double samplesPerStep = samplesPerBeat * ppqPerStep;
 
     double ppqStart = pos.ppqPosition;
@@ -2063,7 +2063,7 @@ void BridgeProcessor::processPianoBlock (juce::AudioBuffer<float>& buffer, juce:
     pianoLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    const double ppqPerStep = getMainPpqPerStep();
+    const double ppqPerStep = getTransportPpqPerPatternStep();
     double samplesPerStep = samplesPerBeat * ppqPerStep;
 
     double ppqStart = pos.ppqPosition;
@@ -2179,7 +2179,7 @@ void BridgeProcessor::processGuitarBlock (juce::AudioBuffer<float>& buffer, juce
     guitarLastBpm = bpm;
 
     double samplesPerBeat = sampleRate * 60.0 / bpm;
-    const double ppqPerStep = getMainPpqPerStep();
+    const double ppqPerStep = getTransportPpqPerPatternStep();
     double samplesPerStep = samplesPerBeat * ppqPerStep;
 
     double ppqStart = pos.ppqPosition;
@@ -2543,8 +2543,10 @@ void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
     juce::XmlElement root ("BridgeState");
     // v12: adds arrSection / sectionIntensity (main); life / velShape / hatOpen + lockKick / lockSnare / lockHats / lockPerc (drums);
     //      life / melody / followRhythm / velShape (melodic) plus instrument-specific articulation (slideAmt, voicingSpread, palmMute, strumIntensity).
-    // v13: phraseBars gains "2 bars" (4 choice indices); migrate v12 3-choice indices on load.
-    root.setAttribute ("bridgeVersion", 13);
+    // v14: transport fixed to 16ths; jamPeriodBars 4 choices; uiTheme single Material Dark;
+    //      rollSpanOctaves on melodic APVTS; jam/uiTheme migrations on load.
+    // v15: phrase / jam period choices drop 16 bars; clamp legacy index 3 to 8 bars.
+    root.setAttribute ("bridgeVersion", 15);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
     if (auto xmlA = apvtsDrums.copyState().createXml())
@@ -2584,7 +2586,10 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                 {
                     juce::ValueTree pre = juce::ValueTree::fromXml (*child);
                     const juce::var legacyPocket = findNestedParamValue (pre, "pocket");
+                    const juce::var legacyPhraseNorm = findNestedParamValue (pre, "phraseBars");
                     apvtsMain.replaceState (pre);
+                    if (bridgeVersion < 15 && bridgeVersion >= 14)
+                        migrateFourChoiceNormToThree (apvtsMain, "phraseBars", legacyPhraseNorm);
                     if (bridgeVersion < 13)
                     {
                         if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("phraseBars")))
@@ -2614,7 +2619,10 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                     juce::ValueTree pre = juce::ValueTree::fromXml (*child);
                     const juce::var legacyPocket = findNestedParamValue (pre, "pocket");
                     const juce::var legacyPerform = findNestedParamValue (pre, "perform");
+                    const juce::var legacyJamPeriodNorm = findNestedParamValue (pre, "jamPeriodBars");
                     apvtsDrums.replaceState (pre);
+                    if (bridgeVersion < 15 && bridgeVersion >= 14)
+                        migrateFourChoiceNormToThree (apvtsDrums, "jamPeriodBars", legacyJamPeriodNorm);
                     if (bridgeVersion < 10 && ! legacyPocket.isVoid())
                         apvtsSetFloatFrom01 (apvtsDrums, "hold", (float) static_cast<double> (legacyPocket));
                     if (bridgeVersion < 11)
@@ -2626,7 +2634,14 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                     const juce::var legacyPocket = findNestedParamValue (pre, "pocket");
                     const juce::var legacyPresence = findNestedParamValue (pre, "presence");
                     const juce::var legacyPerform = findNestedParamValue (pre, "perform");
+                    const juce::var legacyJamPeriodNorm = findNestedParamValue (pre, "jamPeriodBars");
+                    const juce::var legacyBassPhraseNorm = findNestedParamValue (pre, "phraseBars");
                     apvtsBass.replaceState (pre);
+                    if (bridgeVersion < 15 && bridgeVersion >= 14)
+                    {
+                        migrateFourChoiceNormToThree (apvtsBass, "jamPeriodBars", legacyJamPeriodNorm);
+                        migrateFourChoiceNormToThree (apvtsBass, "phraseBars", legacyBassPhraseNorm);
+                    }
                     if (bridgeVersion < 10)
                     {
                         if (! legacyPocket.isVoid())
@@ -2643,7 +2658,10 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                     const juce::var legacyPocket = findNestedParamValue (pre, "pocket");
                     const juce::var legacyPresence = findNestedParamValue (pre, "presence");
                     const juce::var legacyPerform = findNestedParamValue (pre, "perform");
+                    const juce::var legacyJamPeriodNorm = findNestedParamValue (pre, "jamPeriodBars");
                     apvtsPiano.replaceState (pre);
+                    if (bridgeVersion < 15 && bridgeVersion >= 14)
+                        migrateFourChoiceNormToThree (apvtsPiano, "jamPeriodBars", legacyJamPeriodNorm);
                     if (bridgeVersion < 10)
                     {
                         if (! legacyPocket.isVoid())
@@ -2660,7 +2678,10 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                     const juce::var legacyPocket = findNestedParamValue (pre, "pocket");
                     const juce::var legacyPresence = findNestedParamValue (pre, "presence");
                     const juce::var legacyPerform = findNestedParamValue (pre, "perform");
+                    const juce::var legacyJamPeriodNorm = findNestedParamValue (pre, "jamPeriodBars");
                     apvtsGuitar.replaceState (pre);
+                    if (bridgeVersion < 15 && bridgeVersion >= 14)
+                        migrateFourChoiceNormToThree (apvtsGuitar, "jamPeriodBars", legacyJamPeriodNorm);
                     if (bridgeVersion < 10)
                     {
                         if (! legacyPocket.isVoid())
@@ -2671,6 +2692,25 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
                     if (bridgeVersion < 11)
                         migrateLegacyPerformToJamInterval (apvtsGuitar, legacyPerform);
                 }
+            }
+
+            if (bridgeVersion < 14)
+            {
+                if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
+                    p->setValueNotifyingHost (0.f);
+                auto migJam = [] (juce::AudioProcessorValueTreeState& ap)
+                {
+                    if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (ap.getParameter ("jamPeriodBars")))
+                    {
+                        const int idx = c->getIndex();
+                        if (idx >= 0 && idx <= 2)
+                            c->setValueNotifyingHost (c->convertTo0to1 ((float) (idx + 1)));
+                    }
+                };
+                migJam (apvtsDrums);
+                migJam (apvtsBass);
+                migJam (apvtsPiano);
+                migJam (apvtsGuitar);
             }
 
             if (apvtsMain.getParameter ("mlPersonalityPresetName") != nullptr)

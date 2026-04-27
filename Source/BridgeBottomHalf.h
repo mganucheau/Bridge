@@ -61,18 +61,22 @@ private:
     juce::Label selectorsLabel;
     LabelledKnob knobLoopStart;
     LabelledKnob knobLoopEnd;
-    juce::TextButton loopPlaybackButton { "L" };
+    juce::TextButton loopPlaybackButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopPlaybackAttach;
-    juce::TextButton syncIconButton { "S" };
+    juce::TextButton syncIconButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> syncAttach;
 
     juce::Label actionsLabel;
     juce::TextButton generateButton { "GENERATE" };
-    juce::ToggleButton jamToggle;
+    juce::TextButton jamToggle;
     juce::ComboBox     jamPeriodBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> jamToggleAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> jamPeriodAttach;
     juce::Label jamLabel;
+
+    bool hasRollSpanParam = false;
+    juce::ComboBox rollSpanOctavesBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> rollSpanOctavesAttach;
 
     std::function<void(bool)> fillHoldCallback;
 

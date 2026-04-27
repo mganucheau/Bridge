@@ -76,10 +76,10 @@ private:
     BridgeVelocityStrip velocityStrip { bridge::phrase::kMaxSteps, juce::Colour (0xffff7f5c) };
 
     // ── Bottom controls (laid out by DrumsPanel::resized) ─────────────────────
-    juce::Slider knobSwing,    knobHumanize, knobHold;
-    juce::Label  labelSwing,   labelHumanize, labelHold;
+    juce::Slider knobSwing,    knobHumanize, knobHold, knobVelocity;
+    juce::Label  labelSwing,   labelHumanize, labelHold, labelVelocity;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
-        attSwing, attHumanize, attHold;
+        attSwing, attHumanize, attHold, attVelocity;
 
     juce::Label  patternHeader, fillsHeader;
     juce::Label  patternXLabel, patternYLabel;
@@ -98,14 +98,14 @@ private:
     juce::Label  labelLoopStart, labelLoopEnd;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
         attLoopStart, attLoopEnd;
-    juce::TextButton loopPlaybackButton { "L" };
-    juce::TextButton syncIconButton    { "S" };
+    juce::TextButton loopPlaybackButton;
+    juce::TextButton syncIconButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>
         attLoopPlayback, attLoopSpan;
     juce::Label selectorsHeader, actionsHeader;
 
     juce::TextButton generateButton { "GENERATE" };
-    juce::ToggleButton jamToggle;
+    juce::TextButton jamToggle;
     juce::ComboBox     jamPeriodBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> jamToggleAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> jamPeriodAttach;
@@ -131,7 +131,7 @@ private:
     int  lastAnimStep = -1;
 
     void applyDrumsPageState();
-    /** Read the global phraseBars choice on apvtsMain (0 → 4, 1 → 8, 2 → 16). */
+    /** Read the global phraseBars choice on apvtsMain (0 → 2 bars, 1 → 4, 2 → 8). */
     int  currentPhraseBarCount() const;
     /** Push the current phrase length to grid + loop strip + velocity strip + engine. */
     void applyPhraseBars();

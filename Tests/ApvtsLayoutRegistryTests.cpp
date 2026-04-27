@@ -57,7 +57,7 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         static constexpr const char* drumsIds[] = {
             "style", "density", "swing", "humanize", "velocity", "fillRate", "complexity",
             "hold", "ghostAmount", "intensity", "midiChannel", "loopStart", "loopEnd",
-            "loopOn", "jamInterval", "tickerSpeed",
+            "loopOn", "jamInterval", "jamOn", "jamPeriodBars", "tickerSpeed",
             // v12: per-layer locks, slow drift macro, hat articulation, velocity-shape macro.
             "lockKick", "lockSnare", "lockHats", "lockPerc",
             "life", "hatOpen", "velShape",
@@ -72,9 +72,9 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         beginTest ("Melodic APVTS (bass / piano / guitar): hold + sustain, no pocket");
 
         static constexpr const char* melodicIds[] = {
-            "style", "jamInterval", "temperature", "density", "swing", "humanize", "hold",
+            "style", "jamInterval", "jamOn", "jamPeriodBars", "temperature", "density", "swing", "humanize", "hold",
             "velocity", "fillRate", "complexity", "ghostAmount", "staccato", "sustain",
-            "intensity", "patternLen", "locked", "midiChannel", "phraseBars",
+            "intensity", "patternLen", "locked", "midiChannel", "phraseBars", "rollSpanOctaves",
             "loopStart", "loopEnd", "loopOn", "tickerSpeed",
             // v12: shared melodic ensemble + macro params.
             "life", "melody", "followRhythm", "velShape",
@@ -109,7 +109,7 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         expectNoParam (*this, proc.apvtsPiano, "presence");
         expectNoParam (*this, proc.apvtsGuitar, "presence");
 
-        beginTest ("Fresh processor: groove-style floats default to 0 (drums velocity modest default)");
+        beginTest ("Fresh processor: groove-style floats default to 0 (drums + melodic at neutral)");
 
         auto near = [this] (float a, float b, const char* label)
         {
@@ -125,13 +125,13 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         near ((float) *proc.apvtsMain.getRawParameterValue ("complexity"), 0.0f, "main complexity");
 
         near ((float) *proc.apvtsDrums.getRawParameterValue ("humanize"), 0.f, "drums humanize");
-        near ((float) *proc.apvtsDrums.getRawParameterValue ("velocity"), 0.72f, "drums velocity");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("velocity"), 0.f, "drums velocity");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("fillRate"), 0.f, "drums fillRate");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("hold"), 0.f, "drums hold");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("ghostAmount"), 0.f, "drums ghostAmount");
         near ((float) *proc.apvtsDrums.getRawParameterValue ("intensity"), 0.f, "drums intensity");
-        near ((float) *proc.apvtsDrums.getRawParameterValue ("density"), 0.5f, "drums density");
-        near ((float) *proc.apvtsDrums.getRawParameterValue ("complexity"), 0.5f, "drums complexity");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("density"), 0.f, "drums density");
+        near ((float) *proc.apvtsDrums.getRawParameterValue ("complexity"), 0.f, "drums complexity");
 
         near ((float) *proc.apvtsBass.getRawParameterValue ("humanize"), 0.f, "bass humanize");
         near ((float) *proc.apvtsBass.getRawParameterValue ("velocity"), 0.f, "bass velocity");
@@ -140,8 +140,8 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         near ((float) *proc.apvtsBass.getRawParameterValue ("ghostAmount"), 0.f, "bass ghostAmount");
         near ((float) *proc.apvtsBass.getRawParameterValue ("staccato"), 0.f, "bass staccato");
         near ((float) *proc.apvtsBass.getRawParameterValue ("intensity"), 0.f, "bass intensity");
-        near ((float) *proc.apvtsBass.getRawParameterValue ("density"), 0.5f, "bass density");
-        near ((float) *proc.apvtsBass.getRawParameterValue ("complexity"), 0.5f, "bass complexity");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("density"), 0.f, "bass density");
+        near ((float) *proc.apvtsBass.getRawParameterValue ("complexity"), 0.f, "bass complexity");
 
         beginTest ("v12 defaults: arrangement section macro starts at Verse / 0.5 intensity, ensemble macros at zero");
 
@@ -176,6 +176,34 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             expectEquals (ph->getIndex(), 0);
         if (auto* le = dynamic_cast<juce::AudioParameterInt*> (proc.apvtsMain.getParameter ("loopEnd")))
             expectEquals ((int) le->get(), bridge::phrase::kStepsPerBar * 2);
+
+        beginTest ("v14: single UI theme; roll span on melodic lanes defaults to one octave");
+
+        if (auto* th = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("uiTheme")))
+        {
+            expectEquals (th->choices.size(), 1);
+            expectEquals (th->getIndex(), 0);
+        }
+        for (auto* apvts : { &proc.apvtsBass, &proc.apvtsPiano, &proc.apvtsGuitar })
+        {
+            if (auto* rs = dynamic_cast<juce::AudioParameterChoice*> (apvts->getParameter ("rollSpanOctaves")))
+            {
+                expectEquals (rs->choices.size(), 2);
+                expectEquals (rs->getIndex(), 0);
+            }
+        }
+
+        beginTest ("v15: phrase length and jam period have three choices (2 / 4 / 8 bars)");
+
+        if (auto* ph = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("phraseBars")))
+            expectEquals ((int) ph->choices.size(), 3);
+        for (auto* apvts : { &proc.apvtsDrums, &proc.apvtsBass, &proc.apvtsPiano, &proc.apvtsGuitar })
+        {
+            if (auto* jp = dynamic_cast<juce::AudioParameterChoice*> (apvts->getParameter ("jamPeriodBars")))
+                expectEquals ((int) jp->choices.size(), 3);
+        }
+        if (auto* bg = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsBass.getParameter ("phraseBars")))
+            expectEquals ((int) bg->choices.size(), 3);
     }
 };
 

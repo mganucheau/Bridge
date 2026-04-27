@@ -88,9 +88,6 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
     bpmUnitLabel.setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (bpmUnitLabel);
 
-    juce::Path playPath;
-    playPath.addTriangle (6.0f, 4.5f, 6.0f, 11.5f, 12.0f, 8.0f);
-    playButton.setShape (playPath, true, true, false);
     playButton.setClickingTogglesState (true);
     playButton.shouldUseOnColours (true);
     playButton.setOnColours (juce::Colours::white, juce::Colours::white, juce::Colours::white);
@@ -100,20 +97,12 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
         proc.apvtsMain, "transportPlaying", playButton);
     addAndMakeVisible (playButton);
     playButton.setLookAndFeel (&chromeLaf);
-
-    juce::Path stopPath;
-    stopPath.addRectangle (6.0f, 6.0f, 5.0f, 5.0f);
-    stopButton.setShape (stopPath, true, true, false);
-    stopButton.setClickingTogglesState (false);
-    stopButton.setName ("bridgeStopBtn");
-    setupTransportBtn (stopButton);
-    stopButton.onClick = [this]
+    playButton.onStateChange = [this]
     {
-        if (auto* pr = proc.apvtsMain.getParameter ("transportPlaying"))
-            pr->setValueNotifyingHost (0.0f);
+        updatePlayStopButtonShape();
     };
-    addAndMakeVisible (stopButton);
-    stopButton.setLookAndFeel (&chromeLaf);
+    proc.apvtsMain.addParameterListener ("transportPlaying", this);
+    updatePlayStopButtonShape();
 
     hostSyncButton.setName ("bridgeHostSyncBtn");
     hostSyncButton.setClickingTogglesState (true);
@@ -161,7 +150,6 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
     phraseBarsBox.addItem ("2 bars", 1);
     phraseBarsBox.addItem ("4 bars", 2);
     phraseBarsBox.addItem ("8 bars", 3);
-    phraseBarsBox.addItem ("16 bars", 4);
     phraseBarsBox.setTooltip ("Phrase length: how many bars the grid shows and loops");
     addAndMakeVisible (phraseBarsBox);
     if (proc.apvtsMain.getParameter ("phraseBars") != nullptr)
@@ -198,9 +186,9 @@ BridgeHeaderBar::BridgeHeaderBar (BridgeProcessor& processor,
 
 BridgeHeaderBar::~BridgeHeaderBar()
 {
+    proc.apvtsMain.removeParameterListener ("transportPlaying", this);
     gearButton.setLookAndFeel (nullptr);
     playButton.setLookAndFeel (nullptr);
-    stopButton.setLookAndFeel (nullptr);
     hostSyncButton.setLookAndFeel (nullptr);
     timeDivisionBox.setLookAndFeel (nullptr);
     phraseBarsBox.setLookAndFeel (nullptr);
@@ -238,9 +226,9 @@ void BridgeHeaderBar::resized()
 
     constexpr int transportGap = kTransportGap;
     const int trBtn = kTransportBtnSide;
-    const int divW    = measuredComboWidth (timeDivisionBox, kDivComboW);
+    const int divW    = measuredComboWidth (timeDivisionBox, 64, 18);
     const int phraseW = measuredComboWidth (phraseBarsBox, kPhraseComboW);
-    const int centerW = kBpmFieldW + transportGap + kBpmLabelW + transportGap + trBtn + transportGap + trBtn
+    const int centerW = kBpmFieldW + transportGap + kBpmLabelW + transportGap + trBtn
                         + transportGap + divW + transportGap + phraseW + transportGap + hostW;
 
     const int tabsW = BridgeInstrumentTabRail::contentWidth();
@@ -258,8 +246,10 @@ void BridgeHeaderBar::resized()
         row.removeFromLeft (transportGap);
         bpmUnitLabel.setBounds (row.removeFromLeft (kBpmLabelW).withHeight (kCtrlRowH));
         row.removeFromLeft (transportGap);
-        playButton.setBounds (row.removeFromLeft (trBtn));
-        stopButton.setBounds (row.removeFromLeft (trBtn));
+        {
+            auto playSlot = row.removeFromLeft (trBtn);
+            playButton.setBounds (playSlot.withSizeKeepingCentre (trBtn, trBtn));
+        }
         row.removeFromLeft (transportGap);
         timeDivisionBox.setBounds (row.removeFromLeft (divW));
         row.removeFromLeft (transportGap);
@@ -274,6 +264,8 @@ void BridgeHeaderBar::resized()
 
     gearButton.setBounds (area.getRight () - kPadX - kGearSide, headerCy - kGearSide / 2,
                           kGearSide, kGearSide);
+
+    updatePlayStopButtonShape();
 }
 
 void BridgeHeaderBar::syncInstrumentTabSelection (int activeTabIndex)
@@ -300,4 +292,24 @@ void BridgeHeaderBar::syncBpmDisplay()
 bool BridgeHeaderBar::bpmValueEditorHasKeyboardFocus() const
 {
     return bpmValueLabel.hasKeyboardFocus (true);
+}
+
+void BridgeHeaderBar::parameterChanged (const juce::String& parameterID, float newValue)
+{
+    juce::ignoreUnused (newValue);
+    if (parameterID == "transportPlaying")
+        updatePlayStopButtonShape();
+}
+
+void BridgeHeaderBar::updatePlayStopButtonShape()
+{
+    const bool playing = playButton.getToggleState();
+    const float side = (float) juce::jmin (playButton.getWidth(), playButton.getHeight());
+    const float u = juce::jmax (4.0f, side) / 16.0f;
+    juce::Path p;
+    if (playing)
+        p.addRectangle (5.5f * u, 5.5f * u, 5.0f * u, 5.0f * u);
+    else
+        p.addTriangle (5.5f * u, 4.5f * u, 5.5f * u, 11.5f * u, 11.0f * u, 8.0f * u);
+    playButton.setShape (p, false, false, false);
 }

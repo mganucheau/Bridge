@@ -62,11 +62,6 @@ void BridgeVelocityStrip::paint (juce::Graphics& g)
     g.setColour (juce::Colours::black.withAlpha (0.18f));
     g.fillRoundedRectangle (r, 3.0f);
 
-    // Mid-line tick marker
-    g.setColour (juce::Colours::white.withAlpha (0.06f));
-    g.drawHorizontalLine ((int) (r.getY() + r.getHeight() * 0.55f),
-                          r.getX() + 2.f, r.getRight() - 2.f);
-
     if (numSteps <= 0) return;
 
     const int   repeats   = juce::jmax (1, barRepeats);

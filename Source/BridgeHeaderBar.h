@@ -13,7 +13,8 @@ class BridgeProcessor;
  * 54px header: branding (left), centered transport, instrument tabs + settings (right).
  * Spec: #1E1E1E bar, Lucide-style layout (implemented in JUCE; no React).
  */
-class BridgeHeaderBar : public juce::Component
+class BridgeHeaderBar : public juce::Component,
+                        private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     explicit BridgeHeaderBar (BridgeProcessor& processor,
@@ -42,7 +43,6 @@ private:
     juce::Label      bpmValueLabel;
     juce::Label      bpmUnitLabel;
     juce::ShapeButton playButton  { "Play",  juce::Colours::white, juce::Colours::white, juce::Colours::white };
-    juce::ShapeButton stopButton  { "Stop",  juce::Colours::white, juce::Colours::white, juce::Colours::white };
     juce::ComboBox   timeDivisionBox;
     juce::ComboBox   phraseBarsBox;
     juce::TextButton hostSyncButton { "Host sync" };
@@ -52,6 +52,9 @@ private:
     std::unique_ptr<BridgeInstrumentTabRail> tabRail;
 
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>     transportAttach;
+
+    void parameterChanged (const juce::String& parameterID, float newValue) override;
+    void updatePlayStopButtonShape();
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   timeDivisionAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>   phraseBarsAttach;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>     hostSyncAttach;

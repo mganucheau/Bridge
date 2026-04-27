@@ -141,6 +141,8 @@ private:
     bool deferredBassGridPreviewRebuild = false;
 
     void applyBassPageState();
+    int  currentPhraseBarCount() const;
+    void applyPhraseBarsToUi();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BassPanel)
 };

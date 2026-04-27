@@ -248,11 +248,11 @@ void MainPanel::resized()
         row.bounds = b;
 
         constexpr int kGutterW = 64;
-        constexpr int kBtn = 22;
+        constexpr int kBtn = 24;
         constexpr int kBtnGap = 4;
         auto gutter = b.removeFromLeft (kGutterW);
         row.name.setBounds (gutter.removeFromTop (14));
-        gutter.removeFromTop (2);
+        gutter.removeFromTop (10);
         auto btnStrip = gutter.removeFromTop (kBtn);
         const int bx0 = (kGutterW - (kBtn * 2 + kBtnGap)) / 2;
         row.mute.setBounds (btnStrip.getX() + bx0, btnStrip.getY(), kBtn, kBtn);
@@ -381,8 +381,8 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
             auto paintMiniKeys = [&] (auto& engine)
             {
                 int low = 60, high = 72;
-                bridge::setOneOctaveMelodicRange (engine, low, high);
-                const int nRows = bridge::kMelodicOctaveRows;
+                bridge::applyRollSpanMelodicWindow (engine, low, high);
+                const int nRows = juce::jmax (1, high - low + 1);
                 const float rowH = strip.getHeight() / (float) nRows;
                 for (int r = 0; r < nRows; ++r)
                 {
@@ -455,8 +455,8 @@ void MainPanel::StripPreview::paint (juce::Graphics& g)
             const auto& grid = engine.getPatternForGrid();
 
             int minMidi = 60, maxMidi = 72;
-            bridge::setOneOctaveMelodicRange (engine, minMidi, maxMidi);
-            const int nRows = bridge::kMelodicOctaveRows;
+            bridge::applyRollSpanMelodicWindow (engine, minMidi, maxMidi);
+            const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
 
             const float cellH = gridRect.getHeight() / (float) nRows;
 

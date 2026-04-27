@@ -139,8 +139,8 @@ public:
     /** Melodic panels register (chain) to refresh layout after root/scale/octave remap. */
     std::function<void()> onMelodicTonalityChanged;
 
-    /** Current PPQ per pattern step from main "timeDivision" param (phase A: one bar = 16 steps). */
-    double getMainPpqPerStep() const noexcept;
+    /** Fixed PPQ per pattern step: one 16th note (0.25 PPQ). Transport ignores header time division. */
+    double getTransportPpqPerPatternStep() const noexcept;
 
 #if BRIDGE_ENABLE_QA_HOOKS
     /** For BridgeTests: queue a bass note-off so UI rebuild + processBlock flush path can be observed. */

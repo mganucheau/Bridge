@@ -5,6 +5,7 @@
 #include "BridgeInstrumentStyles.h"
 #include "InstrumentControlBar.h"
 #include "MelodicGridLayout.h"
+#include "BridgePhrase.h"
 #include "BridgeScaleHighlight.h"
 #include "piano/PianoStylePresets.h"
 #include "BridgeInstrumentStyles.h"
@@ -89,7 +90,7 @@ void PianoPianoRollComponent::mouseDown (const juce::MouseEvent& e)
 {
     auto& engine = proc.pianoEngine;
     int low = 60, high = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
+    bridge::applyRollSpanMelodicWindow (engine, low, high);
     const int nRows = juce::jmax (1, high - low + 1);
     const float rowH = storedCellH > 0.01f ? storedCellH : ((float) getHeight() / (float) nRows);
     const int row = (int) (e.position.y / juce::jmax (1.0f, rowH));
@@ -119,7 +120,7 @@ void PianoPianoRollComponent::paint (juce::Graphics& g)
     
     auto& engine = proc.pianoEngine;
     int low = 60, high = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, low, high);
+    bridge::applyRollSpanMelodicWindow (engine, low, high);
     const int nRows = juce::jmax (1, high - low + 1);
     const float rowH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
     
@@ -143,7 +144,7 @@ void PianoPianoRollComponent::paint (juce::Graphics& g)
         const bool inScale = bridge::pitchClassInPresetScale (scaleIdx, rootPc, m % 12);
         juce::Colour fill = bk ? bridge::hig::systemBackground : bridge::hig::secondaryLabel;
         if (! inScale)
-            fill = fill.interpolatedWith (bridge::hig::tertiaryGroupedBackground, 0.55f);
+            fill = fill.interpolatedWith (bridge::hig::tertiaryGroupedBackground, 0.72f);
         g.setColour (fill);
         g.fillRect (row.reduced(0, 0.5f));
 
@@ -202,7 +203,7 @@ void PianoGridComponent::paint (juce::Graphics& g)
     g.fillAll();
 
     int minMidi = 60, maxMidi = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
+    bridge::applyRollSpanMelodicWindow (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = engine.getPatternLen();
 
@@ -220,7 +221,10 @@ void PianoGridComponent::paint (juce::Graphics& g)
         const int midi = maxMidi - row;
         const bool inScale = bridge::pitchClassInPresetScale (scaleIdx, rootPc, midi % 12);
         const float cy = (float) row * cellH;
-        g.setColour (inScale ? juce::Colours::white.withAlpha (0.04f) : juce::Colours::black.withAlpha (0.055f));
+        if (inScale)
+            g.setColour (juce::Colours::white.withAlpha (0.04f));
+        else
+            g.setColour (juce::Colours::black.withAlpha (0.14f));
         g.fillRect (0.0f, cy, full.getWidth(), cellH);
     }
 
@@ -229,10 +233,13 @@ void PianoGridComponent::paint (juce::Graphics& g)
         float cy = (float) row * cellH;
         g.drawHorizontalLine ((int)cy, 0.0f, full.getWidth());
     }
+    const int tdIdxP = bridge::phrase::readTimeDivisionChoiceIndex (proc.apvtsMain);
+    const int accentPeriodP = bridge::phrase::accentColumnPeriodInSixteenthsFromTimeDivisionIndex (tdIdxP);
     for (int step = 0; step < nSteps; ++step) {
         float cx = (float) step * cellW;
-        bool isBeat = (step % 4 == 0);
-        g.setColour (isBeat ? bridge::hig::quaternaryFill : bridge::hig::separatorOpaque.withAlpha (0.45f));
+        const int stepInBar = step % bridge::phrase::kStepsPerBar;
+        const bool isAccentCol = (stepInBar % accentPeriodP) == 0;
+        g.setColour (isAccentCol ? bridge::hig::quaternaryFill : bridge::hig::separatorOpaque.withAlpha (0.45f));
         g.drawVerticalLine ((int)cx, 0.0f, full.getHeight());
     }
 
@@ -292,7 +299,7 @@ void PianoGridComponent::mouseDown (const juce::MouseEvent& e)
     auto& engine = proc.pianoEngine;
     auto full = getLocalBounds().toFloat();
     int minMidi = 60, maxMidi = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
+    bridge::applyRollSpanMelodicWindow (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = engine.getPatternLen();
     const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
@@ -330,7 +337,7 @@ void PianoGridComponent::mouseDrag (const juce::MouseEvent& e)
     auto& engine = proc.pianoEngine;
     auto full = getLocalBounds().toFloat();
     int minMidi = 60, maxMidi = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (engine, minMidi, maxMidi);
+    bridge::applyRollSpanMelodicWindow (engine, minMidi, maxMidi);
     const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = engine.getPatternLen();
     const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
@@ -410,9 +417,12 @@ PianoPanel::PianoPanel (BridgeProcessor& p)
     proc.apvtsPiano.addParameterListener ("style", this);
     proc.apvtsPiano.state.addListener (this);
     proc.apvtsMain.addParameterListener ("pianoOn", this);
+    proc.apvtsMain.addParameterListener ("phraseBars", this);
     proc.apvtsMain.addParameterListener ("scale", this);
     proc.apvtsMain.addParameterListener ("rootNote", this);
     proc.apvtsMain.addParameterListener ("octave", this);
+    proc.apvtsMain.addParameterListener ("timeDivision", this);
+    proc.apvtsPiano.addParameterListener ("rollSpanOctaves", this);
     for (const char* id : { "density", "swing", "humanize", "hold", "velocity", "fillRate", "complexity",
                             "ghostAmount", "sustain", "temperature", "staccato", "intensity",
                             "life", "melody", "followRhythm", "voicingSpread", "velShape" })
@@ -456,6 +466,7 @@ PianoPanel::PianoPanel (BridgeProcessor& p)
         juce::MessageManager::callAsync ([this]
         {
             resized();
+            scrollMelodicViewportToPatternCentre();
             repaint();
         });
     };
@@ -464,6 +475,7 @@ PianoPanel::PianoPanel (BridgeProcessor& p)
     proc.rebuildPianoGridPreview();
     stepTimer.startTimerHz (30);
     applyPianoPageState();
+    applyPhraseBarsToUi();
 }
 
 PianoPanel::~PianoPanel()
@@ -471,9 +483,12 @@ PianoPanel::~PianoPanel()
     proc.onMelodicTonalityChanged = std::move (melodicTonalityPrev);
     melodicViewport.getVerticalScrollBar().setLookAndFeel (nullptr);
     proc.apvtsMain.removeParameterListener ("pianoOn", this);
+    proc.apvtsMain.removeParameterListener ("phraseBars", this);
     proc.apvtsMain.removeParameterListener ("scale", this);
     proc.apvtsMain.removeParameterListener ("rootNote", this);
     proc.apvtsMain.removeParameterListener ("octave", this);
+    proc.apvtsMain.removeParameterListener ("timeDivision", this);
+    proc.apvtsPiano.removeParameterListener ("rollSpanOctaves", this);
     proc.apvtsMain.removeParameterListener ("loopStart", this);
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
     proc.apvtsMain.removeParameterListener ("playbackLoopOn", this);
@@ -501,6 +516,27 @@ void PianoPanel::valueTreePropertyChanged (juce::ValueTree&, const juce::Identif
     triggerAsyncUpdate();
 }
 
+int PianoPanel::currentPhraseBarCount() const
+{
+    if (auto* pc = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("phraseBars")))
+        return bridge::phrase::phraseBarsFromChoiceIndex (pc->getIndex());
+    return bridge::phrase::phraseBarsFromChoiceIndex (0);
+}
+
+void PianoPanel::applyPhraseBarsToUi()
+{
+    proc.syncPianoEngineFromAPVTS();
+    const int bars        = currentPhraseBarCount();
+    const int phraseSteps = bridge::phrase::phraseStepsForBars (bars);
+    loopStrip.setBarRepeats (1);
+    loopStrip.setNumSteps (phraseSteps);
+    velocityStrip.setBarRepeats (1);
+    velocityStrip.setNumSteps (phraseSteps);
+    proc.pianoEngine.setPhraseBars (bars);
+    resized();
+    repaint();
+}
+
 void PianoPanel::applyPianoPageState()
 {
     const bool on = proc.apvtsMain.getRawParameterValue ("pianoOn") != nullptr
@@ -523,17 +559,18 @@ void PianoPanel::applyPianoPageState()
 
 void PianoPanel::scrollMelodicViewportToPatternCentre()
 {
+    int winLo = 0, winHi = 127;
+    bridge::applyRollSpanMelodicWindow (proc.pianoEngine, winLo, winHi);
     const auto extent = bridge::getPatternMidiExtent (proc.pianoEngine);
     const int pMin = extent.first;
     const int pMax = extent.second;
-    const int midMidi = (pMin <= pMax) ? (pMin + pMax) / 2
-                                       : (bridge::kMelodicMinMidi + bridge::kMelodicMaxMidi) / 2;
-    const int spanRows = bridge::kMelodicMaxMidi - bridge::kMelodicMinMidi + 1;
+    const int midMidi = (pMin <= pMax) ? (pMin + pMax) / 2 : (winLo + winHi) / 2;
+    const int spanRows = juce::jmax (1, winHi - winLo + 1);
     const float rowH = (float) melodicBody.getHeight() / (float) spanRows;
     const int vpH = juce::jmax (1, melodicViewport.getHeight());
     const int bodyH = melodicBody.getHeight();
     const int scrollY = juce::jlimit (0, juce::jmax (0, bodyH - vpH),
-                                      (int) ((bridge::kMelodicMaxMidi - midMidi) * rowH) - vpH / 2);
+                                      (int) ((winHi - midMidi) * rowH) - vpH / 2);
     melodicViewport.setViewPosition (melodicViewport.getViewPositionX(), scrollY);
 }
 
@@ -570,8 +607,12 @@ void PianoPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentPiano());
-    auto velStripRow = card.removeFromBottom (18);
-    velocityStrip.setBounds (velStripRow.reduced ((int) bridge::kMelodicKeyStripWidth, 0).withTrimmedTop (2));
+    auto velStripRow = card.removeFromBottom ((int) bridge::kVelocityStripHeightPx);
+    {
+        auto vel = velStripRow.withTrimmedTop (2);
+        vel.removeFromLeft ((int) bridge::kMelodicKeyStripWidth);
+        velocityStrip.setBounds (vel);
+    }
     const int phraseSteps = proc.pianoEngine.getPatternLen();
     loopStrip.setNumSteps (phraseSteps);
     velocityStrip.setNumSteps (phraseSteps);
@@ -584,7 +625,7 @@ void PianoPanel::resized()
     const int viewH = juce::jmax (1, melodicViewport.getHeight());
 
     int minMidi = 60, maxMidi = 72;
-    bridge::computeMelodicPitchWindowFromCommittedPattern (proc.pianoEngine, minMidi, maxMidi);
+    bridge::applyRollSpanMelodicWindow (proc.pianoEngine, minMidi, maxMidi);
     const int nRows  = juce::jmax (1, maxMidi - minMidi + 1);
     const int nSteps = phraseSteps;
     const int strip  = (int) bridge::kMelodicKeyStripWidth;
@@ -642,8 +683,18 @@ void PianoPanel::parameterChanged (const juce::String& parameterID, float newVal
         triggerAsyncUpdate();
         return;
     }
+    if (parameterID == "phraseBars")
+    {
+        applyPhraseBarsToUi();
+        triggerAsyncUpdate();
+        return;
+    }
+    if (parameterID == "rollSpanOctaves")
+        proc.syncPianoEngineFromAPVTS();
+
     if (parameterID == "loopStart" || parameterID == "loopEnd" || parameterID == "playbackLoopOn"
         || parameterID == "scale" || parameterID == "rootNote" || parameterID == "octave"
+        || parameterID == "timeDivision" || parameterID == "rollSpanOctaves"
         || parameterID == "uiTheme")
     {
         loopStrip.repaint();

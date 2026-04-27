@@ -48,7 +48,10 @@ PianoEngine::PianoEngine()
     pattern.resize ((size_t) bridge::phrase::kMaxSteps);
     displayPattern.resize ((size_t) bridge::phrase::kMaxSteps);
     mlPersonalityKnobs.fill (0.5f);
-    generatePattern (false, nullptr);
+    for (auto& h : pattern)
+        h = {};
+    for (auto& h : displayPattern)
+        h = {};
     rebuildGridPreview();
 }
 
@@ -197,6 +200,17 @@ void PianoEngine::generatePatternRange (int fromStep0, int toStep0, bool seamles
         pattern[(size_t) step] = PianoHit{};
 
     resolveApproachNotes();
+
+    {
+        const int lo = rootMidiBase();
+        const int hi = lo + rollSpanSemitones - 1;
+        for (int step = fromStep0; step <= toStep0 && step < patternLen; ++step)
+        {
+            auto& h = pattern[(size_t) step];
+            if (h.active)
+                h.midiNote = juce::jlimit (lo, hi, h.midiNote);
+        }
+    }
 
     const bool partialRegenWindow = (fromStep0 > 0 || toStep0 < patternLen - 1);
     std::vector<float> mlOut;
