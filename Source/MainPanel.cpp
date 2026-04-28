@@ -251,8 +251,8 @@ void MainPanel::resized()
         constexpr int kBtn = 24;
         constexpr int kBtnGap = 4;
         auto gutter = b.removeFromLeft (kGutterW);
-        row.name.setBounds (gutter.removeFromTop (14));
-        gutter.removeFromTop (10);
+        row.name.setBounds (gutter.removeFromTop (24));
+        gutter.removeFromTop (6);
         auto btnStrip = gutter.removeFromTop (kBtn);
         const int bx0 = (kGutterW - (kBtn * 2 + kBtnGap)) / 2;
         row.mute.setBounds (btnStrip.getX() + bx0, btnStrip.getY(), kBtn, kBtn);

@@ -584,7 +584,8 @@ void PianoPanel::fitPatternInView()
 
 void PianoPanel::adjustZoomX (float delta)
 {
-    zoomX = juce::jlimit (0.4f, 6.0f, zoomX * (1.0f + delta * 0.3f));
+    // Horizontal zoom never below 1.0 so the grid always fills the viewport width (matches drums).
+    zoomX = juce::jlimit (1.0f, 6.0f, zoomX * (1.0f + delta * 0.3f));
     resized();
 }
 
@@ -632,7 +633,7 @@ void PianoPanel::resized()
 
     const float baseCellW = (float) (viewW - strip) / (float) juce::jmax (1, nSteps);
     const float baseCellH = (float) viewH / (float) nRows;
-    const float cellW     = baseCellW * zoomX;
+    const float cellW     = baseCellW * juce::jmax (1.0f, zoomX);
     const float cellH     = baseCellH * zoomY;
 
     const int bodyW = strip + (int) (cellW * (float) nSteps);

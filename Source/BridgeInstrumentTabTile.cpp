@@ -1,5 +1,6 @@
 #include "BridgeInstrumentTabTile.h"
 #include "BridgeAppleHIG.h"
+#include "BridgeLookAndFeel.h"
 
 namespace
 {
@@ -84,25 +85,28 @@ void BridgeInstrumentTabTile::paint (juce::Graphics& g)
     if (! powered)
         g.setOpacity (0.5f);
 
-    const juce::Colour inactiveBg (0xff2a2a2a);
-    const juce::Colour inactiveBorder (0xff4a4a4a);
+    const auto chipFill = bridge::colors::cardSurface();
+    const auto chipFillSelected = chipFill.brighter (0.045f);
+    const juce::Colour borderUnsel = bridge::colors::cardOutline();
+    const juce::Colour borderSel =
+        accent.interpolatedWith (borderUnsel, 0.35f).withAlpha (1.0f);
 
     if (selected)
     {
-        g.setColour (juce::Colours::white.withAlpha (0.05f));
+        g.setColour (chipFillSelected);
         g.fillRect (r);
-        g.setColour (accent.withAlpha (0.42f));
-        g.drawRect (r.reduced (0.5f), 1.0f);
+        g.setColour (borderSel);
+        g.drawRect (r.reduced (0.5f), 1.5f);
     }
     else
     {
-        g.setColour (inactiveBg);
+        g.setColour (chipFill);
         g.fillRect (r);
-        g.setColour (inactiveBorder);
+        g.setColour (borderUnsel);
         g.drawRect (r.reduced (0.5f), 1.0f);
     }
 
-    g.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
+    g.setFont (bridge::hig::uiFont (11.0f, selected ? "Bold" : "Semibold"));
     juce::Colour textCol = powered ? juce::Colours::white.withAlpha (0.95f) : juce::Colour (0xff8a8a8a);
     if (powered && rowMuted)
         textCol = juce::Colour (0xffffb74d).withAlpha (0.95f);

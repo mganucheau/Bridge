@@ -1,5 +1,6 @@
 #include "BridgeEditor.h"
 #include "BridgeHeaderBar.h"
+#include "BridgeArrangementStrip.h"
 #include "BridgeInstrumentStyles.h"
 #include "BridgeLookAndFeel.h"
 #include "drums/DrumsLookAndFeel.h"
@@ -23,6 +24,9 @@ BridgeEditor::BridgeEditor (BridgeProcessor& p)
     addChildComponent (bassPanel);
     addChildComponent (pianoPanel);
     addChildComponent (guitarPanel);
+
+    arrangementStrip = std::make_unique<BridgeArrangementStrip> (proc);
+    addAndMakeVisible (*arrangementStrip);
 
     headerBar = std::make_unique<BridgeHeaderBar> (proc, [this] (int i) { activateTab (i); });
     addAndMakeVisible (*headerBar);
@@ -122,6 +126,9 @@ void BridgeEditor::resized()
 
     if (headerBar != nullptr)
         headerBar->setBounds (headerArea);
+
+    if (arrangementStrip != nullptr)
+        arrangementStrip->setBounds (r.removeFromTop (kArrangementStripH));
 
     mainPanel.setBounds   (r);
     drumsPanel.setBounds (r);

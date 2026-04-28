@@ -11,6 +11,7 @@
 #include "PersonalityPresets.h"
 #include "BridgePhrase.h"
 #include <array>
+#include <cmath>
 #include <vector>
 
 namespace
@@ -36,7 +37,7 @@ static int readPhraseBars (juce::AudioProcessorValueTreeState& mainApvts) noexce
 
 static int readPhraseSteps (juce::AudioProcessorValueTreeState& mainApvts) noexcept
 {
-    return bridge::phrase::phraseStepsForBars (readPhraseBars (mainApvts));
+    return bridge::phrase::readPhraseStepCount (mainApvts);
 }
 
 static bool mainMixerEngaged (juce::AudioProcessorValueTreeState& m)
@@ -334,7 +335,28 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     // every instrument can lerp uniformly. Defaults are neutral so existing presets sound the same.
     layout.add (std::make_unique<juce::AudioParameterChoice> ("arrSection", "Section",
                                                               juce::StringArray { "Intro", "Verse", "Chorus", "Bridge", "Outro" }, 1));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("sectionIntensity", "Section intensity", 0.f, 1.f, 0.50f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("sectionIntensity", "Section intensity", 0.f, 1.f, 0.0f));
+    // Song section for XY target recall + smooth lerp (distinct from arrSection macro chooser).
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("arrangement", "Song section",
+                                                              juce::StringArray { "Intro", "Verse", "Chorus", "Bridge", "Outro" }, 1));
+    {
+        static constexpr char kArrInst[4] = { 'D', 'B', 'P', 'G' };
+        static constexpr float kArrTargetDefault[5][4][2] = {
+            { { 0.3f,  0.4f },  { 0.2f,  0.35f }, { 0.15f, 0.3f },  { 0.15f, 0.3f } },
+            { { 0.45f, 0.55f }, { 0.35f, 0.5f },  { 0.3f,  0.45f }, { 0.3f,  0.45f } },
+            { { 0.75f, 0.85f }, { 0.65f, 0.8f },  { 0.6f,  0.75f }, { 0.65f, 0.8f } },
+            { { 0.35f, 0.5f },  { 0.5f,  0.55f }, { 0.55f, 0.4f },  { 0.4f,  0.4f } },
+            { { 0.25f, 0.35f }, { 0.2f,  0.3f },  { 0.15f, 0.25f }, { 0.1f,  0.2f } },
+        };
+        for (int s = 0; s < 5; ++s)
+            for (int ins = 0; ins < 4; ++ins)
+                for (int ax = 0; ax < 2; ++ax)
+                {
+                    const char axisChar = (ax == 0 ? 'x' : 'y');
+                    const juce::String pid = juce::String::formatted ("arr_%c_%d_%c", kArrInst[ins], s, axisChar);
+                    layout.add (std::make_unique<juce::AudioParameterFloat> (pid, pid, 0.f, 1.f, kArrTargetDefault[s][ins][ax]));
+                }
+    }
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopStart", "Loop Start", 1, bridge::phrase::kMaxSteps, 1));
     // Default phrase is 2 bars → 32 steps; loop end defaults to phrase length.
     layout.add (std::make_unique<juce::AudioParameterInt>   ("loopEnd", "Loop End", 1, bridge::phrase::kMaxSteps,
@@ -366,7 +388,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
     divNames.add ("1/4");
     divNames.add ("1/2");
     divNames.add ("1 bar");
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("timeDivision", "Grid division", divNames, 3));
+    layout.add (std::make_unique<juce::AudioParameterChoice> ("timeDivision", "Grid division", divNames, 7)); // 1/4
 
     // Global phrase length: how many bars the per-instrument grids visualise/loop.
     // Underlying engine patterns remain 1 bar (NUM_STEPS) — generation only fills the loop
@@ -378,16 +400,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildMainLa
                                                               juce::StringArray { "Material Dark" }, 0));
 
     // ML Personality knobs (0–1) — condition ONNX bass; mapped to MusicVAE latent offsets in training
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersRhythmTight", "Rhythmic tightness", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersDynamicRange", "Dynamic range", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTimbreTexture", "Timbre texture", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTensionArc", "Tension arc", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTempoVolatility", "Tempo volatility", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersEmotionalTemp", "Emotional temperature", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersHarmAdventure", "Harmonic adventurousness", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersStructPredict", "Structural predictability", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersShowmanship", "Showmanship", 0.f, 1.f, 0.5f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersGenreLoyalty", "Genre loyalty", 0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersRhythmTight", "Rhythmic tightness", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersDynamicRange", "Dynamic range", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTimbreTexture", "Timbre texture", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTensionArc", "Tension arc", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersTempoVolatility", "Tempo volatility", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersEmotionalTemp", "Emotional temperature", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersHarmAdventure", "Harmonic adventurousness", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersStructPredict", "Structural predictability", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersShowmanship", "Showmanship", 0.f, 1.f, 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mlPersGenreLoyalty", "Genre loyalty", 0.f, 1.f, 0.0f));
 
     juce::StringArray personalityPresetChoices;
     personalityPresetChoices.add ("Custom");
@@ -474,7 +496,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BridgeProcessor::buildDrumsL
 
     // Velocity contour shape for the per-step velocity strip; macro before per-step editing lands.
     layout.add (std::make_unique<juce::AudioParameterChoice> ("velShape", "Vel Shape",
-                                                              juce::StringArray { "Flat", "Accent", "Crescendo", "Decrescendo" }, 1));
+                                                              juce::StringArray { "Flat", "Accent", "Crescendo", "Decrescendo" }, 0));
 
     return layout;
 }
@@ -505,7 +527,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
                                                               juce::StringArray { "2 bars", "4 bars", "8 bars" }, 0));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("rollSpanOctaves", "Roll span",
                                                               juce::StringArray { "1 oct", "2 oct" }, 0));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("temperature", "Temperature", 0.01f, 2.0f, 1.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("temperature", "Temperature", 0.01f, 2.0f, 0.01f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("density",     "Density",     0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("swing",       "Swing",       0.0f,  1.0f, 0.0f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("humanize",    "Humanize",    0.0f,  1.0f, 0.0f));
@@ -531,7 +553,7 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
     // Continuous "Life" drift; slowly modulates humanize / velocity at runtime so loops breathe.
     layout.add (std::make_unique<juce::AudioParameterFloat> ("life",         "Life",         0.f, 1.f, 0.0f));
     // Continuous melody/motion control: 0 stays anchored on the preferred degree, 1 walks freely.
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("melody",       "Melody",       0.f, 1.f, 0.5f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("melody",       "Melody",       0.f, 1.f, 0.0f));
     // Follow rhythm strength: 0 ignores the drummer, 1 strongly biases onsets toward drum activity.
     layout.add (std::make_unique<juce::AudioParameterFloat> ("followRhythm", "Follow Drums", 0.f, 1.f, 0.0f));
 
@@ -543,15 +565,22 @@ static juce::AudioProcessorValueTreeState::ParameterLayout makeMelodicLayout (in
     if (defaultMidiChannel == 1) // Bass
         layout.add (std::make_unique<juce::AudioParameterFloat> ("slideAmt", "Slide", 0.f, 1.f, 0.0f));
     else if (defaultMidiChannel == 2) // Piano
-        layout.add (std::make_unique<juce::AudioParameterFloat> ("voicingSpread", "Voicing", 0.f, 1.f, 0.5f));
+        layout.add (std::make_unique<juce::AudioParameterFloat> ("voicingSpread", "Voicing", 0.f, 1.f, 0.0f));
     else if (defaultMidiChannel == 3) // Guitar
     {
         layout.add (std::make_unique<juce::AudioParameterFloat> ("palmMute",       "Palm Mute", 0.f, 1.f, 0.0f));
-        layout.add (std::make_unique<juce::AudioParameterFloat> ("strumIntensity", "Strum",     0.f, 1.f, 0.5f));
+        layout.add (std::make_unique<juce::AudioParameterFloat> ("strumIntensity", "Strum",     0.f, 1.f, 0.0f));
     }
 
     return layout;
 }
+
+struct BridgeProcessor::ArrangementLerpTimer final : public juce::Timer
+{
+    explicit ArrangementLerpTimer (BridgeProcessor& o) : owner (o) {}
+    void timerCallback() override { owner.arrangementTransitionTick(); }
+    BridgeProcessor& owner;
+};
 
 BridgeProcessor::BridgeProcessor()
     : AudioProcessor (BusesProperties()
@@ -568,6 +597,8 @@ BridgeProcessor::BridgeProcessor()
       apvtsPiano (*this, nullptr, "Piano", makeMelodicLayout (2)),
       apvtsGuitar   (*this, nullptr, "Guitar", makeMelodicLayout (3))
 {
+    arrangementLerp = std::make_unique<ArrangementLerpTimer> (*this);
+
     syncDrumsEngineFromAPVTS();
     syncBassEngineFromAPVTS();
     syncPianoEngineFromAPVTS();
@@ -605,6 +636,7 @@ BridgeProcessor::BridgeProcessor()
     apvtsMain.addParameterListener ("octave", this);
     apvtsMain.addParameterListener ("uiTheme", this);
     apvtsMain.addParameterListener ("arrSection", this);
+    apvtsMain.addParameterListener ("arrangement", this);
     apvtsMain.addParameterListener ("sectionIntensity", this);
     apvtsMain.addParameterListener ("phraseBars", this);
 
@@ -623,6 +655,10 @@ BridgeProcessor::BridgeProcessor()
 
 BridgeProcessor::~BridgeProcessor()
 {
+    if (arrangementLerp != nullptr)
+        arrangementLerp->stopTimer();
+    arrangementLerp.reset();
+
     apvtsMain.removeParameterListener ("loopStart", this);
     apvtsMain.removeParameterListener ("loopEnd", this);
     apvtsMain.removeParameterListener ("loopSpanLock", this);
@@ -630,6 +666,7 @@ BridgeProcessor::~BridgeProcessor()
     apvtsMain.removeParameterListener ("rootNote", this);
     apvtsMain.removeParameterListener ("octave", this);
     apvtsMain.removeParameterListener ("arrSection", this);
+    apvtsMain.removeParameterListener ("arrangement", this);
     apvtsMain.removeParameterListener ("sectionIntensity", this);
     apvtsMain.removeParameterListener ("phraseBars", this);
     apvtsMain.removeParameterListener ("uiTheme", this);
@@ -876,16 +913,18 @@ void BridgeProcessor::parameterChanged (const juce::String& parameterID, float n
     if (parameterID == "phraseBars")
     {
         const int steps = readPhraseSteps (apvtsMain);
-        if (auto* p = apvtsMain.getParameter ("loopEnd"))
-            if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
-                ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) steps));
+        int ls = (int) *apvtsMain.getRawParameterValue ("loopStart");
+        int le = (int) *apvtsMain.getRawParameterValue ("loopEnd");
+        ls = juce::jlimit (1, steps, ls);
+        le = juce::jlimit (1, steps, le);
+        if (le < ls)
+            le = ls;
         if (auto* p = apvtsMain.getParameter ("loopStart"))
             if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
-            {
-                int ls = (int) *apvtsMain.getRawParameterValue ("loopStart");
-                ls = juce::jlimit (1, steps, ls);
                 ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) ls));
-            }
+        if (auto* p = apvtsMain.getParameter ("loopEnd"))
+            if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (p))
+                ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) le));
         lastSpanLockStart = (int) *apvtsMain.getRawParameterValue ("loopStart");
         lastSpanLockEnd   = (int) *apvtsMain.getRawParameterValue ("loopEnd");
 
@@ -912,6 +951,30 @@ void BridgeProcessor::parameterChanged (const juce::String& parameterID, float n
     {
         if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
             bridge::theme::applyThemeChoiceIndex (p->getIndex());
+        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+            ed->repaint();
+        return;
+    }
+
+    if (parameterID == "arrangement")
+    {
+        if (arrangementStateRestoreInProgress)
+            return;
+
+        int sec = 1;
+        if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("arrangement")))
+            sec = c->getIndex();
+
+        sec = juce::jlimit (0, 4, sec);
+
+        if (auto* a = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("arrSection")))
+        {
+            if (a->getIndex() != sec)
+                a->setValueNotifyingHost (a->convertTo0to1 ((float) sec));
+        }
+
+        startArrangementTransition (sec);
+
         if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
             ed->repaint();
         return;
@@ -2546,7 +2609,8 @@ void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
     // v14: transport fixed to 16ths; jamPeriodBars 4 choices; uiTheme single Material Dark;
     //      rollSpanOctaves on melodic APVTS; jam/uiTheme migrations on load.
     // v15: phrase / jam period choices drop 16 bars; clamp legacy index 3 to 8 bars.
-    root.setAttribute ("bridgeVersion", 15);
+    // v16: arrangement song section + per-section XY targets (arr_D_0_x … arr_G_4_y).
+    root.setAttribute ("bridgeVersion", 16);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
     if (auto xmlA = apvtsDrums.copyState().createXml())
@@ -2569,6 +2633,11 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
     {
         if (xml->hasTagName ("BridgeState"))
         {
+            arrangementStateRestoreInProgress = true;
+            if (arrangementLerp != nullptr)
+                arrangementLerp->stopTimer();
+            arrangementLerpProgress.store (-1.0f, std::memory_order_relaxed);
+
             const int bridgeVersion = xml->getIntAttribute ("bridgeVersion", 1);
             int tab = xml->getIntAttribute ("activeTab", 1);
             if (bridgeVersion < 2)
@@ -2725,8 +2794,168 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
 
             if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
                 bridge::theme::applyThemeChoiceIndex (p->getIndex());
+
+            if (bridgeVersion < 16)
+            {
+                if (auto* sec = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("arrSection")))
+                    if (auto* arr = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("arrangement")))
+                        arr->setValueNotifyingHost (arr->convertTo0to1 ((float) sec->getIndex()));
+            }
+
+            arrangementStateRestoreInProgress = false;
+            clampMainLoopIntsToPhrase();
         }
     }
+}
+
+void BridgeProcessor::clampMainLoopIntsToPhrase()
+{
+    const int steps = readPhraseSteps (apvtsMain);
+    int ls = 1;
+    int le = 1;
+    if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (apvtsMain.getParameter ("loopStart")))
+        ls = (int) ip->get();
+    if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (apvtsMain.getParameter ("loopEnd")))
+        le = (int) ip->get();
+    ls = juce::jlimit (1, steps, ls);
+    le = juce::jlimit (1, steps, le);
+    if (le < ls)
+        le = ls;
+
+    if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (apvtsMain.getParameter ("loopStart")))
+    {
+        const int cur = (int) ip->get();
+        if (cur != ls)
+            ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) ls));
+    }
+    if (auto* ip = dynamic_cast<juce::AudioParameterInt*> (apvtsMain.getParameter ("loopEnd")))
+    {
+        const int cur = (int) ip->get();
+        if (cur != le)
+            ip->setValueNotifyingHost (ip->getNormalisableRange().convertTo0to1 ((float) le));
+    }
+}
+
+float BridgeProcessor::getArrangementTransitionProgress() const noexcept
+{
+    return arrangementLerpProgress.load (std::memory_order_relaxed);
+}
+
+void BridgeProcessor::captureArrangementTargetsForSection (int section)
+{
+    section = juce::jlimit (0, 4, section);
+    static constexpr char kInst[4] = { 'D', 'B', 'P', 'G' };
+    juce::AudioProcessorValueTreeState* aps[4] = { &apvtsDrums, &apvtsBass, &apvtsPiano, &apvtsGuitar };
+
+    for (int i = 0; i < 4; ++i)
+    {
+        const float cx = readApvts01 (*aps[i], "complexity", 0.f);
+        const float cy = readApvts01 (*aps[i], "density", 0.f);
+        const juce::String stem = juce::String::formatted ("arr_%c_%d", kInst[i], section);
+        apvtsSetFloatFrom01 (apvtsMain, (stem + "_x").toUTF8(), cx);
+        apvtsSetFloatFrom01 (apvtsMain, (stem + "_y").toUTF8(), cy);
+    }
+}
+
+void BridgeProcessor::startArrangementTransition (int section)
+{
+    if (arrangementStateRestoreInProgress)
+        return;
+
+    section = juce::jlimit (0, 4, section);
+
+    static constexpr char kInst[4] = { 'D', 'B', 'P', 'G' };
+    for (int i = 0; i < 4; ++i)
+    {
+        const juce::String stem = juce::String::formatted ("arr_%c_%d", kInst[i], section);
+        arrangementLerpTargets[i * 2]     = readApvts01 (apvtsMain, (stem + "_x").toUTF8(), 0.5f);
+        arrangementLerpTargets[i * 2 + 1] = readApvts01 (apvtsMain, (stem + "_y").toUTF8(), 0.5f);
+    }
+
+    arrangementLerpCurrent[0] = readApvts01 (apvtsDrums, "complexity", 0.f);
+    arrangementLerpCurrent[1] = readApvts01 (apvtsDrums, "density", 0.f);
+    arrangementLerpCurrent[2] = readApvts01 (apvtsBass, "complexity", 0.f);
+    arrangementLerpCurrent[3] = readApvts01 (apvtsBass, "density", 0.f);
+    arrangementLerpCurrent[4] = readApvts01 (apvtsPiano, "complexity", 0.f);
+    arrangementLerpCurrent[5] = readApvts01 (apvtsPiano, "density", 0.f);
+    arrangementLerpCurrent[6] = readApvts01 (apvtsGuitar, "complexity", 0.f);
+    arrangementLerpCurrent[7] = readApvts01 (apvtsGuitar, "density", 0.f);
+
+    arrangementTransitionStartMs = juce::Time::getMillisecondCounterHiRes();
+    arrangementLerpProgress.store (0.0f, std::memory_order_relaxed);
+
+    if (arrangementLerp != nullptr)
+        arrangementLerp->startTimer (50);
+}
+
+void BridgeProcessor::arrangementTransitionTick()
+{
+    if (arrangementStateRestoreInProgress)
+        return;
+
+    if (arrangementLerp == nullptr || ! arrangementLerp->isTimerRunning())
+        return;
+
+    constexpr float kStep = 0.08f;
+    constexpr float kEpsilon = 0.01f;
+
+    struct Slot { juce::AudioProcessorValueTreeState* ap; const char* cx; const char* cy; };
+    const Slot slots[4] = {
+        { &apvtsDrums, "complexity", "density" },
+        { &apvtsBass, "complexity", "density" },
+        { &apvtsPiano, "complexity", "density" },
+        { &apvtsGuitar, "complexity", "density" },
+    };
+
+    bool converged = true;
+    for (int i = 0; i < 4; ++i)
+    {
+        float& cx = arrangementLerpCurrent[i * 2];
+        float& cy = arrangementLerpCurrent[i * 2 + 1];
+        const float tx = arrangementLerpTargets[i * 2];
+        const float ty = arrangementLerpTargets[i * 2 + 1];
+        cx += (tx - cx) * kStep;
+        cy += (ty - cy) * kStep;
+        if (std::abs (tx - cx) > kEpsilon || std::abs (ty - cy) > kEpsilon)
+            converged = false;
+
+        apvtsSetFloatFrom01 (*slots[i].ap, slots[i].cx, cx);
+        apvtsSetFloatFrom01 (*slots[i].ap, slots[i].cy, cy);
+    }
+
+    syncDrumsEngineFromAPVTS();
+    syncBassEngineFromAPVTS();
+    syncPianoEngineFromAPVTS();
+    syncGuitarEngineFromAPVTS();
+
+    const double now = juce::Time::getMillisecondCounterHiRes();
+    const float prog = juce::jlimit (0.f, 1.f, (float) ((now - arrangementTransitionStartMs) / 1000.0));
+
+    if (converged)
+    {
+        for (int i = 0; i < 4; ++i)
+        {
+            apvtsSetFloatFrom01 (*slots[i].ap, slots[i].cx, arrangementLerpTargets[i * 2]);
+            apvtsSetFloatFrom01 (*slots[i].ap, slots[i].cy, arrangementLerpTargets[i * 2 + 1]);
+        }
+
+        syncDrumsEngineFromAPVTS();
+        syncBassEngineFromAPVTS();
+        syncPianoEngineFromAPVTS();
+        syncGuitarEngineFromAPVTS();
+
+        arrangementLerp->stopTimer();
+        arrangementLerpProgress.store (-1.0f, std::memory_order_relaxed);
+
+        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+            ed->repaint();
+        return;
+    }
+
+    arrangementLerpProgress.store (prog, std::memory_order_relaxed);
+
+    if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+        ed->repaint();
 }
 
 #if BRIDGE_ENABLE_QA_HOOKS

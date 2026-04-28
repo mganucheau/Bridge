@@ -174,7 +174,7 @@ struct StateMigrationTests final : public juce::UnitTest
 
         if (auto* arr = dynamic_cast<juce::AudioParameterChoice*> (v12dst.apvtsMain.getParameter ("arrSection")))
             expectEquals (arr->getIndex(), 1);
-        expectWithinAbsoluteError ((double) *v12dst.apvtsMain.getRawParameterValue ("sectionIntensity"), 0.5, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsMain.getRawParameterValue ("sectionIntensity"), 0.0, 0.02);
 
         for (auto* id : { "lockKick", "lockSnare", "lockHats", "lockPerc" })
             expectWithinAbsoluteError ((double) *v12dst.apvtsDrums.getRawParameterValue (id), 0.0, 0.02);
@@ -184,13 +184,13 @@ struct StateMigrationTests final : public juce::UnitTest
         for (auto* apvts : { &v12dst.apvtsBass, &v12dst.apvtsPiano, &v12dst.apvtsGuitar })
         {
             expectWithinAbsoluteError ((double) *apvts->getRawParameterValue ("life"),         0.0, 0.02);
-            expectWithinAbsoluteError ((double) *apvts->getRawParameterValue ("melody"),       0.5, 0.02);
+            expectWithinAbsoluteError ((double) *apvts->getRawParameterValue ("melody"),       0.0, 0.02);
             expectWithinAbsoluteError ((double) *apvts->getRawParameterValue ("followRhythm"), 0.0, 0.02);
         }
         expectWithinAbsoluteError ((double) *v12dst.apvtsBass.getRawParameterValue ("slideAmt"),         0.0, 0.02);
-        expectWithinAbsoluteError ((double) *v12dst.apvtsPiano.getRawParameterValue ("voicingSpread"),   0.5, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsPiano.getRawParameterValue ("voicingSpread"),   0.0, 0.02);
         expectWithinAbsoluteError ((double) *v12dst.apvtsGuitar.getRawParameterValue ("palmMute"),       0.0, 0.02);
-        expectWithinAbsoluteError ((double) *v12dst.apvtsGuitar.getRawParameterValue ("strumIntensity"), 0.5, 0.02);
+        expectWithinAbsoluteError ((double) *v12dst.apvtsGuitar.getRawParameterValue ("strumIntensity"), 0.0, 0.02);
 
         beginTest ("v12 round trip: explicit non-default values for the new params persist");
 

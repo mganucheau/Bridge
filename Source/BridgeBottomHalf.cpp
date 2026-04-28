@@ -8,7 +8,8 @@
 LabelledKnob::LabelledKnob (const juce::String& paramId, const juce::String& name,
                             juce::AudioProcessorValueTreeState& apvts, BridgeLookAndFeel::KnobStyle style, juce::Colour accent,
                             int rotaryDiameterIn,
-                            int labelBandHeightIn)
+                            int labelBandHeightIn,
+                            bool useApvtsSliderAttachment)
     : rotaryDiameter (juce::jlimit (28, 72, rotaryDiameterIn)),
       labelBandHeight (juce::jlimit (10, 24, labelBandHeightIn))
 {
@@ -24,7 +25,7 @@ LabelledKnob::LabelledKnob (const juce::String& paramId, const juce::String& nam
     addAndMakeVisible (label);
 
     auto* param = apvts.getParameter (paramId);
-    if (param != nullptr)
+    if (useApvtsSliderAttachment && param != nullptr)
         attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (apvts, paramId, slider);
 }
 
@@ -55,23 +56,34 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
                                     std::function<void(bool)> onFillHold)
     : instApvts (instApvtsToUse),
       mainApvts (mainApvtsToUse),
-      knobDensity ("density", "DENSITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
-      knobSwing ("swing", "SWING", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
-      knobHumanize ("humanize", "HUMANIZE", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
-      knobHold ("hold", "HOLD", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
-      knobVelocity ("velocity", "VELOCITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
-      knobFillRate ("fillRate", "FILL RATE", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
-      knobComplexity ("complexity", "COMPLEXITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
-      knobSustain ("sustain", "SUSTAIN", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent),
+      knobDensity ("density", "DENSITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                    bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+      knobSwing ("swing", "SWING", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                  bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+      knobHumanize ("humanize", "HUMANIZE", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                    bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+      knobHold ("hold", "HOLD", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+      knobVelocity ("velocity", "VELOCITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                    bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+      knobFillRate ("fillRate", "FILL RATE", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                    bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+      knobComplexity ("complexity", "COMPLEXITY", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                       bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+      knobSustain ("sustain", "SUSTAIN", instApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
+                   bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
       xyTension (std::make_unique<BridgeXYPad> (instApvts, "complexity", "density", groupAccent)),
       xyFeel (std::make_unique<BridgeXYPad> (instApvts, "humanize", "swing", groupAccent)),
       knobLoopStart ("loopStart", "START", mainApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
-                      bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+                      bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx, false),
       knobLoopEnd ("loopEnd", "END", mainApvts, BridgeLookAndFeel::KnobStyle::SmallLane, groupAccent,
-                    bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx),
+                    bridge::controlMetrics::kKnobBodySidePx, bridge::controlMetrics::kKnobLabelBandHPx, false),
       fillHoldCallback (onFillHold)
 {
     setLookAndFeel (&laf);
+
+    loopStartAttachment = std::make_unique<bridge::MainLoopKnobSliderAttachment> (mainApvts, knobLoopStart.getSlider(), "loopStart");
+    loopEndAttachment   = std::make_unique<bridge::MainLoopKnobSliderAttachment> (mainApvts, knobLoopEnd.getSlider(), "loopEnd");
 
     setupSectionLabel (grooveLabel, "GROOVE");
     setupSectionLabel (expressionLabel, "EXPRESSION");
@@ -179,6 +191,8 @@ BridgeBottomHalf::BridgeBottomHalf (juce::AudioProcessorValueTreeState& instApvt
 
 BridgeBottomHalf::~BridgeBottomHalf()
 {
+    loopStartAttachment.reset();
+    loopEndAttachment.reset();
     setLookAndFeel (nullptr);
 }
 
@@ -214,7 +228,6 @@ void BridgeBottomHalf::resized()
     constexpr int kOuterGap = 8;
     constexpr int kKnobW = bridge::controlMetrics::kKnobBodySidePx;
     constexpr int kKnobLabelH = 16;
-    constexpr int kKnobH = kKnobLabelH + kKnobW;
     constexpr int kLoopKnobH = bridge::controlMetrics::kKnobLabelBandHPx + bridge::controlMetrics::kKnobBodySidePx;
 
     auto area = getLocalBounds().reduced (kMargin, kTopGap);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <atomic>
 #include <functional>
 #include <memory>
 #include "drums/DrumEngine.h"
@@ -160,6 +161,13 @@ public:
         nudges them toward section-appropriate targets before they're pushed to engines. */
     void applyArrangementMacro (float& density, float& complexity, bool isDrums) const;
 
+    /** Lerp instrument complexity/density toward stored targets for the chosen song section. */
+    void startArrangementTransition (int section);
+    /** Write current per-instrument XY into apvtsMain section targets (context menu). */
+    void captureArrangementTargetsForSection (int section);
+    /** -1 = idle; 0..1 = UI progress for arrangement transition (~1 s wall clock). */
+    float getArrangementTransitionProgress() const noexcept;
+
 private:
     void runDrumGenerateForCurrentMainSelection();
     void handleModelUpdateCheckResult (BridgeUpdateChecker::UpdateInfo info);
@@ -174,6 +182,8 @@ private:
     void getBassPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
     void getPianoPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
     void getGuitarPlaybackWrapBounds (int& loopStart, int& loopEnd) const;
+
+    void clampMainLoopIntsToPhrase();
 
     bool playbackLoopEngaged() const noexcept;
 
@@ -294,6 +304,17 @@ private:
     BridgeUpdateChecker modelUpdateChecker;
     juce::String mlPendingModelUpdateVersion;
     juce::String mlPendingModelUpdateUrl;
+
+    struct ArrangementLerpTimer;
+    friend struct ArrangementLerpTimer;
+    void arrangementTransitionTick();
+
+    std::unique_ptr<ArrangementLerpTimer> arrangementLerp;
+    std::atomic<float> arrangementLerpProgress { -1.0f };
+    bool arrangementStateRestoreInProgress = false;
+    float arrangementLerpTargets[8] {};
+    float arrangementLerpCurrent[8] {};
+    double arrangementTransitionStartMs = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BridgeProcessor)
 };

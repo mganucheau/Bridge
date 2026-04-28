@@ -462,9 +462,7 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
     addAndMakeVisible (selectorsHeader);
     addAndMakeVisible (actionsHeader);
 
-    auto setupLoopKnob = [&] (juce::Slider& s, juce::Label& l, const juce::String& name,
-                              const juce::String& paramId,
-                              std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>& att)
+    auto setupLoopKnob = [&] (juce::Slider& s, juce::Label& l, const juce::String& name)
     {
         s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
         s.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
@@ -475,12 +473,13 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
         l.setColour (juce::Label::textColourId, bridge::colors::textDim());
         l.setFont (bridge::hig::uiFont (10.0f, "Semibold"));
         addAndMakeVisible (l);
-        if (proc.apvtsMain.getParameter (paramId) != nullptr)
-            att = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                proc.apvtsMain, paramId, s);
     };
-    setupLoopKnob (knobLoopStart, labelLoopStart, "START", "loopStart", attLoopStart);
-    setupLoopKnob (knobLoopEnd,   labelLoopEnd,   "END",   "loopEnd",   attLoopEnd);
+    setupLoopKnob (knobLoopStart, labelLoopStart, "START");
+    setupLoopKnob (knobLoopEnd,   labelLoopEnd,   "END");
+    mainLoopKnobStartAttach = std::make_unique<bridge::MainLoopKnobSliderAttachment> (
+        proc.apvtsMain, knobLoopStart, "loopStart");
+    mainLoopKnobEndAttach = std::make_unique<bridge::MainLoopKnobSliderAttachment> (
+        proc.apvtsMain, knobLoopEnd, "loopEnd");
 
     auto setupLoopStripToggle = [] (juce::TextButton& b, const juce::String& stripTag, const juce::String& letter)
     {
@@ -565,6 +564,8 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
 DrumsPanel::~DrumsPanel()
 {
     densityComplexityDebounce.stopTimer();
+    mainLoopKnobStartAttach.reset();
+    mainLoopKnobEndAttach.reset();
     proc.apvtsMain.removeParameterListener ("drumsOn", this);
     proc.apvtsMain.removeParameterListener ("loopStart", this);
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
@@ -717,22 +718,25 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
         layKnobCell (knobVelocity, labelVelocity, botRow);
     }
 
+    constexpr int kSectionTitleH    = 12; // match BridgeBottomHalf section labels
+    constexpr int kTitleToContentGap = 2;
+
     auto placePad = [&] (BridgeXYPad* pad, int colLeftX, juce::Label& header, juce::Label& xLab,
                           juce::Label& yLab)
     {
         if (pad == nullptr) return;
         constexpr int knobRowH = 54;
-        constexpr int knobGap  = 6;
-        const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap);
+        constexpr int knobGap  = 2; // match bass bottom column gap before readout row
+        const int reservedTop  = kSectionTitleH + kTitleToContentGap;
+        const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap - reservedTop);
         const int rawSide = juce::jmax (bridge::controlMetrics::kKnobBodySidePx,
                                         juce::jmin (padSize, spaceAboveReadouts));
         const int side = juce::jmax (bridge::controlMetrics::kXyPadMinSidePx,
                                      (int) std::round ((float) rawSide * bridge::controlMetrics::kXyPadScaleOfMinDim));
         const int px   = colLeftX + (padSize - side) / 2;
-        juce::Rectangle<int> padRect (px, y0, side, side);
+        header.setBounds (colLeftX, y0, padSize, kSectionTitleH);
+        juce::Rectangle<int> padRect (px, y0 + reservedTop, side, side);
         pad->setBounds (padRect);
-        const int hdrH = juce::jmin (14, side / 5);
-        header.setBounds (padRect.getX(), padRect.getY() + 2, padRect.getWidth(), hdrH);
         juce::ignoreUnused (xLab, yLab);
     };
     const int patternX = x0 + knobColWidth + smallGap;
@@ -743,14 +747,15 @@ void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
     auto layoutTwoKnobsRow = [&] (int colLeftX, juce::Slider& a, juce::Label& aL, juce::Slider& b, juce::Label& bL)
     {
         constexpr int knobRowH = 54;
-        constexpr int knobGap  = 6;
-        const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap);
+        constexpr int knobGap  = 2;
+        const int reservedTop  = kSectionTitleH + kTitleToContentGap;
+        const int spaceAboveReadouts = juce::jmax (1, bottomHeight - knobRowH - knobGap - reservedTop);
         const int rawSide = juce::jmax (bridge::controlMetrics::kKnobBodySidePx,
                                         juce::jmin (padSize, spaceAboveReadouts));
         const int side = juce::jmax (bridge::controlMetrics::kXyPadMinSidePx,
                                      (int) std::round ((float) rawSide * bridge::controlMetrics::kXyPadScaleOfMinDim));
         const int px   = colLeftX + (padSize - side) / 2;
-        juce::Rectangle<int> padTop (px, y0, side, side);
+        juce::Rectangle<int> padTop (px, y0 + reservedTop, side, side);
         juce::Rectangle<int> below (colLeftX, padTop.getBottom() + knobGap, padSize, knobRowH);
         auto row = below;
         const int kw = (row.getWidth() - 8) / 2;

@@ -69,4 +69,15 @@ inline int clampStep1BasedToPhrase (int step1, int phraseSteps) noexcept
 {
     return juce::jlimit (1, juce::jmax (1, phraseSteps), step1);
 }
+
+/** Total 16th-note steps for the current main `phraseBars` choice (2 / 4 / 8 bars). */
+inline int readPhraseStepCount (juce::AudioProcessorValueTreeState& mainApvts) noexcept
+{
+    int bars = phraseBarsFromChoiceIndex (0);
+    if (auto* pc = dynamic_cast<juce::AudioParameterChoice*> (mainApvts.getParameter ("phraseBars")))
+        bars = phraseBarsFromChoiceIndex (pc->getIndex());
+    else if (auto* v = mainApvts.getRawParameterValue ("phraseBars"))
+        bars = phraseBarsFromChoiceIndex ((int) v->load());
+    return phraseStepsForBars (bars);
+}
 } // namespace bridge::phrase

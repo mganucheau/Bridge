@@ -43,9 +43,20 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             "mlPersShowmanship", "mlPersGenreLoyalty", "mlPersonalityPresetName", "mlModelsLastUpdateCheckUnix",
             // v12: arrangement section macro (Sting/Session-style intensity by section).
             "arrSection", "sectionIntensity",
+            // v16: song section + per-section XY targets for smooth arrangement transitions.
+            "arrangement",
         };
         for (auto* id : mainIds)
             expectHasParam (*this, proc.apvtsMain, id);
+
+        static constexpr char arrInst[] = { 'D', 'B', 'P', 'G' };
+        for (int s = 0; s < 5; ++s)
+            for (char in : arrInst)
+                for (char ax : { 'x', 'y' })
+                {
+                    const juce::String pid = juce::String::formatted ("arr_%c_%d_%c", in, s, ax);
+                    expectHasParam (*this, proc.apvtsMain, pid.toRawUTF8());
+                }
 
         expectNoParam (*this, proc.apvtsMain, "perform");
         expectNoParam (*this, proc.apvtsMain, "pocket");
@@ -143,11 +154,13 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         near ((float) *proc.apvtsBass.getRawParameterValue ("density"), 0.f, "bass density");
         near ((float) *proc.apvtsBass.getRawParameterValue ("complexity"), 0.f, "bass complexity");
 
-        beginTest ("v12 defaults: arrangement section macro starts at Verse / 0.5 intensity, ensemble macros at zero");
+        beginTest ("v12 defaults: arrangement section macro starts at Verse / zero intensity, ensemble macros at zero");
 
         if (auto* arr = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("arrSection")))
             expectEquals (arr->getIndex(), 1); // Verse
-        near ((float) *proc.apvtsMain.getRawParameterValue ("sectionIntensity"), 0.5f, "main sectionIntensity");
+        if (auto* song = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("arrangement")))
+            expectEquals (song->getIndex(), 1); // Verse
+        near ((float) *proc.apvtsMain.getRawParameterValue ("sectionIntensity"), 0.0f, "main sectionIntensity");
 
         for (auto* drumLock : { "lockKick", "lockSnare", "lockHats", "lockPerc" })
         {
@@ -160,14 +173,14 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
         for (auto* apvts : { &proc.apvtsBass, &proc.apvtsPiano, &proc.apvtsGuitar })
         {
             near ((float) *apvts->getRawParameterValue ("life"),         0.f, "melodic life");
-            near ((float) *apvts->getRawParameterValue ("melody"),       0.5f, "melodic melody");
+            near ((float) *apvts->getRawParameterValue ("melody"),       0.0f, "melodic melody");
             near ((float) *apvts->getRawParameterValue ("followRhythm"), 0.f, "melodic followRhythm");
         }
 
         near ((float) *proc.apvtsBass.getRawParameterValue ("slideAmt"),         0.f, "bass slideAmt");
-        near ((float) *proc.apvtsPiano.getRawParameterValue ("voicingSpread"),   0.5f, "piano voicingSpread");
+        near ((float) *proc.apvtsPiano.getRawParameterValue ("voicingSpread"),   0.0f, "piano voicingSpread");
         near ((float) *proc.apvtsGuitar.getRawParameterValue ("palmMute"),       0.f, "guitar palmMute");
-        near ((float) *proc.apvtsGuitar.getRawParameterValue ("strumIntensity"), 0.5f, "guitar strumIntensity");
+        near ((float) *proc.apvtsGuitar.getRawParameterValue ("strumIntensity"), 0.0f, "guitar strumIntensity");
 
         beginTest ("v13 defaults: Drums tab, 2-bar phrase, loop end matches phrase (32 steps)");
 
@@ -176,6 +189,15 @@ struct ApvtsLayoutRegistryTests final : public juce::UnitTest
             expectEquals (ph->getIndex(), 0);
         if (auto* le = dynamic_cast<juce::AudioParameterInt*> (proc.apvtsMain.getParameter ("loopEnd")))
             expectEquals ((int) le->get(), bridge::phrase::kStepsPerBar * 2);
+        if (auto* td = dynamic_cast<juce::AudioParameterChoice*> (proc.apvtsMain.getParameter ("timeDivision")))
+            expectEquals (td->getIndex(), 7); // 1/4
+
+        beginTest ("ML personality knobs default to zero");
+
+        for (const char* id : { "mlPersRhythmTight", "mlPersDynamicRange", "mlPersTimbreTexture", "mlPersTensionArc",
+                                "mlPersTempoVolatility", "mlPersEmotionalTemp", "mlPersHarmAdventure", "mlPersStructPredict",
+                                "mlPersShowmanship", "mlPersGenreLoyalty" })
+            near ((float) *proc.apvtsMain.getRawParameterValue (id), 0.f, id);
 
         beginTest ("v14: single UI theme; roll span on melodic lanes defaults to one octave");
 

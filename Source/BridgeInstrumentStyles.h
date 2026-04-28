@@ -36,14 +36,16 @@ inline constexpr int kSpeedBtnGap     = 4;
 inline constexpr int kPerformBlinkTicks = 20;
 
 // ── Unified panel layout (v3 redesign) ─────────────────────────────────────
-// The editor is a fixed 960 × 740 window. Every tab splits the space below
-// the header into three fixed-size containers so switching tabs never shifts
+// The editor is a fixed 960 × 772 window (includes arrangement strip under header).
+// Every tab splits the space below the header + strip into three fixed-size
+// containers so switching tabs never shifts
 // anything on screen:
 //   • dropdown row (Root / Scale / Oct / Style)
 //   • main area   (piano roll, drum grid, or Leader mixer)
 //   • bottom row  (knobs card on the left + loop/actions card on the right)
 inline constexpr int kWindowW          = 960;
-inline constexpr int kWindowH          = 740;
+inline constexpr int kWindowH          = 772;     // + arrangement section strip below header
+inline constexpr int kArrangementStripH = 32;    // Intro … Outro selector (PRIORITY 8)
 inline constexpr int kHeaderH          = 54;      // BRIDGE logo + transport + tab strip
 /** Transport + tab chips share one vertical size. */
 inline constexpr int kHeaderControlH   = 38;

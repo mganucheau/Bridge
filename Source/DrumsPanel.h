@@ -4,6 +4,7 @@
 #include "BridgeProcessor.h"
 #include "BridgeLoopRangeStrip.h"
 #include "BridgeLookAndFeel.h"
+#include "BridgeMainLoopKnobAttachment.h"
 #include "BridgeVelocityStrip.h"
 #include "BridgeXYPad.h"
 #include "InstrumentControlBar.h"
@@ -96,8 +97,8 @@ private:
 
     juce::Slider knobLoopStart, knobLoopEnd;
     juce::Label  labelLoopStart, labelLoopEnd;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>
-        attLoopStart, attLoopEnd;
+    std::unique_ptr<bridge::MainLoopKnobSliderAttachment> mainLoopKnobStartAttach;
+    std::unique_ptr<bridge::MainLoopKnobSliderAttachment> mainLoopKnobEndAttach;
     juce::TextButton loopPlaybackButton;
     juce::TextButton syncIconButton;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment>

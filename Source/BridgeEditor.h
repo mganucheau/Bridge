@@ -11,6 +11,7 @@
 #include "GuitarPanel.h"
 
 class BridgeHeaderBar;
+class BridgeArrangementStrip;
 
 class BridgeEditor : public juce::AudioProcessorEditor,
                      private juce::Timer
@@ -42,6 +43,8 @@ private:
 
     /** Full 54px top bar (branding, transport, tabs, settings). */
     std::unique_ptr<BridgeHeaderBar> headerBar;
+    /** Song section selector directly under the header (Intro … Outro). */
+    std::unique_ptr<BridgeArrangementStrip> arrangementStrip;
 
     MainPanel   mainPanel;
     DrumsPanel drumsPanel;
