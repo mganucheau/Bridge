@@ -10,6 +10,7 @@
 #include "BridgeUpdateChecker.h"
 #include "PersonalityPresets.h"
 #include "BridgePhrase.h"
+#include "EnsembleHints.h"
 #include <array>
 #include <vector>
 
@@ -575,26 +576,46 @@ BridgeProcessor::BridgeProcessor()
 
     drumEngine.onPatternChanged = [this]
     {
-        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifyDrumsPatternChanged();
+        if (juce::MessageManager::getInstanceWithoutCreating() == nullptr)
+            return;
+        juce::MessageManager::callAsync ([this]
+        {
+            if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+                ed->notifyDrumsPatternChanged();
+        });
     };
 
     bassEngine.onPatternChanged = [this]
     {
-        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifyBassPatternChanged();
+        if (juce::MessageManager::getInstanceWithoutCreating() == nullptr)
+            return;
+        juce::MessageManager::callAsync ([this]
+        {
+            if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+                ed->notifyBassPatternChanged();
+        });
     };
 
     pianoEngine.onPatternChanged = [this]
     {
-        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifyPianoPatternChanged();
+        if (juce::MessageManager::getInstanceWithoutCreating() == nullptr)
+            return;
+        juce::MessageManager::callAsync ([this]
+        {
+            if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+                ed->notifyPianoPatternChanged();
+        });
     };
 
     guitarEngine.onPatternChanged = [this]
     {
-        if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
-            ed->notifyGuitarPatternChanged();
+        if (juce::MessageManager::getInstanceWithoutCreating() == nullptr)
+            return;
+        juce::MessageManager::callAsync ([this]
+        {
+            if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
+                ed->notifyGuitarPatternChanged();
+        });
     };
 
     apvtsMain.addParameterListener ("loopStart", this);
@@ -642,11 +663,7 @@ juce::AudioProcessorEditor* BridgeProcessor::createEditor()
 
 void BridgeProcessor::refreshBassKickHintFromDrums()
 {
-    std::vector<float> hint (16, 0.0f);
-    const auto& pat = drumEngine.getPattern();
-    for (int s = 0; s < 16; ++s)
-        hint[(size_t) s] = pat[(size_t) s][0].active ? 1.0f : 0.0f;
-    bassEngine.setBassMLKickHint (hint);
+    publishDrumActivityToFollowers();
 }
 
 void BridgeProcessor::refreshChordsBassHintFromBass()
@@ -696,14 +713,11 @@ void BridgeProcessor::applyArrangementMacro (float& density, float& complexity, 
 
 void BridgeProcessor::publishDrumActivityToFollowers()
 {
-    // Drums export 16 floats of step activity; melodic engines use it as a soft prior on onsets.
-    const auto act = drumEngine.getStepActivityGrid();
-    std::array<float, 16> grid {};
-    for (size_t i = 0; i < 16; ++i)
-        grid[i] = act[i];
-    bassEngine.setRhythmActivityHint (grid);
-    pianoEngine.setRhythmActivityHint (grid);
-    guitarEngine.setRhythmActivityHint (grid);
+    const auto snap = bridge::ensemble::snapshotFromDrumEngine (drumEngine);
+    bassEngine.setRhythmActivityHint (snap.stepActivity);
+    pianoEngine.setRhythmActivityHint (snap.stepActivity);
+    guitarEngine.setRhythmActivityHint (snap.stepActivity);
+    bassEngine.setBassMLKickHint (snap.kickHint16);
 }
 
 void BridgeProcessor::syncDrumsMLPersonalityToEngine()
@@ -743,7 +757,6 @@ void BridgeProcessor::prepareToPlay (double sr, int spb)
     bassLastProcessedStep = -1;
     bassPendingNoteOffs.clear();
     syncBassEngineFromAPVTS();
-    refreshBassKickHintFromDrums();
     publishDrumActivityToFollowers();
     bassEngine.rebuildGridPreview();
     refreshChordsBassHintFromBass();
@@ -1064,16 +1077,23 @@ void BridgeProcessor::syncDrumsEngineFromAPVTS()
     float ghostAmt   = (float)*apvtsDrums.getRawParameterValue ("ghostAmount");
 
     const auto L = getLeaderEffective (apvtsMain);
-    humanize *= (1.0f - 0.55f * L.hold * 0.45f);
-    swing    *= (1.0f - 0.30f * L.hold * 0.45f);
-    hold      = juce::jmin (1.f, hold + 0.38f * L.hold);
-    density  *= (1.0f - 0.48f * L.swing);
-    fillRate  = juce::jmin (1.f, fillRate + 0.40f * L.complexity);
-    ghostAmt  = juce::jmin (1.f, ghostAmt + 0.32f * L.complexity);
-    complexity = juce::jmin (1.f, complexity + 0.22f * L.complexity);
-    velocity  = juce::jmin (1.f, velocity * (0.90f + 0.14f * L.humanize));
+    const bool allDown =
+        density < 0.001f && swing < 0.001f && humanize < 0.001f && velocity < 0.001f
+        && fillRate < 0.001f && complexity < 0.001f && hold < 0.001f && ghostAmt < 0.001f;
 
-    applyArrangementMacro (density, complexity, /*isDrums*/ true);
+    if (! allDown)
+    {
+        humanize *= (1.0f - 0.55f * L.hold * 0.45f);
+        swing    *= (1.0f - 0.30f * L.hold * 0.45f);
+        hold      = juce::jmin (1.f, hold + 0.38f * L.hold);
+        density  *= (1.0f - 0.48f * L.swing);
+        fillRate  = juce::jmin (1.f, fillRate + 0.40f * L.complexity);
+        ghostAmt  = juce::jmin (1.f, ghostAmt + 0.32f * L.complexity);
+        complexity = juce::jmin (1.f, complexity + 0.22f * L.complexity);
+        velocity  = juce::jmin (1.f, velocity * (0.90f + 0.14f * L.humanize));
+
+        applyArrangementMacro (density, complexity, /*isDrums*/ true);
+    }
 
     drumEngine.setDensity    (density);
     drumEngine.setSwing      (swing);
@@ -1288,7 +1308,6 @@ void BridgeProcessor::triggerBassGenerate()
     juce::Random r;
     bassEngine.setSeed ((uint32_t) ((uint32_t) r.nextInt (0x7fffffff) ^ 0xA5A5A5A5u));
     syncBassEngineFromAPVTS();
-    refreshBassKickHintFromDrums();
     publishDrumActivityToFollowers();
     const int phraseSteps = readPhraseSteps (apvtsMain);
     if (isMainSelectionFullClip (phraseSteps))
@@ -1825,7 +1844,7 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
                 drumEngine.generateFill (fillStart);
                 drumsFillQueued = false;
             }
-            else if (drumEngine.shouldTriggerFill())
+            else if (drumEngine.getFillRate() > 0.01f && drumEngine.shouldTriggerFill())
             {
                 drumEngine.generateFill (juce::jmin (12, le0));
             }

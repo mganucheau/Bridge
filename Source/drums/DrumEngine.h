@@ -79,7 +79,7 @@ public:
     void setHold       (float h) { hold        = jlimit(0.0f,  1.0f,  h); }
     void setGhostAmount(float g) { ghostAmount = jlimit(0.0f,  1.0f,  g); }
     void setPatternLen (int   l) { patternLen  = jlimit(1, bridge::phrase::kMaxSteps, l); }
-    void setSeed       (uint32 s){ seed        = s; rng.seed(seed); }
+    void setSeed       (uint32 s);
     void setPhraseBars (int bars) { phraseBars = jlimit (1, 64, bars); }
 
     int   getStyle()       const { return style; }
@@ -178,6 +178,12 @@ private:
     void captureMLContextForQuarter (int quarter0);
 
     LayerMask layerLocks {};
+    /** Previous phrase kick/snare footprint — biases full-bar regen toward coherent motifs. */
+    std::array<uint8_t, bridge::phrase::kMaxSteps> lastMotifKick {};
+    std::array<uint8_t, bridge::phrase::kMaxSteps> lastMotifSnare {};
+    /** AR(1) pocket innovation per drum voice — smoothed micro-timing within applyHumanize. */
+    std::array<float, NUM_DRUMS> pocketArState {};
+
     float     lifeAmount = 0.0f;
     float     hatOpen    = 0.0f;
     int       velShape   = 1; // 0 flat, 1 accent, 2 crescendo, 3 decrescendo
@@ -185,6 +191,16 @@ private:
     static float pseudoRandom01 (uint32_t salt);
     bool         rollHitFromProbability (float prob, uint32_t salt) const;
     uint8        sampleVelocityDeterministic (int step, int drum, bool ghost, uint32_t salt) const;
+
+    /** Stage A — sparse backbone from style × density × complexity (intent grid). */
+    void generateIntentSkeletonInRange (int from0, int to0, bool seamlessPerform,
+                                        const DrumPattern& previous,
+                                        std::vector<std::tuple<int, int, int>>& restoreTimeShiftOut);
+    /** Stage B — roles/polyphony, ML reshape, timing pocket, articulation. */
+    void runRealizationPipeline (bool partialRegenWindow, BridgeMLManager* ml,
+                                 std::vector<std::tuple<int, int, int>>& restoreTimeShift);
+    void snapMotifFromPatternAfterFullGenerate (int from0, int to0);
+    void addPhraseEndFillIfNeeded();
 
     float        neutralProbability (int step, int drum) const;
     float        blendedStyleBase (int step, int drum) const;

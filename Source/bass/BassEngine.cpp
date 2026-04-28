@@ -136,7 +136,8 @@ int BassEngine::nearestDegreeForMidi (int midi, int prevMidi) const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// generatePattern
+// generatePattern — intent (degree grid / ghosts) then realization (resolveApproachNotes + ML).
+// Mirrors DrumEngine's split between backbone vs ornament passes for maintainability.
 // ─────────────────────────────────────────────────────────────────────────────
 void BassEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform, BridgeMLManager* ml)
 {

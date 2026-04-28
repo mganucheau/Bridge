@@ -180,6 +180,7 @@ DrumEngine::DrumEngine()
     pattern.resize ((size_t) bridge::phrase::kMaxSteps);
     gridPreview.resize ((size_t) bridge::phrase::kMaxSteps);
     mlPersonalityKnobs.fill (0.5f);
+    pocketArState.fill (0.f);
     for (auto& step : pattern)
         for (auto& hit : step)
             hit = {};
@@ -189,27 +190,33 @@ DrumEngine::DrumEngine()
     rebuildGridPreview();
 }
 
+void DrumEngine::setSeed (uint32 s)
+{
+    if (seed == s)
+        return;
+    seed = s;
+    rng.seed (seed);
+    lastMotifKick.fill (0);
+    lastMotifSnare.fill (0);
+    pocketArState.fill (0.f);
+}
+
 // ─── Core generation ──────────────────────────────────────────────────────────
 
-void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform, BridgeMLManager* ml)
+void DrumEngine::generateIntentSkeletonInRange (int from0, int to0, bool seamlessPerform,
+                                                const DrumPattern& previous,
+                                                std::vector<std::tuple<int, int, int>>& restoreTimeShift)
 {
-    if (patternLen < 1)
-        return;
-    from0 = juce::jlimit (0, patternLen - 1, from0);
-    to0   = juce::jlimit (0, patternLen - 1, to0);
-    if (to0 < from0)
-        std::swap (from0, to0);
-
-    const DrumPattern previous = pattern;
-    std::vector<std::tuple<int, int, int>> restoreTimeShift;
-
     auto isLayerLocked = [this] (int drum)
     {
-        if (drum == 0)            return layerLocks.kick;
-        if (drum == 1)            return layerLocks.snare;
+        if (drum == 0)              return layerLocks.kick;
+        if (drum == 1)              return layerLocks.snare;
         if (drum == 2 || drum == 3) return layerLocks.hats;
         return layerLocks.perc;
     };
+
+    const bool fullPhraseIntent =
+        (from0 == 0 && to0 >= patternLen - 1 && ! seamlessPerform);
 
     for (int step = from0; step <= to0; ++step)
     {
@@ -218,12 +225,20 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
         {
-            // Sting-style lock: keep this layer's hits intact across regenerate.
             if (isLayerLocked (drum))
             {
-                pattern[step][drum] = previous[step][drum];
-                if (pattern[step][drum].active)
-                    restoreTimeShift.emplace_back (step, drum, previous[step][drum].timeShift);
+                pattern[(size_t) step][(size_t) drum] = previous[(size_t) step][(size_t) drum];
+                if (pattern[(size_t) step][(size_t) drum].active)
+                    restoreTimeShift.emplace_back (step, drum, previous[(size_t) step][(size_t) drum].timeShift);
+                continue;
+            }
+
+            // Phrase coherence: for multi-bar phrases, tile the first bar as the motif backbone.
+            // Variation is handled later (end-of-phrase fill + humanize), keeping the core groove stable.
+            if (fullPhraseIntent && patternLen > NUM_STEPS && step >= NUM_STEPS)
+            {
+                const int baseStep = step % NUM_STEPS;
+                pattern[(size_t) step][(size_t) drum] = pattern[(size_t) baseStep][(size_t) drum];
                 continue;
             }
 
@@ -238,39 +253,46 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
             if (! mutateThisStep)
             {
-                pattern[step][drum] = previous[step][drum];
-                if (pattern[step][drum].active)
-                    restoreTimeShift.emplace_back (step, drum, previous[step][drum].timeShift);
+                pattern[(size_t) step][(size_t) drum] = previous[(size_t) step][(size_t) drum];
+                if (pattern[(size_t) step][(size_t) drum].active)
+                    restoreTimeShift.emplace_back (step, drum, previous[(size_t) step][(size_t) drum].timeShift);
                 continue;
             }
 
             float base = blendedStyleBase (step, drum);
             float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (step, drum));
+            if (fullPhraseIntent && step < bridge::phrase::kMaxSteps)
+            {
+                if (drum == 0)
+                    prob += 0.085f * (float) lastMotifKick[(size_t) step];
+                else if (drum == 1)
+                    prob += 0.065f * (float) lastMotifSnare[(size_t) step];
+            }
             prob = probabilityAfterDensity (prob, density);
 
             bool active = sampleProb (prob);
 
             if (! active)
             {
-                pattern[step][drum] = {};
+                pattern[(size_t) step][(size_t) drum] = {};
                 continue;
             }
 
-            const auto& prev = previous[step][drum];
-            pattern[step][drum].active = true;
+            const auto& prev = previous[(size_t) step][(size_t) drum];
+            pattern[(size_t) step][(size_t) drum].active = true;
 
             if (prev.active)
             {
-                pattern[step][drum].velocity  = prev.velocity;
-                pattern[step][drum].timeShift = prev.timeShift;
+                pattern[(size_t) step][(size_t) drum].velocity  = prev.velocity;
+                pattern[(size_t) step][(size_t) drum].timeShift = prev.timeShift;
                 restoreTimeShift.emplace_back (step, drum, prev.timeShift);
             }
             else
             {
                 const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
                 const bool ghost = (base < ghostThresh);
-                pattern[step][drum].velocity  = sampleVelocity (step, drum, ghost);
-                pattern[step][drum].timeShift = 0;
+                pattern[(size_t) step][(size_t) drum].velocity  = sampleVelocity (step, drum, ghost);
+                pattern[(size_t) step][(size_t) drum].timeShift = 0;
             }
         }
     }
@@ -281,8 +303,78 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
     applyVoiceExclusionAndPriority (0, patternLen - 1);
     enforcePerStepPolyphonyInRange (0, patternLen - 1, maxPolyphonyForSettings());
+}
 
-    const bool partialRegenWindow = (from0 > 0 || to0 < patternLen - 1);
+void DrumEngine::addPhraseEndFillIfNeeded()
+{
+    if (patternLen <= NUM_STEPS)
+        return;
+    if (fillRate < 0.01f)
+        return;
+
+    // Deterministic, subtle phrase-ending variation over the final 4 steps.
+    const int start = juce::jmax (0, patternLen - 4);
+    const float p = juce::jlimit (0.0f, 0.65f, 0.12f + 0.45f * fillRate + 0.20f * complexity);
+
+    for (int step = start; step < patternLen; ++step)
+    {
+        const uint32_t salt = seed ^ ((uint32_t) step * 2654435761u) ^ ((uint32_t) style * 1597334677u) ^ 0xF17E11u;
+
+        // Light snare pickup / accent.
+        if (pseudoRandom01 (salt ^ 0xA11CEu) < p * 0.55f)
+        {
+            auto& sn = pattern[(size_t) step][1];
+            if (! sn.active)
+            {
+                sn.active = true;
+                sn.velocity = sampleVelocity (step, 1, true);
+                sn.timeShift = 0;
+            }
+        }
+
+        // Tom flourish on the last step only (avoids constant rolling fills).
+        if (step == patternLen - 1 && pseudoRandom01 (salt ^ 0x7093u) < p * 0.45f)
+        {
+            const int tom = 4 + (int) std::floor (pseudoRandom01 (salt ^ 0x7010u) * 3.0f);
+            auto& th = pattern[(size_t) step][(size_t) juce::jlimit (4, 6, tom)];
+            th.active = true;
+            th.velocity = sampleVelocity (step, tom, false);
+            th.timeShift = 0;
+        }
+
+        // Keep the downbeat kick at phrase end.
+        if (step == patternLen - 1)
+        {
+            auto& k = pattern[(size_t) step][0];
+            if (! k.active)
+            {
+                k.active = true;
+                k.velocity = sampleVelocity (step, 0, false);
+                k.timeShift = 0;
+            }
+        }
+    }
+}
+
+void DrumEngine::runRealizationPipeline (bool partialRegenWindow, BridgeMLManager* ml,
+                                         std::vector<std::tuple<int, int, int>>& restoreTimeShift)
+{
+    // House: enforce four-on-the-floor backbone (kick on every quarter note).
+    if (! partialRegenWindow && style == 3)
+    {
+        for (int step = 0; step < patternLen; ++step)
+            if (step % 4 == 0)
+            {
+                auto& k = pattern[(size_t) step][0];
+                if (! k.active)
+                {
+                    k.active = true;
+                    k.velocity = sampleVelocity (step, 0, false);
+                    k.timeShift = 0;
+                }
+            }
+    }
+
     if (! partialRegenWindow && ml != nullptr && ml->hasModel (BridgeMLManager::ModelType::DrumHumanizer))
     {
         const std::array<float, 4> groove {
@@ -301,9 +393,16 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
     applyVoiceExclusionAndPriority (0, patternLen - 1);
     enforcePerStepPolyphonyInRange (0, patternLen - 1, maxPolyphonyForSettings());
+
+    if (! partialRegenWindow)
+    {
+        addPhraseEndFillIfNeeded();
+        applyVoiceExclusionAndPriority (0, patternLen - 1);
+        enforcePerStepPolyphonyInRange (0, patternLen - 1, maxPolyphonyForSettings());
+    }
+
     applyHumanize (playbackSamplesPerStep);
 
-    // Apply velocity contour macro after humanize so users see and hear the shape.
     if (velShape > 0)
     {
         for (int step = 0; step < patternLen; ++step)
@@ -318,7 +417,6 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
         }
     }
 
-    // Articulation: hatOpen biases hits between closed (drum 2) and open (drum 3) hat layers.
     if (hatOpen > 0.01f)
     {
         for (int step = 0; step < patternLen; ++step)
@@ -336,6 +434,36 @@ void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform,
 
     for (const auto& t : restoreTimeShift)
         pattern[(size_t) std::get<0> (t)][(size_t) std::get<1> (t)].timeShift = std::get<2> (t);
+}
+
+void DrumEngine::snapMotifFromPatternAfterFullGenerate (int from0, int to0)
+{
+    if (from0 != 0 || to0 < patternLen - 1)
+        return;
+    for (int s = 0; s < patternLen && s < (int) bridge::phrase::kMaxSteps; ++s)
+    {
+        lastMotifKick[(size_t) s]   = pattern[(size_t) s][0].active ? (uint8_t) 1 : (uint8_t) 0;
+        lastMotifSnare[(size_t) s] = pattern[(size_t) s][1].active ? (uint8_t) 1 : (uint8_t) 0;
+    }
+}
+
+void DrumEngine::generatePatternRange (int from0, int to0, bool seamlessPerform, BridgeMLManager* ml)
+{
+    if (patternLen < 1)
+        return;
+    from0 = juce::jlimit (0, patternLen - 1, from0);
+    to0   = juce::jlimit (0, patternLen - 1, to0);
+    if (to0 < from0)
+        std::swap (from0, to0);
+
+    const DrumPattern previous = pattern;
+    std::vector<std::tuple<int, int, int>> restoreTimeShift;
+
+    generateIntentSkeletonInRange (from0, to0, seamlessPerform, previous, restoreTimeShift);
+
+    const bool partialRegenWindow = (from0 > 0 || to0 < patternLen - 1);
+    runRealizationPipeline (partialRegenWindow, ml, restoreTimeShift);
+    snapMotifFromPatternAfterFullGenerate (from0, to0);
 
     if (onPatternChanged)
         onPatternChanged();
@@ -366,6 +494,8 @@ void DrumEngine::generateFill (int fromStep)
 
     if (onPatternChanged)
         onPatternChanged();
+
+    rebuildGridPreview();
 }
 
 void DrumEngine::generateFillDefault (int fromStep)
@@ -580,88 +710,37 @@ void DrumEngine::evaluateStepForPlayback (int globalStep, int wrappedStep, DrumS
 
     if (fillTailPlayback && wrappedStep >= fillTailFromStep)
     {
-        out = pattern[wrappedStep];
+        out = gridPreview[(size_t) wrappedStep];
         if (wrappedStep >= patternLen - 1)
             fillTailPlayback = false;
         return;
     }
 
-    for (int drum = 0; drum < NUM_DRUMS; ++drum)
+    // Playback should match what the grid shows: read the committed (generated) pattern
+    // rather than re-rolling probabilities each pass around the loop.
+    out = gridPreview[(size_t) wrappedStep];
+
+    // Playback-only drift: velocity LFO on existing hits (no new hits).
+    if (lifeAmount > 0.01f)
     {
-        float base = blendedStyleBase (wrappedStep, drum);
-        float prob = juce::jlimit (0.0f, 1.0f, base + complexityMod (wrappedStep, drum));
-        prob = probabilityAfterDensity (prob, density);
-
-        const uint32_t salt = seed ^ ((uint32_t) globalStep * 2654435761u)
-                                    ^ ((uint32_t) drum * 1597334677u);
-
-        bool active = rollHitFromProbability (prob, salt);
-        uint8 vel   = 0;
-        int   tshift = 0;
-
-        if (active)
+        for (int drum = 0; drum < NUM_DRUMS; ++drum)
         {
-            const float ghostThresh = juce::jmap (ghostAmount, 0.42f, 0.10f);
-            bool ghost = (base < ghostThresh);
-            vel = sampleVelocityDeterministic (wrappedStep, drum, ghost, salt ^ 0x27d4eb2du);
-
-            // Live velocity contour from the per-step macro shape.
-            if (velShape > 0)
-            {
-                const float k = velocityShapeFactor (velShape, wrappedStep, patternLen);
-                vel = (uint8) juce::jlimit (1, 127, (int) std::lround ((float) vel * k));
-            }
-
-            // "Life" drift: slow LFO modulates velocity per global step. Stable across plays
-            // because it's derived from globalStep, not RNG state.
-            if (lifeAmount > 0.01f)
-            {
-                const float phase = std::sin ((float) globalStep * 0.0625f + (float) drum * 0.7f);
-                const float lifeK = 1.0f + lifeAmount * 0.18f * phase;
-                vel = (uint8) juce::jlimit (1, 127, (int) std::lround ((float) vel * lifeK));
-            }
-
-            int humShift = (int)(samplesPerStep * 0.32 * (humanize + lifeAmount * 0.15f));
-            if (humShift > 0)
-                tshift = (int)(pseudoRandom01 (salt ^ 0x85ebca6bu) * (float)(2 * humShift + 1)) - humShift;
-            tshift += voiceFeelTimingShift     (drum, samplesPerStep, humanize);
-            tshift += velocityFeelTimingShift  ((int) vel, samplesPerStep, humanize);
-            tshift += (int) grooveMicroOffset  (wrappedStep, drum, salt, samplesPerStep);
+            auto& h = out[(size_t) drum];
+            if (! h.active) continue;
+            const float phase = std::sin ((float) globalStep * 0.0625f + (float) drum * 0.7f);
+            const float lifeK = 1.0f + lifeAmount * 0.18f * phase;
+            h.velocity = (uint8) juce::jlimit (1, 127, (int) std::lround ((float) h.velocity * lifeK));
         }
-
-        out[(size_t) drum] = { active, vel, tshift };
     }
 
+    // Fill-hold should be audible but not introduce unseen stochastic hits during playback.
     if (fillHoldActive)
     {
         for (int drum = 0; drum < NUM_DRUMS; ++drum)
         {
-            float base = blendedStyleBase (wrappedStep, drum);
-            const float fillMix = (0.18f + 0.55f * base) * (0.5f + fillRate);
-            float prob = probabilityAfterDensity (juce::jlimit (0.0f, 1.0f, fillMix), density);
-            if (drum == 1 || drum >= 4) prob *= 1.35f;
-            prob = juce::jlimit (0.0f, 1.0f, prob);
-
-            const uint32_t salt = seed ^ ((uint32_t) globalStep * 2246822519u)
-                                        ^ ((uint32_t) drum * 3266489917u) ^ 0xF111u;
-
-            if (! rollHitFromProbability (prob, salt))
-                continue;
-
-            const float ghostThresh = juce::jmap (ghostAmount, 0.40f, 0.12f);
-            bool ghost = (base < ghostThresh);
-            uint8 vel = sampleVelocityDeterministic (wrappedStep, drum, ghost, salt ^ 0x27d4eb2du);
-            int maxShift = (int)(samplesPerStep * 0.32 * humanize);
-            int tshift = 0;
-            if (maxShift > 0)
-                tshift = (int)(pseudoRandom01 (salt ^ 0x85ebca6bu) * (float)(2 * maxShift + 1)) - maxShift;
-            tshift += voiceFeelTimingShift     (drum, samplesPerStep, humanize);
-            tshift += velocityFeelTimingShift  ((int) vel, samplesPerStep, humanize);
-            tshift += (int) grooveMicroOffset  (wrappedStep, drum, salt, samplesPerStep);
-
-            auto& hit = out[(size_t) drum];
-            if (! hit.active || vel > hit.velocity)
-                hit = { true, vel, tshift };
+            auto& h = out[(size_t) drum];
+            if (! h.active) continue;
+            h.velocity = (uint8) juce::jlimit (1, 127, (int) h.velocity + 20);
         }
     }
 }
@@ -751,10 +830,13 @@ std::array<float, bridge::phrase::kMaxSteps> DrumEngine::getStepActivityGrid() c
 }
 
 // Groove invariant: humanize shifts are deterministic from seed + step + drum (no per-block RNG).
-// Composition: random scatter ± voice-specific feel bias ± velocity-correlated micro-timing.
+// Composition: random scatter ± voice-specific feel bias ± velocity-correlated micro-timing,
+// plus AR(1) pocket innovation so micro-timing breathes coherently per drum voice.
 void DrumEngine::applyHumanize (double samplesPerStep)
 {
     if (humanize < 0.01f) return;
+
+    pocketArState.fill (0.f);
 
     const int maxShift = (int)(samplesPerStep * 0.32 * humanize); // up to 32% of a step
 
@@ -772,6 +854,12 @@ void DrumEngine::applyHumanize (double samplesPerStep)
             {
                 const float u = pseudoRandom01 (salt);
                 tshift = (int) std::lround ((u * 2.0f - 1.0f) * (float) maxShift);
+
+                const float uInn = pseudoRandom01 (salt ^ 0xBADCAFEu);
+                const float innovation = uInn * 2.0f - 1.0f;
+                pocketArState[(size_t) drum] =
+                    0.42f * pocketArState[(size_t) drum] + 0.58f * innovation;
+                tshift += (int) std::lround (pocketArState[(size_t) drum] * (float) maxShift * 0.34f);
             }
             tshift += voiceFeelTimingShift    (drum, samplesPerStep, humanize);
             tshift += velocityFeelTimingShift ((int) hit.velocity, samplesPerStep, humanize);
@@ -941,21 +1029,20 @@ void DrumEngine::mergeMLBlockAtQuarter (const std::vector<float>& mlOutput, int 
             const float p = mlOutput[(size_t) (v * 4 + t)];
             auto&       hit = pattern[(size_t) step][(size_t) v];
 
-            if (p >= 0.50f)
+            // Humanize-first: ONNX reshapes velocities on an existing grid; sparse new hits only
+            // when the head strongly agrees (reduces ML fighting the rule-based backbone).
+            if (hit.active)
             {
-                if (! hit.active)
-                {
-                    hit.active   = true;
-                    hit.velocity = sampleVelocity (step, v, false);
-                    hit.timeShift = 0;
-                }
-                hit.velocity = (uint8) juce::jlimit (
-                    1, 127, (int) ((float) hit.velocity * (0.78f + 0.45f * p)));
+                if (p >= 0.38f)
+                    hit.velocity = (uint8) juce::jlimit (
+                        1, 127, (int) ((float) hit.velocity * (0.70f + 0.52f * p)));
+                if (p < 0.14f)
+                    hit = {};
             }
-            else if (p < 0.18f)
+            else if (p >= 0.58f)
             {
-                hit.active   = false;
-                hit.velocity = 0;
+                hit.active    = true;
+                hit.velocity  = sampleVelocity (step, v, true);
                 hit.timeShift = 0;
             }
         }

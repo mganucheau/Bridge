@@ -108,7 +108,7 @@ int PianoEngine::nearestDegreeForMidi (int midi, int prevMidi) const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// generatePattern
+// generatePattern — skeleton onsets then realization (resolveApproachNotes + ML merge).
 // ─────────────────────────────────────────────────────────────────────────────
 void PianoEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform, BridgeMLManager* ml)
 {

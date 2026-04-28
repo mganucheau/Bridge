@@ -104,7 +104,7 @@ int GuitarEngine::nearestDegreeForMidi (int midi, int prevMidi) const
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// generatePattern
+// generatePattern — skeleton onsets then realization (resolveApproachNotes + ML merge).
 // ─────────────────────────────────────────────────────────────────────────────
 void GuitarEngine::generatePatternRange (int fromStep0, int toStep0, bool seamlessPerform, BridgeMLManager* ml)
 {

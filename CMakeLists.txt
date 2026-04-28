@@ -167,6 +167,8 @@ target_sources(BridgeTests PRIVATE
     Tests/UnifiedStyleRegistryTests.cpp
     Tests/MorphRangeTests.cpp
     Tests/DrumHumanFeelMetricsTests.cpp
+    Tests/DrumsHouseComplexityMonotonicityTests.cpp
+    Tests/MelodicHumanFeelMetricsTests.cpp
 )
 if (BRIDGE_ENABLE_QA_HOOKS)
     target_compile_definitions(BridgeTests PRIVATE BRIDGE_ENABLE_QA_HOOKS=1)

@@ -10,6 +10,8 @@
 # Output (32 floats): hit probabilities in [0,1], same 8×4 layout (voice-major flatten).
 #   Runtime (Bridge): BridgeMLManager::generateDrums enforces 32 outputs; DrumEngine runs
 #   four inferences per full bar (one per quarter of 16 steps) with captureMLContextForQuarter.
+#   mergeMLBlockAtQuarter treats ONNX as a humanize/editing layer: velocity reshaping on existing
+#   backbone hits first; sparse new hits require stronger confidence thresholds than legacy merge.
 from __future__ import annotations
 
 import os
