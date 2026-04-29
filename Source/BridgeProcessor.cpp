@@ -12,6 +12,7 @@
 #include "BridgePhrase.h"
 #include "EnsembleHints.h"
 #include <array>
+#include <cmath>
 #include <vector>
 
 namespace
@@ -770,6 +771,24 @@ void BridgeProcessor::prepareToPlay (double sr, int spb)
     guitarPendingNoteOffs.clear();
     syncGuitarEngineFromAPVTS();
     guitarEngine.rebuildGridPreview();
+
+    refreshClipTimelinesFromEngines();
+}
+
+// ONNX / ML paths (e.g. drum humanizer, melodic models) read engine pattern buffers only. After any
+// generate or APVTS-driven pattern change, rebuild clips here so playback and BridgeMidiClipEditor
+// stay the single timeline view of that same engine state (no separate tensor "adapter" layer yet).
+void BridgeProcessor::refreshClipTimelinesFromEngines()
+{
+    const int phraseSteps = readPhraseSteps (apvtsMain);
+    const double bpm      = juce::jmax (1.0, drumsLastBpm > 1.0 ? drumsLastBpm : 120.0);
+    const double spb      = sampleRate * 60.0 / bpm;
+    const double ppqPerStep = getTransportPpqPerPatternStep();
+    const double sps      = spb * ppqPerStep;
+    drumsClip.rebuildFromDrumEngine (drumEngine, phraseSteps, sps, spb);
+    bassClip.rebuildFromBassEngine (bassEngine, phraseSteps, sps, spb);
+    pianoClip.rebuildFromPianoEngine (pianoEngine, phraseSteps, sps, spb);
+    guitarClip.rebuildFromGuitarEngine (guitarEngine, phraseSteps, sps, spb);
 }
 
 const DrumPattern& BridgeProcessor::getPatternForGrid() const
@@ -1169,6 +1188,7 @@ void BridgeProcessor::rebuildDrumsGridPreview()
 {
     syncDrumsEngineFromAPVTS();
     drumEngine.rebuildGridPreview();
+    refreshClipTimelinesFromEngines();
 }
 
 void BridgeProcessor::randomizeDrumsSettings()
@@ -1216,6 +1236,7 @@ void BridgeProcessor::runDrumGenerateForCurrentMainSelection()
         drumEngine.generatePatternRange (a - 1, juce::jmin (b - 1, drumEngine.getPatternLen() - 1), false, mlManager.get());
     }
     publishDrumActivityToFollowers();
+    refreshClipTimelinesFromEngines();
 }
 
 void BridgeProcessor::regenerateDrumsAfterKnobChange()
@@ -1319,6 +1340,7 @@ void BridgeProcessor::triggerBassGenerate()
         bassEngine.generatePatternRange (a - 1, b - 1, false, mlManager.get());
     }
     refreshChordsBassHintFromBass();
+    refreshClipTimelinesFromEngines();
 }
 
 void BridgeProcessor::applyBassStyleAndRegenerate (int styleIndex)
@@ -1366,6 +1388,7 @@ void BridgeProcessor::rebuildBassGridPreview()
     markMelodicPreviewFlushIfMessageThread();
     syncBassEngineFromAPVTS();
     bassEngine.rebuildGridPreview();
+    refreshClipTimelinesFromEngines();
     if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
         ed->notifyBassPatternChanged();
 }
@@ -1609,6 +1632,7 @@ void BridgeProcessor::triggerPianoGenerate()
         getMainSelectionBounds (phraseSteps, a, b);
         pianoEngine.generatePatternRange (a - 1, b - 1, false, mlManager.get());
     }
+    refreshClipTimelinesFromEngines();
 }
 
 void BridgeProcessor::applyPianoStyleAndRegenerate (int styleIndex)
@@ -1627,6 +1651,7 @@ void BridgeProcessor::rebuildPianoGridPreview()
     markMelodicPreviewFlushIfMessageThread();
     syncPianoEngineFromAPVTS();
     pianoEngine.rebuildGridPreview();
+    refreshClipTimelinesFromEngines();
     if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
         ed->notifyPianoPatternChanged();
 }
@@ -1655,6 +1680,7 @@ void BridgeProcessor::triggerGuitarGenerate()
         getMainSelectionBounds (phraseSteps, a, b);
         guitarEngine.generatePatternRange (a - 1, b - 1, false, mlManager.get());
     }
+    refreshClipTimelinesFromEngines();
 }
 
 void BridgeProcessor::applyGuitarStyleAndRegenerate (int styleIndex)
@@ -1672,6 +1698,7 @@ void BridgeProcessor::rebuildGuitarGridPreview()
     markMelodicPreviewFlushIfMessageThread();
     syncGuitarEngineFromAPVTS();
     guitarEngine.rebuildGridPreview();
+    refreshClipTimelinesFromEngines();
     if (auto* ed = dynamic_cast<BridgeEditor*> (getActiveEditor()))
         ed->notifyGuitarPatternChanged();
 }
@@ -1733,25 +1760,64 @@ void BridgeProcessor::scheduleDrumsNotesForStep (int globalStep, int wrappedStep
     if (! mainRowMidiOpen (apvtsMain, "mainMuteDrums", "mainSoloDrums"))
         return;
 
-    DrumStep hits;
-    drumEngine.evaluateStepForPlayback (globalStep, wrappedStep, hits, samplesPerStep);
-
     const bool stepWasAnticipated = (globalStep == drumsAnticipatedGlobalStep);
     const uint32_t alreadyFiredMask = stepWasAnticipated ? drumsAnticipatedDrumMask : 0u;
+
+    if (! drumsClip.notes.empty())
+    {
+        const double ppqPerStep = getTransportPpqPerPatternStep();
+        const double eventNominalPpq = (double) globalStep * ppqPerStep;
+
+        for (const auto& n : drumsClip.notes)
+        {
+            if (n.stepIndex0 != wrappedStep)
+                continue;
+            const int lane = n.drumLane();
+            if (lane < 0 || lane >= NUM_DRUMS)
+                continue;
+            if (! isDrumsLaneAudible (lane))
+                continue;
+            if ((alreadyFiredMask & (1u << lane)) != 0u)
+                continue;
+
+            const double firePpq = eventNominalPpq + n.microPpq;
+            int finalOff = (int) std::floor ((firePpq - transportBlockPpqStart) * transportBlockSamplesPerBeat);
+            finalOff = juce::jlimit (0, samplesPerBlock - 1, finalOff);
+
+            const int midiNote = juce::jlimit (1, 127, (int) n.pitch);
+            const float g = leaderMidiGain (apvtsMain);
+            const int velInt = juce::roundToInt ((float) n.velocity * g);
+            const uint8 vel = (uint8) juce::jlimit (1, 127, velInt);
+
+            midi.addEvent (juce::MidiMessage::noteOn (drumsMidiChannel, midiNote, vel), finalOff);
+
+            const int64 gateSamples = juce::jmax ((int64) (sampleRate * 0.05),
+                                                  (int64) (n.lengthPpq * transportBlockSamplesPerBeat));
+            const int64 offAt = midiSampleClock + finalOff + gateSamples;
+            drumsPendingNoteOffs.add ({ drumsMidiChannel, midiNote, offAt });
+        }
+
+        if (stepWasAnticipated)
+        {
+            drumsAnticipatedGlobalStep = INT_MIN;
+            drumsAnticipatedDrumMask   = 0u;
+        }
+        return;
+    }
+
+    DrumStep hits;
+    drumEngine.evaluateStepForPlayback (globalStep, wrappedStep, hits, samplesPerStep);
 
     for (int drum = 0; drum < NUM_DRUMS; ++drum)
     {
         if (! isDrumsLaneAudible (drum)) continue;
         if (! hits[(size_t) drum].active) continue;
-        // Skip drums that were already emitted as anticipations in the previous block.
         if ((alreadyFiredMask & (1u << drum)) != 0u) continue;
 
         int swingOff = drumEngine.getSwingOffset (wrappedStep, samplesPerStep);
         int humanOff = hits[(size_t) drum].timeShift;
         int finalOff = juce::jlimit (0, samplesPerBlock - 1, sampleOffset + swingOff + humanOff);
 
-        // GM drum map (see DRUM_MIDI_NOTES); default MIDI channel 10 — drum racks must listen on
-        // that channel (or omni). Melodic instruments on ch 1 only will play bass, not drums.
         const int midiNote = juce::jlimit (1, 127, (int) DRUM_MIDI_NOTES[drum]);
         float g = leaderMidiGain (apvtsMain);
         const int velInt = juce::roundToInt ((float) hits[(size_t) drum].velocity * g);
@@ -1806,6 +1872,8 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
+    transportBlockPpqStart           = ppqStart;
+    transportBlockSamplesPerBeat   = samplesPerBeat;
 
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
@@ -1881,35 +1949,69 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
             const int mod = loopLen > 0 ? ((nextGlobalStep - ls0) % loopLen + loopLen) % loopLen : 0;
             const int nextWrappedStep = ls0 + mod;
 
-            DrumStep nextHits;
-            drumEngine.evaluateStepForPlayback (nextGlobalStep, nextWrappedStep, nextHits, samplesPerStep);
-
-            const int swingOff = drumEngine.getSwingOffset (nextWrappedStep, samplesPerStep);
-            const float g = leaderMidiGain (apvtsMain);
-
-            for (int drum = 0; drum < NUM_DRUMS; ++drum)
+            if (! drumsClip.notes.empty())
             {
-                if (! isDrumsLaneAudible (drum)) continue;
-                if (! nextHits[(size_t) drum].active) continue;
+                const float g = leaderMidiGain (apvtsMain);
+                for (const auto& n : drumsClip.notes)
+                {
+                    if (n.stepIndex0 != nextWrappedStep)
+                        continue;
+                    const int lane = n.drumLane();
+                    if (lane < 0 || lane >= NUM_DRUMS || ! isDrumsLaneAudible (lane))
+                        continue;
 
-                const int humanOff = nextHits[(size_t) drum].timeShift;
-                const int rawOff   = nextSampleOffset + swingOff + humanOff;
-                if (rawOff < 0 || rawOff >= numSamples) continue;
+                    const double firePpq = (double) nextGlobalStep * ppqPerStep + n.microPpq;
+                    const int rawOff = (int) std::floor ((firePpq - ppqStart) * samplesPerBeat);
+                    if (rawOff < 0 || rawOff >= numSamples)
+                        continue;
 
-                const int finalOff = juce::jlimit (0, numSamples - 1, rawOff);
-                const int midiNote = juce::jlimit (1, 127, (int) DRUM_MIDI_NOTES[drum]);
-                const int velInt   = juce::roundToInt ((float) nextHits[(size_t) drum].velocity * g);
-                const uint8 vel    = (uint8) juce::jlimit (1, 127, velInt);
+                    const int finalOff = juce::jlimit (0, numSamples - 1, rawOff);
+                    const int midiNote = juce::jlimit (1, 127, (int) n.pitch);
+                    const int velInt   = juce::roundToInt ((float) n.velocity * g);
+                    const uint8 vel    = (uint8) juce::jlimit (1, 127, velInt);
 
-                const int midiChannel = drumsMidiChannel;
-                midiMessages.addEvent (juce::MidiMessage::noteOn (midiChannel, midiNote, vel), finalOff);
+                    midiMessages.addEvent (juce::MidiMessage::noteOn (drumsMidiChannel, midiNote, vel), finalOff);
 
-                const int64 gateSamples = juce::jmax ((int64) (sampleRate * 0.05),
-                                                      (int64) (samplesPerStep * 0.18));
-                const int64 offAt = midiSampleClock + finalOff + gateSamples;
-                drumsPendingNoteOffs.add ({ midiChannel, midiNote, offAt });
+                    const int64 gateSamples = juce::jmax ((int64) (sampleRate * 0.05),
+                                                          (int64) (n.lengthPpq * samplesPerBeat));
+                    const int64 offAt = midiSampleClock + finalOff + gateSamples;
+                    drumsPendingNoteOffs.add ({ drumsMidiChannel, midiNote, offAt });
 
-                anticipatedMask |= (1u << drum);
+                    anticipatedMask |= (1u << lane);
+                }
+            }
+            else
+            {
+                DrumStep nextHits;
+                drumEngine.evaluateStepForPlayback (nextGlobalStep, nextWrappedStep, nextHits, samplesPerStep);
+
+                const int swingOff = drumEngine.getSwingOffset (nextWrappedStep, samplesPerStep);
+                const float g = leaderMidiGain (apvtsMain);
+
+                for (int drum = 0; drum < NUM_DRUMS; ++drum)
+                {
+                    if (! isDrumsLaneAudible (drum)) continue;
+                    if (! nextHits[(size_t) drum].active) continue;
+
+                    const int humanOff = nextHits[(size_t) drum].timeShift;
+                    const int rawOff   = nextSampleOffset + swingOff + humanOff;
+                    if (rawOff < 0 || rawOff >= numSamples) continue;
+
+                    const int finalOff = juce::jlimit (0, numSamples - 1, rawOff);
+                    const int midiNote = juce::jlimit (1, 127, (int) DRUM_MIDI_NOTES[drum]);
+                    const int velInt   = juce::roundToInt ((float) nextHits[(size_t) drum].velocity * g);
+                    const uint8 vel    = (uint8) juce::jlimit (1, 127, velInt);
+
+                    const int midiChannel = drumsMidiChannel;
+                    midiMessages.addEvent (juce::MidiMessage::noteOn (midiChannel, midiNote, vel), finalOff);
+
+                    const int64 gateSamples = juce::jmax ((int64) (sampleRate * 0.05),
+                                                          (int64) (samplesPerStep * 0.18));
+                    const int64 offAt = midiSampleClock + finalOff + gateSamples;
+                    drumsPendingNoteOffs.add ({ midiChannel, midiNote, offAt });
+
+                    anticipatedMask |= (1u << drum);
+                }
             }
         }
 
@@ -1920,11 +2022,36 @@ void BridgeProcessor::processDrumsBlock (juce::AudioBuffer<float>& buffer, juce:
     sendDrumsNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
 }
 
-void BridgeProcessor::scheduleBassNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
+void BridgeProcessor::scheduleBassNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
                                                    int sampleOffset, juce::MidiBuffer& midi)
 {
     if (! mainRowMidiOpen (apvtsMain, "mainMuteBass", "mainSoloBass"))
         return;
+
+    if (! bassClip.notes.empty())
+    {
+        const double ppqPerStep = getTransportPpqPerPatternStep();
+        for (const auto& n : bassClip.notes)
+        {
+            if (n.stepIndex0 != wrappedStep)
+                continue;
+
+            const double firePpq = (double) globalStep * ppqPerStep + n.microPpq;
+            int finalOff = (int) std::floor ((firePpq - transportBlockPpqStart) * transportBlockSamplesPerBeat);
+            finalOff = juce::jlimit (0, samplesPerBlock - 1, finalOff);
+
+            const float g = leaderMidiGain (apvtsMain);
+            const int note = juce::jlimit (0, 127, (int) n.pitch);
+            const uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) n.velocity * g + 0.5f));
+
+            midi.addEvent (juce::MidiMessage::noteOn (bassMidiChannel, note, vel), finalOff);
+
+            const int durSamples = juce::jmax (1, (int) std::floor (n.lengthPpq * transportBlockSamplesPerBeat));
+            const int64 offAt    = midiSampleClock + finalOff + durSamples;
+            bassPendingNoteOffs.add ({ bassMidiChannel, note, offAt });
+        }
+        return;
+    }
 
     const BassHit& hit  = bassEngine.getStep (wrappedStep);
     if (!hit.active) return;
@@ -1975,6 +2102,8 @@ void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
+    transportBlockPpqStart         = ppqStart;
+    transportBlockSamplesPerBeat = samplesPerBeat;
 
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
@@ -2031,11 +2160,36 @@ void BridgeProcessor::processBassBlock (juce::AudioBuffer<float>& buffer, juce::
     sendBassNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
 }
 
-void BridgeProcessor::schedulePianoNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
+void BridgeProcessor::schedulePianoNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
                                                   int sampleOffset, juce::MidiBuffer& midi)
 {
     if (! mainRowMidiOpen (apvtsMain, "mainMutePiano", "mainSoloPiano"))
         return;
+
+    if (! pianoClip.notes.empty())
+    {
+        const double ppqPerStep = getTransportPpqPerPatternStep();
+        for (const auto& n : pianoClip.notes)
+        {
+            if (n.stepIndex0 != wrappedStep)
+                continue;
+
+            const double firePpq = (double) globalStep * ppqPerStep + n.microPpq;
+            int finalOff = (int) std::floor ((firePpq - transportBlockPpqStart) * transportBlockSamplesPerBeat);
+            finalOff = juce::jlimit (0, samplesPerBlock - 1, finalOff);
+
+            const float g = leaderMidiGain (apvtsMain);
+            const int note = juce::jlimit (0, 127, (int) n.pitch);
+            const uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) n.velocity * g + 0.5f));
+
+            midi.addEvent (juce::MidiMessage::noteOn (pianoMidiChannel, note, vel), finalOff);
+
+            const int durSamples = juce::jmax (1, (int) std::floor (n.lengthPpq * transportBlockSamplesPerBeat));
+            const int64 offAt    = midiSampleClock + finalOff + durSamples;
+            pianoPendingNoteOffs.add ({ pianoMidiChannel, note, offAt });
+        }
+        return;
+    }
 
     const PianoHit& hit = pianoEngine.getStep (wrappedStep);
     if (! hit.active) return;
@@ -2087,6 +2241,8 @@ void BridgeProcessor::processPianoBlock (juce::AudioBuffer<float>& buffer, juce:
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
+    transportBlockPpqStart         = ppqStart;
+    transportBlockSamplesPerBeat = samplesPerBeat;
 
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
@@ -2148,11 +2304,36 @@ void BridgeProcessor::processPianoBlock (juce::AudioBuffer<float>& buffer, juce:
     sendPianoNoteOffs (midiMessages, numSamples > 0 ? numSamples - 1 : 0);
 }
 
-void BridgeProcessor::scheduleGuitarNotesForStep (int /*globalStep*/, int wrappedStep, double samplesPerStep,
+void BridgeProcessor::scheduleGuitarNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
                                                 int sampleOffset, juce::MidiBuffer& midi)
 {
     if (! mainRowMidiOpen (apvtsMain, "mainMuteGuitar", "mainSoloGuitar"))
         return;
+
+    if (! guitarClip.notes.empty())
+    {
+        const double ppqPerStep = getTransportPpqPerPatternStep();
+        for (const auto& n : guitarClip.notes)
+        {
+            if (n.stepIndex0 != wrappedStep)
+                continue;
+
+            const double firePpq = (double) globalStep * ppqPerStep + n.microPpq;
+            int finalOff = (int) std::floor ((firePpq - transportBlockPpqStart) * transportBlockSamplesPerBeat);
+            finalOff = juce::jlimit (0, samplesPerBlock - 1, finalOff);
+
+            const float g = leaderMidiGain (apvtsMain);
+            const int note = juce::jlimit (0, 127, (int) n.pitch);
+            const uint8 vel = (uint8) juce::jlimit (1, 127, (int) ((float) n.velocity * g + 0.5f));
+
+            midi.addEvent (juce::MidiMessage::noteOn (guitarMidiChannel, note, vel), finalOff);
+
+            const int durSamples = juce::jmax (1, (int) std::floor (n.lengthPpq * transportBlockSamplesPerBeat));
+            const int64 offAt    = midiSampleClock + finalOff + durSamples;
+            guitarPendingNoteOffs.add ({ guitarMidiChannel, note, offAt });
+        }
+        return;
+    }
 
     const GuitarHit& hit = guitarEngine.getStep (wrappedStep);
     if (! hit.active) return;
@@ -2203,6 +2384,8 @@ void BridgeProcessor::processGuitarBlock (juce::AudioBuffer<float>& buffer, juce
 
     double ppqStart = pos.ppqPosition;
     double ppqEnd   = ppqStart + (double) numSamples / samplesPerBeat;
+    transportBlockPpqStart         = ppqStart;
+    transportBlockSamplesPerBeat = samplesPerBeat;
 
     int stepStart = (int)std::floor (ppqStart / ppqPerStep);
     int stepEnd   = (int)std::floor (ppqEnd   / ppqPerStep);
@@ -2565,7 +2748,8 @@ void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
     // v14: transport fixed to 16ths; jamPeriodBars 4 choices; uiTheme single Material Dark;
     //      rollSpanOctaves on melodic APVTS; jam/uiTheme migrations on load.
     // v15: phrase / jam period choices drop 16 bars; clamp legacy index 3 to 8 bars.
-    root.setAttribute ("bridgeVersion", 15);
+    // v16: clip timelines (Ableton-style note model) for drums/bass/piano/guitar.
+    root.setAttribute ("bridgeVersion", 16);
     if (auto xmlM = apvtsMain.copyState().createXml())
         root.addChildElement (xmlM.release());
     if (auto xmlA = apvtsDrums.copyState().createXml())
@@ -2579,6 +2763,10 @@ void BridgeProcessor::getStateInformation (juce::MemoryBlock& data)
     root.setAttribute ("activeTab", activeTab.load());
     root.setAttribute ("mlPendingModelUpdateVersion", mlPendingModelUpdateVersion);
     root.setAttribute ("mlPendingModelUpdateUrl", mlPendingModelUpdateUrl);
+    drumsClip.toXml (root, "DrumsClip");
+    bassClip.toXml (root, "BassClip");
+    pianoClip.toXml (root, "PianoClip");
+    guitarClip.toXml (root, "GuitarClip");
     copyXmlToBinary (root, data);
 }
 
@@ -2744,6 +2932,20 @@ void BridgeProcessor::setStateInformation (const void* data, int sizeInBytes)
 
             if (auto* p = dynamic_cast<juce::AudioParameterChoice*> (apvtsMain.getParameter ("uiTheme")))
                 bridge::theme::applyThemeChoiceIndex (p->getIndex());
+
+            if (bridgeVersion >= 16)
+            {
+                if (drumsClip.fromXml (*xml, "DrumsClip") && ! drumsClip.notes.empty())
+                    drumEngine.importFromClipTimeline (drumsClip);
+                if (bassClip.fromXml (*xml, "BassClip") && ! bassClip.notes.empty())
+                    bassEngine.importFromClipTimeline (bassClip);
+                if (pianoClip.fromXml (*xml, "PianoClip") && ! pianoClip.notes.empty())
+                    pianoEngine.importFromClipTimeline (pianoClip);
+                if (guitarClip.fromXml (*xml, "GuitarClip") && ! guitarClip.notes.empty())
+                    guitarEngine.importFromClipTimeline (guitarClip);
+            }
+
+            refreshClipTimelinesFromEngines();
         }
     }
 }

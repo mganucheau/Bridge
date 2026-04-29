@@ -1,4 +1,5 @@
 #include "BassEngine.h"
+#include "../bridge_clip/BridgeClipTimeline.h"
 #include "ml/BridgeMLManager.h"
 #include <cmath>
 
@@ -322,6 +323,12 @@ void BassEngine::rebuildGridPreview()
                 out.velocity = (uint8) jmin (127, (int) out.velocity + 20);
         }
     }
+}
+
+void BassEngine::importFromClipTimeline (const BridgeClipTimeline& clip)
+{
+    clip.applyIntoBassEngine (*this);
+    rebuildGridPreview();
 }
 
 void BassEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int rangeToStep0)

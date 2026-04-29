@@ -10,6 +10,7 @@
 #include "../BridgePhrase.h"
 
 class BridgeMLManager;
+class BridgeClipTimeline;
 
 struct DrumHit
 {
@@ -66,6 +67,7 @@ public:
 
     /** Editor / UI: mutate the committed pattern (then call rebuildGridPreview). */
     DrumPattern& editPattern() noexcept { return pattern; }
+    void importFromClipTimeline (const BridgeClipTimeline& clip);
 
     // ── Parameters (0.0–1.0 unless noted) ─────────────────────────────────
     void setStyle      (int s)   { style      = jlimit(0, NUM_STYLES - 1, s); }

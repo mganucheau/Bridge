@@ -9,338 +9,16 @@
 #include "drums/DrumsStylePresets.h"
 #include "drums/DrumsLookAndFeel.h"
 
-namespace
-{
-/** Match melodic grid: lane column + step columns use same cellW / rowH as Bass/Piano/Guitar grid.
-    PatternFlow-style: when `barCount` is > 1, the visible grid contains barCount * NUM_STEPS cells
-    sharing the same container width — `cellW` shrinks accordingly so everything still fits. */
-void computeDrumGridGeometry (juce::Rectangle<float> fullBounds,
-                              int barCount,
-                              float& laneX, float& laneW,
-                              float& originX, float& originY,
-                              float& cellW, float& rowH)
-{
-    laneX = 0.0f;
-    laneW = (float) bridge::kMelodicKeyStripWidth;
-    const float gridLeft = laneW;
-    const float gridW = juce::jmax (1.0f, fullBounds.getWidth() - laneW);
-    const float gridBodyH = fullBounds.getHeight();
-    const int totalCells = juce::jmax (1, barCount) * NUM_STEPS;
-    cellW = gridW / (float) totalCells;
-    rowH = gridBodyH / (float) bridge::kMelodicOctaveRows;
-    originX = gridLeft;
-    const float drumBlockH = rowH * (float) NUM_DRUMS;
-    originY = (gridBodyH - drumBlockH) * 0.5f;
-}
-} // namespace
-
-// ─── DrumGridComponent ────────────────────────────────────────────────────────
-
-int DrumGridComponent::visualRowToDrum (int visualRow)
-{
-    visualRow = juce::jlimit (0, NUM_DRUMS - 1, visualRow);
-    return NUM_DRUMS - 1 - visualRow;
-}
-
-void DrumGridComponent::syncGeometryFromBounds()
-{
-    const auto full = getLocalBounds().toFloat();
-    if (full.getWidth() < 1.0f || full.getHeight() < 1.0f)
-        return;
-    computeDrumGridGeometry (full, barCount, geomLaneX, geomLaneW, geomOriginX, geomOriginY, geomCellW, geomRowH);
-}
-
-void DrumGridComponent::setBarCount (int bars)
-{
-    bars = juce::jlimit (1, 64, bars);
-    if (bars == barCount)
-        return;
-    barCount = bars;
-    syncGeometryFromBounds();
-    resized();
-    repaint();
-}
-
-DrumGridComponent::DrumGridComponent (BridgeProcessor& p)
-    : proc (p)
-{
-    auto styleLaneMute = [] (juce::TextButton& btn)
-    {
-        btn.setClickingTogglesState (true);
-        btn.setConnectedEdges (0);
-        btn.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack());
-        btn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffffd5c4));
-        btn.setColour (juce::TextButton::textColourOffId, bridge::colors::textDim());
-        btn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xffff453a));
-    };
-    auto styleLaneSolo = [] (juce::TextButton& btn)
-    {
-        btn.setClickingTogglesState (true);
-        btn.setConnectedEdges (0);
-        btn.setColour (juce::TextButton::buttonColourId, bridge::colors::knobTrack());
-        btn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffb3d7ff));
-        btn.setColour (juce::TextButton::textColourOffId, bridge::colors::textDim());
-        btn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff0a84ff));
-    };
-
-    for (int drum = 0; drum < NUM_DRUMS; ++drum)
-    {
-        auto* mute = muteButtons.add (new juce::TextButton ("M"));
-        mute->setTooltip ("Mute lane");
-        styleLaneMute (*mute);
-        addAndMakeVisible (mute);
-        muteAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (proc.apvtsDrums,
-                                                                                       "mute_" + juce::String (drum),
-                                                                                       *mute));
-
-        auto* solo = soloButtons.add (new juce::TextButton ("S"));
-        solo->setTooltip ("Solo lane (any solo mutes all others)");
-        styleLaneSolo (*solo);
-        addAndMakeVisible (solo);
-        soloAttachments.add (new juce::AudioProcessorValueTreeState::ButtonAttachment (proc.apvtsDrums,
-                                                                                       "solo_" + juce::String (drum),
-                                                                                       *solo));
-    }
-}
-
-void DrumGridComponent::paint (juce::Graphics& g)
-{
-    using namespace DrumsHIG;
-
-    auto& pattern = proc.getPatternForGrid();
-    int   patLen  = proc.drumEngine.getPatternLen();
-
-    int loopStart = 1, loopEnd = NUM_STEPS;
-    proc.getDrumsLoopBounds (loopStart, loopEnd);
-    const int ls0 = loopStart - 1;
-    const int le0 = loopEnd - 1;
-
-    auto full = getLocalBounds().toFloat();
-    if (geomLaneW <= 0.0f)
-        syncGeometryFromBounds();
-
-    g.setColour (bridge::colors::cardSurface());
-    g.fillRect (full);
-    g.setColour (outline.withAlpha (0.35f));
-    g.drawRect (full.reduced (0.5f), 1.0f);
-
-    g.setColour (bridge::hig::tertiaryGroupedBackground);
-    g.fillRect (geomLaneX, full.getY(), geomLaneW, full.getHeight());
-    g.setColour (bridge::hig::separatorOpaque.withAlpha (0.5f));
-    g.drawVerticalLine ((int) geomOriginX, full.getY(), full.getBottom());
-
-    const float pad = 2.0f;
-
-    g.setFont (bridge::hig::uiFont (11.0f, "Semibold"));
-    for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
-    {
-        const int drum = visualRowToDrum (visualRow);
-        const float cy = geomOriginY + (float) visualRow * geomRowH;
-        const int btn = juce::jlimit (12, 17, (int) (geomRowH * 0.42f));
-        const int pairW = btn * 2 + 4;
-        auto laneRow = juce::Rectangle<float> (geomLaneX + 3.0f, cy, geomLaneW - 6.0f, geomRowH);
-        auto nameArea = laneRow.removeFromLeft (juce::jmax (18.0f, laneRow.getWidth() - (float) pairW));
-        g.setColour (juce::Colours::white);
-        g.drawText (DRUM_NAMES[drum], nameArea.toNearestInt(), juce::Justification::centredLeft, true);
-    }
-
-    const int bars       = juce::jmax (1, barCount);
-    const int totalCells = bars * NUM_STEPS;
-    const int tdIdx      = bridge::phrase::readTimeDivisionChoiceIndex (proc.apvtsMain);
-    const int accentPeriod = bridge::phrase::accentColumnPeriodInSixteenthsFromTimeDivisionIndex (tdIdx);
-
-    for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
-    {
-        const int drum = visualRowToDrum (visualRow);
-        float cy = geomOriginY + (float) visualRow * geomRowH;
-
-        const bool muted = proc.apvtsDrums.getRawParameterValue ("mute_" + juce::String (drum))->load() > 0.5f;
-        const bool soloed = proc.apvtsDrums.getRawParameterValue ("solo_" + juce::String (drum))->load() > 0.5f;
-        bool anySolo = false;
-        for (int d = 0; d < NUM_DRUMS; ++d)
-            anySolo = anySolo || (proc.apvtsDrums.getRawParameterValue ("solo_" + juce::String (d))->load() > 0.5f);
-
-        const bool audible = anySolo ? soloed : ! muted;
-
-        for (int cellIdx = 0; cellIdx < totalCells; ++cellIdx)
-        {
-            const int  step       = cellIdx;          // unique across the phrase
-            const int  stepInBar  = cellIdx % NUM_STEPS;
-            float cx = geomOriginX + (float) cellIdx * geomCellW + pad;
-            auto  cell = juce::Rectangle<float> (cx, cy + pad,
-                                                 geomCellW - pad * 2.0f, geomRowH - pad * 2.0f);
-
-            bool inPattern = (step < patLen);
-            bool inLoop = inPattern && (step >= ls0 && step <= le0);
-            const auto& hit = pattern[(size_t) step][(size_t) drum];
-
-            if (! inPattern)
-            {
-                g.setColour (surfaceDim.interpolatedWith (surfaceContainerHigh, 0.35f));
-                g.fillRect (cell);
-                continue;
-            }
-
-            bool isBeat = ((stepInBar % accentPeriod) == 0);
-
-            if (! inLoop)
-            {
-                auto baseDim = surfaceDim.interpolatedWith (surfaceContainerHigh, 0.5f);
-                if (hit.active)
-                {
-                    float velFrac = hit.velocity / 127.0f;
-                    auto  col = DrumsColors::DrumColors[drum].withAlpha (0.22f + velFrac * 0.25f);
-                    g.setColour (col);
-                    g.fillRect (cell);
-                }
-                else
-                {
-                    g.setColour (baseDim);
-                    g.fillRect (cell);
-                }
-                g.setColour (outlineVariant.withAlpha (0.25f));
-                g.drawRect (cell, 1.0f);
-                continue;
-            }
-
-            if (hit.active)
-            {
-                float velFrac = hit.velocity / 127.0f;
-                auto  col = DrumsColors::DrumColors[drum];
-
-                if (velFrac < 0.4f)
-                    col = col.withAlpha (0.35f + velFrac * 0.6f);
-
-                if (step == currentStep)
-                    col = col.brighter (0.25f);
-
-                if (! audible)
-                    col = col.withAlpha (0.15f);
-
-                g.setColour (col);
-                g.fillRect (cell);
-
-                float velLineW = cell.getWidth() * velFrac;
-                g.setColour (onSurface.withAlpha (0.35f));
-                g.fillRect  (cell.getX(), cell.getY(), velLineW, 2.0f);
-            }
-            else
-            {
-                auto baseCol = isBeat ? surfaceContainerHighest : surfaceContainerHigh;
-                if (step == currentStep)
-                    baseCol = primary().withAlpha (0.12f);
-
-                if (! audible)
-                    baseCol = baseCol.withAlpha (0.35f);
-
-                g.setColour (baseCol);
-                g.fillRect (cell);
-            }
-
-            auto borderCol = isBeat ? outline.withAlpha (0.55f)
-                                    : outlineVariant.withAlpha (0.45f);
-            g.setColour (borderCol);
-            g.drawRect (cell, 1.0f);
-        }
-    }
-
-    // Heavier separators on bar boundaries so the phrase structure is legible at any zoom level.
-    if (bars > 1)
-    {
-        g.setColour (outline.withAlpha (0.7f));
-        const float by0 = geomOriginY;
-        const float by1 = geomOriginY + geomRowH * (float) NUM_DRUMS;
-        for (int bar = 1; bar < bars; ++bar)
-        {
-            const float bx = geomOriginX + (float) (bar * NUM_STEPS) * geomCellW;
-            g.drawVerticalLine ((int) bx, by0, by1);
-        }
-    }
-
-    const bool drumsOn = proc.apvtsMain.getRawParameterValue ("drumsOn") != nullptr
-                             && proc.apvtsMain.getRawParameterValue ("drumsOn")->load() > 0.5f;
-
-    const int phraseCells = juce::jmin (patLen, totalCells);
-    if (drumsOn && currentStep >= 0 && currentStep < phraseCells)
-    {
-        float cx = geomOriginX + (float) currentStep * geomCellW;
-        g.setColour (primary().withAlpha (0.08f));
-        g.fillRect  (cx, geomOriginY, geomCellW, geomRowH * (float) NUM_DRUMS);
-
-        g.setColour (primary().withAlpha (0.85f));
-        g.fillRect  (cx + pad, geomOriginY, geomCellW - pad * 2.0f, 2.0f);
-    }
-}
-
-void DrumGridComponent::mouseDown (const juce::MouseEvent& e)
-{
-    if (proc.apvtsMain.getRawParameterValue ("drumsOn") == nullptr
-        || proc.apvtsMain.getRawParameterValue ("drumsOn")->load() <= 0.5f)
-        return;
-
-    int patLen = proc.drumEngine.getPatternLen();
-
-    if (geomLaneW <= 0.0f)
-        syncGeometryFromBounds();
-
-    if (e.position.x < geomOriginX) return;
-
-    const int bars = juce::jmax (1, barCount);
-    const int totalCells = bars * NUM_STEPS;
-
-    int cellIdx = (int) ((e.position.x - geomOriginX) / geomCellW);
-    int visualRow = (int) ((e.position.y - geomOriginY) / geomRowH);
-    int drum = visualRowToDrum (visualRow);
-
-    if (cellIdx < 0 || cellIdx >= totalCells || visualRow < 0 || visualRow >= NUM_DRUMS
-        || drum < 0 || drum >= NUM_DRUMS) return;
-
-    // Phrase length is a true multi-bar pattern; each cell index maps directly to the step.
-    int step = cellIdx;
-    if (step >= patLen) return;
-
-    auto& pat = proc.drumEngine.editPattern();
-    pat[(size_t) step][(size_t) drum].active   = ! pat[(size_t) step][(size_t) drum].active;
-    pat[(size_t) step][(size_t) drum].velocity = 100;
-    proc.drumEngine.rebuildGridPreview();
-
-    repaint();
-}
-
-void DrumGridComponent::resized()
-{
-    syncGeometryFromBounds();
-
-    const int rowHi = juce::jmax (1, (int) geomRowH);
-    const int btn = juce::jlimit (12, 17, rowHi * 7 / 16);
-    const int pairGap = 4;
-
-    for (int visualRow = 0; visualRow < NUM_DRUMS; ++visualRow)
-    {
-        const int drum = visualRowToDrum (visualRow);
-        const int y = (int) (geomOriginY + (float) visualRow * geomRowH);
-        auto rowR = juce::Rectangle<int> ((int) geomLaneX, y, (int) geomLaneW, rowHi).reduced (3, 1);
-        auto pair = rowR.removeFromRight (btn * 2 + pairGap);
-        auto muteR = pair.removeFromLeft (btn).withSizeKeepingCentre (btn, btn);
-        pair.removeFromLeft (pairGap);
-        auto soloR = pair.withSizeKeepingCentre (btn, btn);
-        muteButtons[drum]->setBounds (muteR);
-        soloButtons[drum]->setBounds (soloR);
-    }
-}
-
-void DrumGridComponent::update (int activeStep)
-{
-    currentStep = activeStep;
-    repaint();
-}
-
 // ─── DrumsPanel ────────────────────────────────────────────────────────────────
 
 DrumsPanel::DrumsPanel (BridgeProcessor& p)
     : proc (p),
       instrumentStrip (InstrumentControlBar::makeDrumsConfig (p)),
-      drumGrid (p)
+      midiClipEditor (p,
+                      BridgeMidiClipEditor::InstrumentKind::drums,
+                      bridge::colors::accentDrums(),
+                      [this] (float dy) { adjustZoomX (dy); },
+                      [this] (float dy) { adjustZoomY (dy); })
 {
     setLookAndFeel (&laf);
 
@@ -360,11 +38,15 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
 
     proc.apvtsMain.addParameterListener ("drumsOn", this);
 
-    addAndMakeVisible (drumGrid);
+    addAndMakeVisible (melodicViewport);
+    melodicViewport.setViewedComponent (&midiClipEditor, false);
+    melodicViewport.setScrollBarsShown (true, true);
+    melodicViewport.setScrollBarThickness (10);
+    melodicViewport.getVerticalScrollBar().setLookAndFeel (&laf);
+
     addAndMakeVisible (loopStrip);
     loopStrip.setStepLabelGutter ((int) bridge::kMelodicKeyStripWidth);
     addAndMakeVisible (instrumentStrip);
-    addAndMakeVisible (velocityStrip);
 
     // ── Knob column (SWING / HUMANIZE / HOLD) ─────────────────────────────
     const auto accent = bridge::colors::accentDrums();
@@ -535,18 +217,6 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
             proc.apvtsDrums, "jamPeriodBars", jamPeriodBox);
     jamLabel.setVisible (false);
 
-    velocityStrip.velocityAt = [this] (int step) -> int
-    {
-        const auto& pat = proc.drumEngine.getPatternForGrid();
-        const int plen = proc.drumEngine.getPatternLen();
-        if (step < 0 || step >= plen) return 0;
-        int maxV = 0;
-        for (int drum = 0; drum < NUM_DRUMS; ++drum)
-            if (pat[(size_t) step][(size_t) drum].active)
-                maxV = juce::jmax (maxV, (int) pat[(size_t) step][(size_t) drum].velocity);
-        return maxV;
-    };
-
     instrumentStrip.getMuteButton().setTooltip ("Mute Drums");
     instrumentStrip.getSoloButton().setTooltip ("Solo Drums");
     instrumentStrip.getMuteButton().onClick = [this]
@@ -565,6 +235,7 @@ DrumsPanel::DrumsPanel (BridgeProcessor& p)
 DrumsPanel::~DrumsPanel()
 {
     densityComplexityDebounce.stopTimer();
+    melodicViewport.getVerticalScrollBar().setLookAndFeel (nullptr);
     proc.apvtsMain.removeParameterListener ("drumsOn", this);
     proc.apvtsMain.removeParameterListener ("loopStart", this);
     proc.apvtsMain.removeParameterListener ("loopEnd", this);
@@ -601,12 +272,9 @@ int DrumsPanel::currentPhraseBarCount() const
 void DrumsPanel::applyPhraseBars()
 {
     const int bars = currentPhraseBarCount();
-    drumGrid.setBarCount (bars);
     const int phraseSteps = bridge::phrase::phraseStepsForBars (bars);
     loopStrip.setBarRepeats (1);
     loopStrip.setNumSteps (phraseSteps);
-    velocityStrip.setBarRepeats (1);
-    velocityStrip.setNumSteps (phraseSteps);
     proc.drumEngine.setPhraseBars (bars);
     resized();
     repaint();
@@ -618,7 +286,8 @@ void DrumsPanel::applyDrumsPageState()
                         && proc.apvtsMain.getRawParameterValue ("drumsOn")->load() > 0.5f;
 
     instrumentStrip.setTrackPowered (on);
-    drumGrid.setEnabled (on);
+    melodicViewport.setEnabled (on);
+    midiClipEditor.setEnabled (on);
     loopStrip.setEnabled (on);
 
     auto enableAll = [on] (std::initializer_list<juce::Component*> cs)
@@ -632,7 +301,8 @@ void DrumsPanel::applyDrumsPageState()
                  &generateButton, &jamToggle, &jamPeriodBox });
 
     const float dim = on ? 1.0f : 0.42f;
-    drumGrid.setAlpha (dim);
+    melodicViewport.setAlpha (dim);
+    midiClipEditor.setAlpha (dim);
     loopStrip.setAlpha (dim);
 }
 
@@ -655,19 +325,41 @@ void DrumsPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentDrums());
-    auto velStripRow = card.removeFromBottom ((int) bridge::kVelocityStripHeightPx);
-    {
-        auto vel = velStripRow.withTrimmedTop (2);
-        vel.removeFromLeft ((int) bridge::kMelodicKeyStripWidth);
-        velocityStrip.setBounds (vel);
-    }
-    drumGrid.setBounds (card);
 
-    int ls = 1, le = bridge::phrase::kMaxSteps;
-    proc.getDrumsLoopBounds (ls, le);
-    velocityStrip.setStepRange (ls - 1, le - 1);
+    melodicViewport.setBounds (card);
+    const int viewW = juce::jmax (1, melodicViewport.getWidth());
+    const int viewH = juce::jmax (1, melodicViewport.getHeight());
+    const int phraseSteps = proc.drumEngine.getPatternLen();
+    loopStrip.setNumSteps (phraseSteps);
+
+    const int nRows = NUM_DRUMS;
+    const int nSteps = phraseSteps;
+    const int strip = (int) bridge::kMelodicKeyStripWidth;
+    const float baseCellW = (float) (viewW - strip) / (float) juce::jmax (1, nSteps);
+    const float baseCellH = (float) viewH / (float) nRows;
+    const float cellW = baseCellW * zoomX;
+    const float cellH = baseCellH * zoomY;
+    const int bodyW = strip + (int) (cellW * (float) nSteps);
+    const int chrome = BridgeMidiClipEditor::verticalChromePx;
+    const int bodyH = chrome + juce::jmax (1, (int) (cellH * (float) nRows));
+    midiClipEditor.setZoom (zoomX, zoomY);
+    midiClipEditor.setSize (bodyW, bodyH);
 
     layoutBottomControls (shell.bottomStrip);
+}
+
+void DrumsPanel::adjustZoomX (float delta)
+{
+    zoomX = juce::jlimit (0.4f, 6.0f, zoomX * (1.0f + delta * 0.3f));
+    midiClipEditor.setZoom (zoomX, zoomY);
+    resized();
+}
+
+void DrumsPanel::adjustZoomY (float delta)
+{
+    zoomY = juce::jlimit (0.4f, 6.0f, zoomY * (1.0f + delta * 0.3f));
+    midiClipEditor.setZoom (zoomX, zoomY);
+    resized();
 }
 
 void DrumsPanel::layoutBottomControls (juce::Rectangle<int> bottom)
@@ -840,7 +532,7 @@ void DrumsPanel::paint (juce::Graphics& g)
 
 void DrumsPanel::handleAsyncUpdate()
 {
-    drumGrid.repaint();
+    midiClipEditor.repaint();
     loopStrip.repaint();
 }
 
@@ -859,14 +551,15 @@ void DrumsPanel::parameterChanged (const juce::String& parameterID, float newVal
     }
     if (parameterID == "timeDivision")
     {
-        drumGrid.repaint();
+        midiClipEditor.repaint();
         return;
     }
     if (parameterID == "loopStart" || parameterID == "loopEnd" || parameterID == "playbackLoopOn"
         || parameterID == "uiTheme")
     {
         loopStrip.repaint();
-        drumGrid.repaint();
+        midiClipEditor.repaint();
+        resized();
     }
 
     if (parameterID == "density" || parameterID == "complexity")
@@ -917,6 +610,6 @@ void DrumsPanel::updateStepAnimation()
     if (step != lastAnimStep)
     {
         lastAnimStep = step;
-        drumGrid.update (step);
+        midiClipEditor.updatePlayhead (step);
     }
 }

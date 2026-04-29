@@ -7,6 +7,7 @@
 #include "bass/BassEngine.h"
 #include "piano/PianoEngine.h"
 #include "guitar/GuitarEngine.h"
+#include "bridge_clip/BridgeClipTimeline.h"
 #include "BridgeUpdateChecker.h"
 
 class BridgeEditor;
@@ -148,6 +149,13 @@ public:
     bool bridgeQaMelodicFlushPendingForTests() const noexcept;
 #endif
 
+    const BridgeClipTimeline& getDrumsClipTimeline() const noexcept { return drumsClip; }
+    const BridgeClipTimeline& getBassClipTimeline() const noexcept { return bassClip; }
+    const BridgeClipTimeline& getPianoClipTimeline() const noexcept { return pianoClip; }
+    const BridgeClipTimeline& getGuitarClipTimeline() const noexcept { return guitarClip; }
+
+    void refreshClipTimelinesFromEngines();
+
     std::atomic<int> guitarCurrentStep { -1 };
     std::atomic<int> guitarCurrentVisualStep { -1 };
 
@@ -200,11 +208,11 @@ private:
     void sendDrumsNoteOffs (juce::MidiBuffer& midi, int sampleOffset);
 
     void scheduleBassNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
-                                   int sampleOffset, juce::MidiBuffer& midi);
+                                    int sampleOffset, juce::MidiBuffer& midi);
     void sendBassNoteOffs (juce::MidiBuffer& midi, int sampleOffset);
 
     void schedulePianoNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
-                                    int sampleOffset, juce::MidiBuffer& midi);
+                                     int sampleOffset, juce::MidiBuffer& midi);
     void sendPianoNoteOffs (juce::MidiBuffer& midi, int sampleOffset);
 
     void scheduleGuitarNotesForStep (int globalStep, int wrappedStep, double samplesPerStep,
@@ -294,6 +302,10 @@ private:
     BridgeUpdateChecker modelUpdateChecker;
     juce::String mlPendingModelUpdateVersion;
     juce::String mlPendingModelUpdateUrl;
+
+    BridgeClipTimeline drumsClip, bassClip, pianoClip, guitarClip;
+    double transportBlockPpqStart = 0.0;
+    double transportBlockSamplesPerBeat = 480.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BridgeProcessor)
 };

@@ -1,4 +1,5 @@
 #include "PianoEngine.h"
+#include "../bridge_clip/BridgeClipTimeline.h"
 #include "ml/BridgeMLManager.h"
 #include <cmath>
 
@@ -350,6 +351,12 @@ void PianoEngine::rebuildGridPreview()
                 out.velocity = (uint8) jmin (127, (int) out.velocity + 20);
         }
     }
+}
+
+void PianoEngine::importFromClipTimeline (const BridgeClipTimeline& clip)
+{
+    clip.applyIntoPianoEngine (*this);
+    rebuildGridPreview();
 }
 
 void PianoEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int rangeToStep0)

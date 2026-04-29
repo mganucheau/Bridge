@@ -10,6 +10,7 @@
 #include "../BridgePhrase.h"
 
 class BridgeMLManager;
+class BridgeClipTimeline;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GuitarHit — one 16th-note slot in the generated bass line
@@ -51,6 +52,7 @@ public:
 
     void setFillHoldActive (bool on) { fillHoldActive = on; }
     void rebuildGridPreview();
+    void importFromClipTimeline (const BridgeClipTimeline& clip);
     void morphPatternForDensityAndComplexity (int rangeFromStep0 = -1, int rangeToStep0 = -1);
     void adaptPatternToNewStyle (int newStyleIndex);
     void evolvePatternRangeForJam (int fromStep0, int toStep0, BridgeMLManager* ml);

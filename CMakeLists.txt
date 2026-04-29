@@ -44,6 +44,8 @@ juce_generate_juce_header(Bridge)
 target_include_directories(Bridge PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 
 target_sources(Bridge PRIVATE
+    Source/bridge_clip/BridgeClipTimeline.cpp
+    Source/BridgeMidiClipEditor.cpp
     Source/BridgeProcessor.cpp
     Source/BridgeEditor.cpp
     Source/BridgeModelBundle.cpp
@@ -169,6 +171,7 @@ target_sources(BridgeTests PRIVATE
     Tests/DrumHumanFeelMetricsTests.cpp
     Tests/DrumsHouseComplexityMonotonicityTests.cpp
     Tests/MelodicHumanFeelMetricsTests.cpp
+    Tests/BridgeClipTimelineTests.cpp
 )
 if (BRIDGE_ENABLE_QA_HOOKS)
     target_compile_definitions(BridgeTests PRIVATE BRIDGE_ENABLE_QA_HOOKS=1)

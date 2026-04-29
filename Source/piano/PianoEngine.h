@@ -10,6 +10,7 @@
 #include "../BridgePhrase.h"
 
 class BridgeMLManager;
+class BridgeClipTimeline;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PianoHit — one 16th-note slot in the generated bass line
@@ -51,6 +52,7 @@ public:
 
     void setFillHoldActive (bool on) { fillHoldActive = on; }
     void rebuildGridPreview();
+    void importFromClipTimeline (const BridgeClipTimeline& clip);
     /** Adjust which steps are on/off from current density/complexity without a full regen.
         If rangeFromStep0 or rangeToStep0 is negative, uses the full pattern (0 .. patternLen-1). */
     void morphPatternForDensityAndComplexity (int rangeFromStep0 = -1, int rangeToStep0 = -1);

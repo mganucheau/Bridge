@@ -1,4 +1,5 @@
 #include "DrumEngine.h"
+#include "../bridge_clip/BridgeClipTimeline.h"
 #include "ml/BridgeMLManager.h"
 #include <cmath>
 #include <tuple>
@@ -1091,6 +1092,12 @@ void DrumEngine::rebuildGridPreview()
     for (int s = patternLen; s < bridge::phrase::kMaxSteps; ++s)
         for (int d = 0; d < NUM_DRUMS; ++d)
             gridPreview[(size_t) s][(size_t) d] = {};
+}
+
+void DrumEngine::importFromClipTimeline (const BridgeClipTimeline& clip)
+{
+    clip.applyIntoDrumEngine (*this);
+    rebuildGridPreview();
 }
 
 void DrumEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int rangeToStep0)

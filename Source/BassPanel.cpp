@@ -20,388 +20,15 @@ static int currentUnifiedStyleChoiceIndex (juce::AudioProcessorValueTreeState& a
 }
 } // namespace
 
-class FillHoldListener : public juce::MouseListener
-{
-public:
-    FillHoldListener (BridgeProcessor& p, juce::TextButton& b) : proc (p), btn (b) {}
-
-    void mouseDown (const juce::MouseEvent& e) override
-    {
-        if (e.eventComponent == &btn)
-        {
-            proc.bassEngine.setFillHoldActive (true);
-            proc.rebuildBassGridPreview();
-        }
-    }
-
-    void mouseUp (const juce::MouseEvent& e) override
-    {
-        if (e.eventComponent == &btn)
-        {
-            proc.bassEngine.setFillHoldActive (false);
-            proc.rebuildBassGridPreview();
-        }
-    }
-
-private:
-    BridgeProcessor& proc;
-    juce::TextButton& btn;
-};
-
-// ─── BassMelodicBody ───────────────────────────────────────────────────────────
-
-BassMelodicBody::BassMelodicBody (BassPanel& panelIn, BridgeProcessor& processor)
-    : roll (processor), grid (panelIn, processor)
-{
-    addAndMakeVisible (roll);
-    addAndMakeVisible (grid);
-}
-
-void BassMelodicBody::setMelodicCellSize (float cellW, float cellH)
-{
-    layoutCellW = cellW;
-    layoutCellH = cellH;
-}
-
-void BassMelodicBody::resized()
-{
-    const int strip = (int) bridge::kMelodicKeyStripWidth;
-    const int h       = juce::jmax (1, getHeight());
-    const int gridW   = juce::jmax (1, getWidth() - strip);
-    roll.setCellSize (layoutCellW, layoutCellH);
-    grid.setCellSize (layoutCellW, layoutCellH);
-    roll.setBounds (0, 0, strip, h);
-    grid.setBounds (strip, 0, gridW, h);
-}
-
-// ─── BassPianoRollComponent ───────────────────────────────────────────────────────
-
-BassPianoRollComponent::BassPianoRollComponent (BridgeProcessor& p) : proc (p) {}
-
-void BassPianoRollComponent::setCellSize (float w, float h)
-{
-    storedCellW = w;
-    storedCellH = h;
-}
-
-void BassPianoRollComponent::mouseDown (const juce::MouseEvent& e)
-{
-    auto& engine = proc.bassEngine;
-    int low = 60, high = 72;
-    bridge::applyRollSpanMelodicWindow (engine, low, high);
-    const int nRows = juce::jmax (1, high - low + 1);
-    const float rowH = storedCellH > 0.01f ? storedCellH : ((float) getHeight() / (float) nRows);
-    const int row = (int) (e.position.y / juce::jmax (1.0f, rowH));
-    const int idx = juce::jlimit (0, nRows - 1, row);
-    const int midi = high - idx;
-    proc.queueMelodicPreviewNote (proc.apvtsBass.getRawParameterValue ("midiChannel") != nullptr
-                                      ? (int) *proc.apvtsBass.getRawParameterValue ("midiChannel")
-                                      : 1,
-                                  midi, 96);
-}
-
-bool BassPianoRollComponent::isBlackKey (int midiNote)
-{
-    switch (midiNote % 12)
-    {
-        case 1: case 3: case 6: case 8: case 10: return true;
-        default: return false;
-    }
-}
-
-void BassPianoRollComponent::paint (juce::Graphics& g)
-{
-    auto full = getLocalBounds().toFloat();
-    
-    // Draw background for keyboard
-    g.setColour (bridge::hig::tertiaryGroupedBackground);
-    g.fillRect (full);
-    
-    auto& engine = proc.bassEngine;
-    int low = 60, high = 72;
-    bridge::applyRollSpanMelodicWindow (engine, low, high);
-    const int nRows = juce::jmax (1, high - low + 1);
-    const float rowH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
-    
-    const juce::String names[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
-
-    const int scaleIdx = proc.apvtsMain.getRawParameterValue ("scale") != nullptr
-                             ? (int) proc.apvtsMain.getRawParameterValue ("scale")->load()
-                             : 0;
-    const int rootPc = proc.apvtsMain.getRawParameterValue ("rootNote") != nullptr
-                           ? (int) proc.apvtsMain.getRawParameterValue ("rootNote")->load()
-                           : 0;
-
-    // Draw keys
-    for (int m = high; m >= low; --m)
-    {
-        int idx = high - m;
-        float y = full.getY() + (float) idx * rowH;
-        auto row = juce::Rectangle<float> (full.getX(), y, full.getWidth(), rowH);
-
-        bool bk = isBlackKey (m);
-        const bool inScale = bridge::pitchClassInPresetScale (scaleIdx, rootPc, m % 12);
-        juce::Colour fill = bk ? bridge::hig::systemBackground : bridge::hig::secondaryLabel;
-        if (! inScale)
-            fill = fill.interpolatedWith (bridge::hig::tertiaryGroupedBackground, 0.72f);
-        g.setColour (fill);
-        g.fillRect (row.reduced(0, 0.5f));
-
-        g.setColour (bridge::hig::separatorOpaque.withAlpha (0.55f));
-        g.drawHorizontalLine ((int)(y + rowH), full.getX(), full.getRight());
-
-        g.setColour ((bk ? bridge::hig::tertiaryLabel : bridge::hig::secondaryLabel)
-                         .interpolatedWith (bridge::hig::quaternaryLabel, inScale ? 0.0f : 0.65f));
-        g.setFont (bridge::hig::uiFont (10.0f));
-        g.drawText (names[m % 12] + juce::String (m / 12 - 1),
-                    row.reduced(2.0f, 0.0f).removeFromRight(full.getWidth() * 0.7f),
-                    juce::Justification::centredRight, true);
-    }
-}
-
-// ─── BassGridComponent ────────────────────────────────────────────────────────
-
-BassGridComponent::BassGridComponent (BassPanel& panelIn, BridgeProcessor& p)
-    : panel (panelIn), proc (p)
-{}
-
-void BassGridComponent::setCellSize (float w, float h)
-{
-    storedCellW = w;
-    storedCellH = h;
-}
-
-void BassGridComponent::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
-{
-    if (e.mods.isCtrlDown() || e.mods.isCommandDown())
-        panel.adjustZoomY (w.deltaY);
-    else if (e.mods.isShiftDown())
-        panel.adjustZoomX (w.deltaY);
-    else if (auto* vp = findParentComponentOfClass<juce::Viewport>())
-        vp->mouseWheelMove (e.getEventRelativeTo (vp), w);
-}
-
-void BassGridComponent::magnify (const juce::MouseEvent&, float scaleFactor)
-{
-    panel.adjustZoomY (scaleFactor - 1.0f);
-}
-
-void BassGridComponent::paint (juce::Graphics& g)
-{
-    auto& engine  = proc.bassEngine;
-    auto& pattern = engine.getPatternForGrid();
-
-    int loopStart = 1, loopEnd = engine.getPatternLen();
-    proc.getBassLoopBounds (loopStart, loopEnd);
-    const int ls0 = loopStart - 1;
-    const int le0 = loopEnd - 1;
-
-    auto full = getLocalBounds().toFloat();
-    
-    g.setColour (bridge::hig::tertiaryGroupedBackground);
-    g.fillAll();
-
-    int minMidi = 60, maxMidi = 72;
-    bridge::applyRollSpanMelodicWindow (engine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int nSteps = engine.getPatternLen();
-
-    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
-    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
-
-    const int scaleIdx = proc.apvtsMain.getRawParameterValue ("scale") != nullptr
-                             ? (int) proc.apvtsMain.getRawParameterValue ("scale")->load()
-                             : 0;
-    const int rootPc = proc.apvtsMain.getRawParameterValue ("rootNote") != nullptr
-                           ? (int) proc.apvtsMain.getRawParameterValue ("rootNote")->load()
-                           : 0;
-    for (int row = 0; row < nRows; ++row)
-    {
-        const int midi = maxMidi - row;
-        const bool inScale = bridge::pitchClassInPresetScale (scaleIdx, rootPc, midi % 12);
-        const float cy = (float) row * cellH;
-        if (inScale)
-            g.setColour (juce::Colours::white.withAlpha (0.04f));
-        else
-            g.setColour (juce::Colours::black.withAlpha (0.14f));
-        g.fillRect (0.0f, cy, full.getWidth(), cellH);
-    }
-
-    g.setColour (bridge::hig::separatorOpaque.withAlpha (0.4f));
-    for (int row = 0; row < nRows; ++row) {
-        float cy = (float) row * cellH;
-        g.drawHorizontalLine ((int)cy, 0.0f, full.getWidth());
-    }
-    const int tdIdxB = bridge::phrase::readTimeDivisionChoiceIndex (proc.apvtsMain);
-    const int accentPeriodB = bridge::phrase::accentColumnPeriodInSixteenthsFromTimeDivisionIndex (tdIdxB);
-    for (int step = 0; step < nSteps; ++step) {
-        float cx = (float) step * cellW;
-        const int stepInBar = step % bridge::phrase::kStepsPerBar;
-        const bool isAccentCol = (stepInBar % accentPeriodB) == 0;
-        g.setColour (isAccentCol ? bridge::hig::quaternaryFill : bridge::hig::separatorOpaque.withAlpha (0.45f));
-        g.drawVerticalLine ((int)cx, 0.0f, full.getHeight());
-    }
-
-    // Dim out-of-loop areas
-    if (ls0 > 0) {
-        g.setColour (juce::Colours::black.withAlpha (0.52f));
-        g.fillRect (0.0f, 0.0f, (float) ls0 * cellW, full.getHeight());
-    }
-    if (le0 < nSteps - 1) {
-        g.setColour (juce::Colours::black.withAlpha (0.52f));
-        g.fillRect ((float) (le0 + 1) * cellW, 0.0f, (float) (nSteps - le0 - 1) * cellW, full.getHeight());
-    }
-
-    // Draw Active Notes (Capsules)
-    juce::Colour accent = bridge::colors::accentBass();
-    for (int step = 0; step < nSteps; ++step)
-    {
-        const auto& hit = pattern[(size_t) step];
-        if (! hit.active) continue;
-
-        const int midi = juce::jlimit (minMidi, maxMidi, hit.midiNote);
-        int displayRow = maxMidi - midi;
-        displayRow = juce::jlimit (0, nRows - 1, displayRow);
-
-        float cx = (float) step * cellW;
-        float cy = (float) displayRow * cellH;
-        auto cell = juce::Rectangle<float> (cx, cy, cellW, cellH);
-
-        juce::Colour col = accent.withAlpha (hit.isGhost ? 0.35f : 0.85f);
-        float velFrac = hit.velocity / 127.0f;
-        if (hit.isGhost)
-            col = col.withAlpha (0.4f + velFrac * 0.2f);
-        if (step == currentStep)
-            col = col.brighter (0.4f);
-
-        // Natively span the cell width. We reduce Y to make them pill-like.
-        auto block = cell.reduced(1.0f, cellH * 0.2f);
-        
-        g.setColour (col);
-        g.fillRect (block);
-    }
-
-    // Playhead
-    if (currentStep >= 0 && currentStep < nSteps)
-    {
-        float cx = (float) currentStep * cellW;
-        g.setColour (juce::Colours::white.withAlpha (0.05f));
-        g.fillRect  (cx, 0.0f, cellW, full.getHeight());
-        
-        g.setColour (juce::Colours::white.withAlpha (0.7f));
-        g.fillRect  (cx, 0.0f, 2.0f, full.getHeight());
-    }
-}
-
-void BassGridComponent::mouseDown (const juce::MouseEvent& e)
-{
-    auto& engine = proc.bassEngine;
-    auto full = getLocalBounds().toFloat();
-    int minMidi = 60, maxMidi = 72;
-    bridge::applyRollSpanMelodicWindow (engine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int nSteps = engine.getPatternLen();
-    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
-    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
-
-    int step = (int)(e.x / cellW);
-    int row  = (int)(e.y / cellH);
-    if (step < 0 || step >= nSteps || row < 0 || row >= nRows) return;
-    
-    dragOriginStep = step;
-    
-    // Allow standard left click to create/move
-    auto& pat = const_cast<BassPattern&>(engine.getPattern());
-    const int targetMidi = juce::jlimit (minMidi, maxMidi, maxMidi - row);
-    int prevMidi = step > 0 ? pat[(size_t) (step - 1)].midiNote : -1;
-    
-    if (! pat[(size_t)step].active || pat[(size_t)step].midiNote != targetMidi)
-    {
-        const int deg = engine.nearestDegreeForMidi (targetMidi, prevMidi);
-        pat[(size_t)step].active   = true;
-        pat[(size_t)step].degree   = deg;
-        pat[(size_t)step].midiNote = engine.degreeToMidiNote (deg, prevMidi);
-        pat[(size_t)step].velocity = 100;
-        pat[(size_t)step].isGhost  = false;
-    }
-    proc.rebuildBassGridPreview();
-    repaint();
-}
-
-
-void BassGridComponent::mouseDrag (const juce::MouseEvent& e)
-{
-    if (dragOriginStep < 0) return;
-    
-    auto& engine = proc.bassEngine;
-    auto full = getLocalBounds().toFloat();
-    int minMidi = 60, maxMidi = 72;
-    bridge::applyRollSpanMelodicWindow (engine, minMidi, maxMidi);
-    const int nRows = juce::jmax (1, maxMidi - minMidi + 1);
-    const int nSteps = engine.getPatternLen();
-    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
-    const float cellH = storedCellH > 0.01f ? storedCellH : (full.getHeight() / (float) nRows);
-
-    int step = (int)(e.x / cellW);
-    int row  = (int)(e.y / cellH);
-    if (step < 0 || step >= nSteps || row < 0 || row >= nRows) return;
-
-    if (step != dragOriginStep)
-    {
-        auto& pat = const_cast<BassPattern&>(engine.getPattern());
-        // Move note securely
-        if (pat[(size_t)dragOriginStep].active)
-        {
-            pat[(size_t)step] = pat[(size_t)dragOriginStep];
-            pat[(size_t)dragOriginStep].active = false;
-        }
-        dragOriginStep = step; // update anchor
-    }
-    
-    // Update pitch if row changed
-    auto& pat = const_cast<BassPattern&>(engine.getPattern());
-    const int targetMidi = juce::jlimit (minMidi, maxMidi, maxMidi - row);
-    int prevMidi = step > 0 ? pat[(size_t) (step - 1)].midiNote : -1;
-    
-    if (pat[(size_t)step].active && pat[(size_t)step].midiNote != targetMidi)
-    {
-        const int deg = engine.nearestDegreeForMidi (targetMidi, prevMidi);
-        pat[(size_t)step].degree   = deg;
-        pat[(size_t)step].midiNote = engine.degreeToMidiNote (deg, prevMidi);
-    }
-
-    proc.rebuildBassGridPreview();
-    repaint();
-}
-
-void BassGridComponent::mouseDoubleClick (const juce::MouseEvent& e)
-{
-    auto& engine = proc.bassEngine;
-    auto full = getLocalBounds().toFloat();
-    const int nSteps = engine.getPatternLen();
-    const float cellW = storedCellW > 0.01f ? storedCellW : (full.getWidth() / (float) nSteps);
-    int step = (int)(e.x / cellW);
-    
-    if (step >= 0 && step < nSteps)
-    {
-        auto& pat = const_cast<BassPattern&>(engine.getPattern());
-        pat[(size_t)step].active = false;
-        proc.rebuildBassGridPreview();
-        repaint();
-    }
-}
-void BassGridComponent::resized() {}
-
-void BassGridComponent::update (int activeStep)
-{
-    currentStep = activeStep;
-    repaint();
-}
-
 // ─── Refactored ────────────────────────────────────────────────────────────
 
 BassPanel::BassPanel (BridgeProcessor& p)
     : proc (p),
+      midiClipEditor (p,
+                      BridgeMidiClipEditor::InstrumentKind::bass,
+                      bridge::colors::accentBass(),
+                      [this] (float dy) { adjustZoomX (dy); },
+                      [this] (float dy) { adjustZoomY (dy); }),
       bottomHalf (p.apvtsBass, p.apvtsMain, laf, bridge::colors::accentBass(),
         [this] { proc.triggerBassGenerate(); },
         [this] (bool active) { proc.bassEngine.setFillHoldActive (active); }),
@@ -428,7 +55,7 @@ BassPanel::BassPanel (BridgeProcessor& p)
         proc.apvtsBass.addParameterListener (id, this);
 
     addAndMakeVisible (melodicViewport);
-    melodicViewport.setViewedComponent (&melodicBody, false);
+    melodicViewport.setViewedComponent (&midiClipEditor, false);
     melodicViewport.setScrollBarsShown (true, true);
     melodicViewport.setScrollBarThickness (10);
     melodicViewport.getVerticalScrollBar().setLookAndFeel (&laf);
@@ -437,15 +64,6 @@ BassPanel::BassPanel (BridgeProcessor& p)
     loopStrip.setStepLabelGutter ((int) bridge::kMelodicKeyStripWidth);
     addAndMakeVisible (bottomHalf);
     addAndMakeVisible (instrumentStrip);
-    addAndMakeVisible (velocityStrip);
-
-    velocityStrip.velocityAt = [this] (int step) -> int
-    {
-        const int n = proc.bassEngine.getPatternLen();
-        if (step < 0 || step >= n) return 0;
-        const auto& pat = proc.bassEngine.getPatternForGrid();
-        return pat[(size_t) step].active ? (int) pat[(size_t) step].velocity : 0;
-    };
 
     instrumentStrip.getMuteButton().setTooltip ("Mute Bass");
     instrumentStrip.getSoloButton().setTooltip ("Solo Bass");
@@ -529,8 +147,6 @@ void BassPanel::applyPhraseBarsToUi()
     const int phraseSteps = bridge::phrase::phraseStepsForBars (bars);
     loopStrip.setBarRepeats (1);
     loopStrip.setNumSteps (phraseSteps);
-    velocityStrip.setBarRepeats (1);
-    velocityStrip.setNumSteps (phraseSteps);
     proc.bassEngine.setPhraseBars (bars);
     resized();
     repaint();
@@ -544,14 +160,12 @@ void BassPanel::applyBassPageState()
     bottomHalf.setEnabled (on);
     instrumentStrip.setTrackPowered (on);
     melodicViewport.setEnabled (on);
-    melodicBody.roll.setEnabled (on);
-    melodicBody.grid.setEnabled (on);
+    midiClipEditor.setEnabled (on);
     loopStrip.setEnabled (on);
 
     const float dim = on ? 1.0f : 0.42f;
     melodicViewport.setAlpha (dim);
-    melodicBody.roll.setAlpha (dim);
-    melodicBody.grid.setAlpha (dim);
+    midiClipEditor.setAlpha (dim);
     loopStrip.setAlpha (dim);
     bottomHalf.setAlpha (dim);
 }
@@ -565,11 +179,14 @@ void BassPanel::scrollMelodicViewportToPatternCentre()
     const int pMax = extent.second;
     const int midMidi = (pMin <= pMax) ? (pMin + pMax) / 2 : (winLo + winHi) / 2;
     const int spanRows = juce::jmax (1, winHi - winLo + 1);
-    const float rowH = (float) melodicBody.getHeight() / (float) spanRows;
     const int vpH = juce::jmax (1, melodicViewport.getHeight());
-    const int bodyH = melodicBody.getHeight();
-    const int scrollY = juce::jlimit (0, juce::jmax (0, bodyH - vpH),
-                                      (int) ((winHi - midMidi) * rowH) - vpH / 2);
+    const int editorH = juce::jmax (1, midiClipEditor.getHeight());
+    const int noteH = juce::jmax (1, editorH - BridgeMidiClipEditor::verticalChromePx);
+    const float rowH = (float) noteH / (float) spanRows;
+    const int maxScroll = juce::jmax (0, editorH - vpH);
+    constexpr int kTimeRulerH = 18;
+    const float centerY = (float) kTimeRulerH + ((float) (winHi - midMidi) + 0.5f) * rowH;
+    const int scrollY = juce::jlimit (0, maxScroll, juce::roundToInt (centerY - (float) vpH * 0.5f));
     melodicViewport.setViewPosition (melodicViewport.getViewPositionX(), scrollY);
 }
 
@@ -577,6 +194,7 @@ void BassPanel::fitPatternInView()
 {
     zoomX = 1.0f;
     zoomY = 1.0f;
+    midiClipEditor.setZoom (zoomX, zoomY);
     resized();
     scrollMelodicViewportToPatternCentre();
 }
@@ -584,12 +202,14 @@ void BassPanel::fitPatternInView()
 void BassPanel::adjustZoomX (float delta)
 {
     zoomX = juce::jlimit (0.4f, 6.0f, zoomX * (1.0f + delta * 0.3f));
+    midiClipEditor.setZoom (zoomX, zoomY);
     resized();
 }
 
 void BassPanel::adjustZoomY (float delta)
 {
     zoomY = juce::jlimit (0.4f, 6.0f, zoomY * (1.0f + delta * 0.3f));
+    midiClipEditor.setZoom (zoomX, zoomY);
     resized();
 }
 
@@ -606,18 +226,8 @@ void BassPanel::resized()
     auto card = shell.mainCard.reduced (8, 8);
     loopStrip.setBounds (card.removeFromTop ((int) bridge::kLoopRangeStripHeightPx).reduced (4, 0));
     loopStrip.setAccent (bridge::colors::accentBass());
-    auto velStripRow = card.removeFromBottom ((int) bridge::kVelocityStripHeightPx);
-    {
-        auto vel = velStripRow.withTrimmedTop (2);
-        vel.removeFromLeft ((int) bridge::kMelodicKeyStripWidth);
-        velocityStrip.setBounds (vel);
-    }
     const int phraseSteps = proc.bassEngine.getPatternLen();
     loopStrip.setNumSteps (phraseSteps);
-    velocityStrip.setNumSteps (phraseSteps);
-    int ls = 1, le = phraseSteps;
-    proc.getBassLoopBounds (ls, le);
-    velocityStrip.setStepRange (ls - 1, le - 1);
 
     melodicViewport.setBounds (card);
     const int viewW = juce::jmax (1, melodicViewport.getWidth());
@@ -635,10 +245,11 @@ void BassPanel::resized()
     const float cellH     = baseCellH * zoomY;
 
     const int bodyW = strip + (int) (cellW * (float) nSteps);
-    const int bodyH = juce::jmax (1, (int) (cellH * (float) nRows));
+    const int chrome = BridgeMidiClipEditor::verticalChromePx;
+    const int bodyH = chrome + juce::jmax (1, (int) (cellH * (float) nRows));
 
-    melodicBody.setMelodicCellSize (cellW, cellH);
-    melodicBody.setSize (bodyW, bodyH);
+    midiClipEditor.setZoom (zoomX, zoomY);
+    midiClipEditor.setSize (bodyW, bodyH);
 
     bottomHalf.setBounds (shell.bottomStrip);
 }
@@ -667,8 +278,7 @@ void BassPanel::paint (juce::Graphics& g)
 
 void BassPanel::handleAsyncUpdate()
 {
-    melodicBody.roll.repaint();
-    melodicBody.grid.repaint();
+    midiClipEditor.repaint();
     loopStrip.repaint();
 }
 
@@ -697,8 +307,7 @@ void BassPanel::parameterChanged (const juce::String& parameterID, float newValu
         || parameterID == "uiTheme")
     {
         loopStrip.repaint();
-        melodicBody.grid.repaint();
-        melodicBody.roll.repaint();
+        midiClipEditor.repaint();
         resized();
     }
 
@@ -753,6 +362,6 @@ void BassPanel::updateStepAnimation()
     if (step != lastAnimStep)
     {
         lastAnimStep = step;
-        melodicBody.grid.update (step);
+        midiClipEditor.updatePlayhead (step);
     }
 }

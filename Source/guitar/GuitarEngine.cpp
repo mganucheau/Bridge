@@ -1,4 +1,5 @@
 #include "GuitarEngine.h"
+#include "../bridge_clip/BridgeClipTimeline.h"
 #include "ml/BridgeMLManager.h"
 #include <cmath>
 #include <vector>
@@ -395,6 +396,12 @@ void GuitarEngine::rebuildGridPreview()
                 out.velocity = (uint8) jmin (127, (int) out.velocity + 20);
         }
     }
+}
+
+void GuitarEngine::importFromClipTimeline (const BridgeClipTimeline& clip)
+{
+    clip.applyIntoGuitarEngine (*this);
+    rebuildGridPreview();
 }
 
 void GuitarEngine::morphPatternForDensityAndComplexity (int rangeFromStep0, int rangeToStep0)
