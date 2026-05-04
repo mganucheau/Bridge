@@ -22,7 +22,6 @@ BridgeMidiClipEditor::BridgeMidiClipEditor (BridgeProcessor& processor,
     foldButton.setClickingTogglesState (true);
     foldButton.onClick = [this] { repaint(); };
     foldButton.setColour (juce::ToggleButton::textColourId, bridge::hig::secondaryLabel);
-    startTimerHz (24);
 }
 
 const BridgeClipTimeline& BridgeMidiClipEditor::clipRef() const
@@ -242,8 +241,8 @@ void BridgeMidiClipEditor::paintVelocityLane (juce::Graphics& g, juce::Rectangle
 void BridgeMidiClipEditor::paint (juce::Graphics& g)
 {
     auto full = getLocalBounds().toFloat();
-    auto header = full.removeFromTop ((float) kRulerH);
-    auto velo   = full.removeFromBottom ((float) kVelocityH);
+    auto header = full.removeFromTop ((float) kTimeRulerHeightPx);
+    auto velo   = full.removeFromBottom ((float) kVelocityLaneHeightPx);
     auto body   = full;
 
     const int strip = (int) bridge::kMelodicKeyStripWidth;
@@ -363,9 +362,9 @@ void BridgeMidiClipEditor::mouseDown (const juce::MouseEvent& e)
     {
         int rowLo = 0, rowHi = NUM_DRUMS - 1;
         const int nRows = rowHi - rowLo + 1;
-        const float bodyH = (float) (getHeight() - kRulerH - kVelocityH);
+        const float bodyH = (float) (getHeight() - verticalChromePx);
         const float rowH = (bodyH / (float) juce::jmax (1, nRows)) * zoomY;
-        const int row = (int) ((e.position.y - (float) kRulerH + (float) scrollY) / juce::jmax (1.0f, rowH));
+        const int row = (int) ((e.position.y - (float) kTimeRulerHeightPx + (float) scrollY) / juce::jmax (1.0f, rowH));
         const int lane = rowHi - row;
         if (lane >= 0 && lane < NUM_DRUMS)
         {
@@ -387,9 +386,9 @@ void BridgeMidiClipEditor::mouseDown (const juce::MouseEvent& e)
         case InstrumentKind::drums:  break;
     }
     const int nRows = juce::jmax (1, rowHi - rowLo + 1);
-    const float bodyH = (float) (getHeight() - kRulerH - kVelocityH);
+    const float bodyH = (float) (getHeight() - verticalChromePx);
     const float rowH = (bodyH / (float) nRows) * zoomY;
-    const int row = (int) ((e.position.y - (float) kRulerH + (float) scrollY) / juce::jmax (1.0f, rowH));
+    const int row = (int) ((e.position.y - (float) kTimeRulerHeightPx + (float) scrollY) / juce::jmax (1.0f, rowH));
     const int midi = juce::jlimit (rowLo, rowHi, rowLo + row);
     int ch = 1;
     if (kind == InstrumentKind::bass && proc.apvtsBass.getRawParameterValue ("midiChannel") != nullptr)

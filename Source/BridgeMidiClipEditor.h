@@ -6,14 +6,15 @@
 
 /** Ableton-style clip note area: time ruler, piano/drum key strip, note blocks from BridgeClipTimeline,
     optional Fold, pinch/zoom hooks, and an internal velocity lane. */
-class BridgeMidiClipEditor : public juce::Component,
-                             private juce::Timer
+class BridgeMidiClipEditor : public juce::Component
 {
 public:
     enum class InstrumentKind { drums, bass, piano, guitar };
 
+    static constexpr int kTimeRulerHeightPx    = 18;
+    static constexpr int kVelocityLaneHeightPx = 40;
     /** Ruler + velocity lane height; note grid height is separate. */
-    static constexpr int verticalChromePx = 18 + 40;
+    static constexpr int verticalChromePx = kTimeRulerHeightPx + kVelocityLaneHeightPx;
 
     BridgeMidiClipEditor (BridgeProcessor& processor,
                           InstrumentKind instrument,
@@ -33,8 +34,6 @@ public:
     void updatePlayhead (int activeStep0);
 
 private:
-    void timerCallback() override { repaint(); }
-
     const BridgeClipTimeline& clipRef() const;
     int phraseSteps() const;
     void paintTimeRuler (juce::Graphics& g, juce::Rectangle<float> rulerArea, float pxPerStep);
@@ -56,9 +55,6 @@ private:
     float zoomY = 1.f;
     int   scrollY = 0;
     int   playheadStep = -1;
-
-    static constexpr int kRulerH = 18;
-    static constexpr int kVelocityH = 40;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BridgeMidiClipEditor)
 };

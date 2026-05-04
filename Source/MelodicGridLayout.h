@@ -216,4 +216,24 @@ inline void computeSquareMelodicGrid (float innerX, float innerW, float gridTop,
     originY = gridTop + (hBody - cellSize * (float) nRows) * 0.5f;
 }
 
+/** Vertical scroll so `midMidi` sits near the centre of the viewport (clip editor: ruler above note rows). */
+inline void scrollMelodicClipViewportCentreOnPitch (juce::Viewport& vp,
+                                                   int editorHeightPx,
+                                                   int verticalChromePx,
+                                                   int timeRulerHeightPx,
+                                                   int winLoMidi,
+                                                   int winHiMidi,
+                                                   int midMidi)
+{
+    const int spanRows = juce::jmax (1, winHiMidi - winLoMidi + 1);
+    const int vpH = juce::jmax (1, vp.getHeight());
+    const int editorH = juce::jmax (1, editorHeightPx);
+    const int noteH = juce::jmax (1, editorH - verticalChromePx);
+    const float rowH = (float) noteH / (float) spanRows;
+    const int maxScroll = juce::jmax (0, editorH - vpH);
+    const float centerY = (float) timeRulerHeightPx + ((float) (winHiMidi - midMidi) + 0.5f) * rowH;
+    const int scrollY = juce::jlimit (0, maxScroll, juce::roundToInt (centerY - (float) vpH * 0.5f));
+    vp.setViewPosition (vp.getViewPositionX(), scrollY);
+}
+
 } // namespace bridge

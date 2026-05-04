@@ -1,4 +1,6 @@
 build/
+# Nested clone/copy of this repo (accidentally committed); keep only top-level Source/.
+Bridge-Cursor/
 bridge_ml.zip
 ml/.venv/
 __pycache__/

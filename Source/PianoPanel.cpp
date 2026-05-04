@@ -180,17 +180,11 @@ void PianoPanel::scrollMelodicViewportToPatternCentre()
     const int pMin = extent.first;
     const int pMax = extent.second;
     const int midMidi = (pMin <= pMax) ? (pMin + pMax) / 2 : (winLo + winHi) / 2;
-    const int spanRows = juce::jmax (1, winHi - winLo + 1);
-    const int vpH = juce::jmax (1, melodicViewport.getHeight());
-    const int editorH = juce::jmax (1, midiClipEditor.getHeight());
-    const int noteH = juce::jmax (1, editorH - BridgeMidiClipEditor::verticalChromePx);
-    const float rowH = (float) noteH / (float) spanRows;
-    const int maxScroll = juce::jmax (0, editorH - vpH);
-    // Top chrome is the time ruler; note rows sit below it (see BridgeMidiClipEditor::paint).
-    constexpr int kTimeRulerH = 18;
-    const float centerY = (float) kTimeRulerH + ((float) (winHi - midMidi) + 0.5f) * rowH;
-    const int scrollY = juce::jlimit (0, maxScroll, juce::roundToInt (centerY - (float) vpH * 0.5f));
-    melodicViewport.setViewPosition (melodicViewport.getViewPositionX(), scrollY);
+    bridge::scrollMelodicClipViewportCentreOnPitch (melodicViewport,
+                                                   midiClipEditor.getHeight(),
+                                                   BridgeMidiClipEditor::verticalChromePx,
+                                                   BridgeMidiClipEditor::kTimeRulerHeightPx,
+                                                   winLo, winHi, midMidi);
 }
 
 void PianoPanel::fitPatternInView()
