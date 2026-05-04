@@ -1,0 +1,267 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 820" width="1120" height="820" font-family="Inter, system-ui, -apple-system, Helvetica, Arial, sans-serif">
+  <title>Bridge — Design System</title>
+
+  <defs>
+    <linearGradient id="appBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1A1722"/>
+      <stop offset="1" stop-color="#100E16"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#23202B"/>
+      <stop offset="1" stop-color="#1B1823"/>
+    </linearGradient>
+    <radialGradient id="knobFace" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#2A2632"/>
+      <stop offset="1" stop-color="#15131B"/>
+    </radialGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.45"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <!-- Generic knob with colour substitution via currentColor -->
+    <symbol id="knobGeneric" viewBox="0 0 72 72" overflow="visible">
+      <circle cx="36" cy="36" r="30" fill="none" stroke="#2E2937" stroke-width="5"/>
+      <path d="M 14.75 54.25 A 30 30 0 1 1 57.25 54.25" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="36" cy="36" r="23" fill="url(#knobFace)" stroke="#3A3548"/>
+      <line x1="36" y1="36" x2="36" y2="18" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="36" cy="36" r="2" fill="currentColor"/>
+    </symbol>
+  </defs>
+
+  <rect width="1120" height="820" fill="url(#appBg)"/>
+
+  <!-- title -->
+  <g transform="translate(40,44)">
+    <rect width="4" height="28" fill="#D4A84B"/>
+    <text x="14" y="22" fill="#EAE2D5" font-size="22" font-weight="700" letter-spacing="2">BRIDGE · DESIGN SYSTEM</text>
+    <text x="14" y="40" fill="#6A6578" font-size="11" letter-spacing="1.4">ONE LANGUAGE ACROSS THE WHOLE BAND</text>
+  </g>
+
+  <!-- ═══ INSTRUMENT COLOR PALETTE ═══ -->
+  <g transform="translate(40,104)">
+    <text fill="#B0A8C4" font-size="11" font-weight="700" letter-spacing="2">01 · INSTRUMENT IDENTITY</text>
+
+    <g transform="translate(0,24)" filter="url(#softShadow)">
+      <rect width="1040" height="158" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
+
+      <!-- LEADER -->
+      <g transform="translate(30,28)">
+        <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
+        <rect x="0" y="0" width="184" height="46" rx="12" fill="#D4A84B"/>
+        <rect x="0" y="34" width="184" height="12" fill="#D4A84B"/>
+        <text x="16" y="28" fill="#2B1D00" font-size="16" font-weight="800" letter-spacing="2">LEADER</text>
+        <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">CONDUCTOR</text>
+        <text x="16" y="84" fill="#6A6578" font-size="9">#D4A84B</text>
+        <text x="16" y="96" fill="#6A6578" font-size="9">Warm gold · ensemble tone</text>
+      </g>
+      <!-- DRUMS -->
+      <g transform="translate(230,28)">
+        <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
+        <rect x="0" y="0" width="184" height="46" rx="12" fill="#E07A5A"/>
+        <rect x="0" y="34" width="184" height="12" fill="#E07A5A"/>
+        <text x="16" y="28" fill="#260A02" font-size="16" font-weight="800" letter-spacing="2">DRUMS</text>
+        <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">DRUMS</text>
+        <text x="16" y="84" fill="#6A6578" font-size="9">#E07A5A</text>
+        <text x="16" y="96" fill="#6A6578" font-size="9">Coral · skin &amp; snare</text>
+      </g>
+      <!-- BASS -->
+      <g transform="translate(430,28)">
+        <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
+        <rect x="0" y="0" width="184" height="46" rx="12" fill="#5CB8A8"/>
+        <rect x="0" y="34" width="184" height="12" fill="#5CB8A8"/>
+        <text x="16" y="28" fill="#042018" font-size="16" font-weight="800" letter-spacing="2">BASS</text>
+        <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">BASS</text>
+        <text x="16" y="84" fill="#6A6578" font-size="9">#5CB8A8</text>
+        <text x="16" y="96" fill="#6A6578" font-size="9">Teal · sub &amp; slap</text>
+      </g>
+      <!-- PIANO -->
+      <g transform="translate(630,28)">
+        <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
+        <rect x="0" y="0" width="184" height="46" rx="12" fill="#B88CFF"/>
+        <rect x="0" y="34" width="184" height="12" fill="#B88CFF"/>
+        <text x="16" y="28" fill="#190A2E" font-size="16" font-weight="800" letter-spacing="2">PIANO</text>
+        <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">PIANO</text>
+        <text x="16" y="84" fill="#6A6578" font-size="9">#B88CFF</text>
+        <text x="16" y="96" fill="#6A6578" font-size="9">Violet · keys &amp; chords</text>
+      </g>
+      <!-- GUITAR -->
+      <g transform="translate(830,28)">
+        <rect width="184" height="102" rx="12" fill="#0E0C13" stroke="#2E2937"/>
+        <rect x="0" y="0" width="184" height="46" rx="12" fill="#6EB3FF"/>
+        <rect x="0" y="34" width="184" height="12" fill="#6EB3FF"/>
+        <text x="16" y="28" fill="#021226" font-size="16" font-weight="800" letter-spacing="2">GUITAR</text>
+        <text x="16" y="68" fill="#EAE2D5" font-size="10" letter-spacing="1.5">GUITAR</text>
+        <text x="16" y="84" fill="#6A6578" font-size="9">#6EB3FF</text>
+        <text x="16" y="96" fill="#6A6578" font-size="9">Sky · jangle &amp; wah</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ═══ NEUTRAL PALETTE ═══ -->
+  <g transform="translate(40,304)">
+    <text fill="#B0A8C4" font-size="11" font-weight="700" letter-spacing="2">02 · NEUTRALS</text>
+    <g transform="translate(0,24)" filter="url(#softShadow)">
+      <rect width="504" height="166" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
+      <g transform="translate(24,24)" font-size="10">
+        <g>
+          <rect width="80" height="80" rx="10" fill="#14121A" stroke="#2E2937"/>
+          <text x="40" y="100" text-anchor="middle" fill="#B0A8C4">app bg</text>
+          <text x="40" y="114" text-anchor="middle" fill="#6A6578">#14121A</text>
+        </g>
+        <g transform="translate(98,0)">
+          <rect width="80" height="80" rx="10" fill="#1A1820" stroke="#2E2937"/>
+          <text x="40" y="100" text-anchor="middle" fill="#B0A8C4">panel</text>
+          <text x="40" y="114" text-anchor="middle" fill="#6A6578">#1A1820</text>
+        </g>
+        <g transform="translate(196,0)">
+          <rect width="80" height="80" rx="10" fill="#211E29" stroke="#2E2937"/>
+          <text x="40" y="100" text-anchor="middle" fill="#B0A8C4">card</text>
+          <text x="40" y="114" text-anchor="middle" fill="#6A6578">#211E29</text>
+        </g>
+        <g transform="translate(294,0)">
+          <rect width="80" height="80" rx="10" fill="#2A2632" stroke="#3A3548"/>
+          <text x="40" y="100" text-anchor="middle" fill="#B0A8C4">card hi</text>
+          <text x="40" y="114" text-anchor="middle" fill="#6A6578">#2A2632</text>
+        </g>
+        <g transform="translate(392,0)">
+          <rect width="80" height="80" rx="10" fill="#3A3548"/>
+          <text x="40" y="100" text-anchor="middle" fill="#B0A8C4">stroke</text>
+          <text x="40" y="114" text-anchor="middle" fill="#6A6578">#3A3548</text>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- ═══ TYPOGRAPHY ═══ -->
+  <g transform="translate(568,304)">
+    <text fill="#B0A8C4" font-size="11" font-weight="700" letter-spacing="2">03 · TYPOGRAPHY</text>
+    <g transform="translate(0,24)" filter="url(#softShadow)">
+      <rect width="512" height="166" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
+      <g transform="translate(24,22)">
+        <text fill="#EAE2D5" font-size="26" font-weight="700" letter-spacing="1">Panel Title</text>
+        <text y="18" fill="#6A6578" font-size="10">26 · 700 · letter-spacing 1 · primary text</text>
+      </g>
+      <g transform="translate(24,70)">
+        <text fill="#D4A84B" font-size="11" font-weight="700" letter-spacing="2">SECTION HEADING</text>
+        <text y="14" fill="#6A6578" font-size="10">11 · 700 · letter-spacing 2 · accent color</text>
+      </g>
+      <g transform="translate(24,108)">
+        <text fill="#B0A8C4" font-size="11" font-weight="600">KNOB LABEL</text>
+        <text y="14" fill="#6A6578" font-size="10">11 · 600 · letter-spacing 0 · secondary</text>
+      </g>
+      <g transform="translate(260,22)">
+        <text fill="#EAE2D5" font-size="16" font-weight="700">Instrument Name</text>
+        <text y="16" fill="#6A6578" font-size="10">16 · 700 · primary</text>
+      </g>
+      <g transform="translate(260,70)">
+        <text fill="#6A6578" font-size="9" letter-spacing="1.5">HELPER · METADATA · HINTS</text>
+        <text y="14" fill="#6A6578" font-size="10">9 · 400 · letter-spacing 1.5 · tertiary</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ═══ COMPONENT ATOMS ═══ -->
+  <g transform="translate(40,494)">
+    <text fill="#B0A8C4" font-size="11" font-weight="700" letter-spacing="2">04 · COMPONENT ATOMS</text>
+
+    <g transform="translate(0,24)" filter="url(#softShadow)">
+      <rect width="1040" height="294" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
+
+      <!-- knobs -->
+      <g transform="translate(30,22)">
+        <text fill="#6A6578" font-size="10" letter-spacing="1.5">KNOBS</text>
+        <g transform="translate(0,14)" color="#D4A84B">
+          <use href="#knobGeneric" x="0"  y="0" width="72" height="72"/>
+          <text x="36" y="86" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="600">GOLD</text>
+        </g>
+        <g transform="translate(90,14)" color="#E07A5A">
+          <use href="#knobGeneric" x="0"  y="0" width="72" height="72"/>
+          <text x="36" y="86" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="600">CORAL</text>
+        </g>
+        <g transform="translate(180,14)" color="#5CB8A8">
+          <use href="#knobGeneric" x="0"  y="0" width="72" height="72"/>
+          <text x="36" y="86" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="600">TEAL</text>
+        </g>
+        <g transform="translate(270,14)" color="#B88CFF">
+          <use href="#knobGeneric" x="0"  y="0" width="72" height="72"/>
+          <text x="36" y="86" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="600">VIOLET</text>
+        </g>
+        <g transform="translate(360,14)" color="#6EB3FF">
+          <use href="#knobGeneric" x="0"  y="0" width="72" height="72"/>
+          <text x="36" y="86" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="600">SKY</text>
+        </g>
+
+        <text y="116" fill="#6A6578" font-size="9">72 px · rotary · 270° arc · 225° → 495° · instrument color rim + indicator</text>
+      </g>
+
+      <!-- buttons -->
+      <g transform="translate(30,156)">
+        <text fill="#6A6578" font-size="10" letter-spacing="1.5">BUTTONS</text>
+
+        <g transform="translate(0,14)">
+          <rect width="120" height="44" rx="10" fill="#D4A84B"/>
+          <text x="60" y="28" text-anchor="middle" fill="#2B1D00" font-size="12" font-weight="800" letter-spacing="2">PRIMARY</text>
+        </g>
+        <g transform="translate(136,14)">
+          <rect width="120" height="44" rx="10" fill="#1B1823" stroke="#D4A84B"/>
+          <text x="60" y="28" text-anchor="middle" fill="#F4D896" font-size="12" font-weight="700" letter-spacing="2">SECONDARY</text>
+        </g>
+        <g transform="translate(272,14)">
+          <rect width="120" height="44" rx="10" fill="#1B1823" stroke="#3A3548"/>
+          <text x="60" y="28" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700" letter-spacing="2">TERTIARY</text>
+        </g>
+        <g transform="translate(408,14)">
+          <rect width="44" height="44" rx="10" fill="#3A2020" stroke="#6B2F2F"/>
+          <text x="22" y="29" text-anchor="middle" fill="#FF9999" font-size="14" font-weight="800">M</text>
+        </g>
+        <g transform="translate(464,14)">
+          <rect width="44" height="44" rx="10" fill="#1A3D28" stroke="#2F6B4A"/>
+          <text x="22" y="29" text-anchor="middle" fill="#6EE7A0" font-size="14" font-weight="800">S</text>
+        </g>
+        <g transform="translate(520,14)">
+          <rect width="44" height="44" rx="10" fill="#1B1823" stroke="#3A3548"/>
+          <path d="M 14 14 v 16 l 18 -8 z" fill="#B0A8C4"/>
+        </g>
+
+        <text y="76" fill="#6A6578" font-size="9">Rounded 10 · 44 px tall · primary = accent fill · secondary = accent stroke · M/S state colors</text>
+      </g>
+
+      <!-- combo + tab -->
+      <g transform="translate(600,22)">
+        <text fill="#6A6578" font-size="10" letter-spacing="1.5">SELECTORS</text>
+        <g transform="translate(0,14)">
+          <rect width="264" height="28" rx="14" fill="#1B1823" stroke="#3A3548"/>
+          <text x="16" y="18" fill="#EAE2D5" font-size="11">Neo-Soul Backbeat</text>
+          <path d="M 246 12 L 251 18 L 256 12" stroke="#B0A8C4" stroke-width="1.5" fill="none"/>
+        </g>
+        <g transform="translate(0,54)">
+          <rect width="264" height="32" rx="16" fill="#211E29" stroke="#2E2937"/>
+          <g transform="translate(6,4)">
+            <rect width="80" height="24" rx="12" fill="#D4A84B" fill-opacity="0.22" stroke="#D4A84B"/>
+            <text x="40" y="16" text-anchor="middle" fill="#F4D896" font-size="10" font-weight="600">CLASSIC</text>
+            <g transform="translate(84,0)"><rect width="80" height="24" rx="12" fill="transparent"/><text x="40" y="16" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">JAZZ</text></g>
+            <g transform="translate(168,0)"><rect width="80" height="24" rx="12" fill="transparent"/><text x="40" y="16" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">FUNK</text></g>
+          </g>
+        </g>
+        <text y="108" fill="#6A6578" font-size="9">Radio pill group replaces dense style rows across every panel</text>
+
+        <!-- mini tab -->
+        <g transform="translate(0,134)">
+          <rect width="264" height="44" rx="10" fill="#211E29" stroke="#2E2937"/>
+          <g transform="translate(14,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#D4A84B"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">LEADER</text></g>
+          <g transform="translate(76,7)"><rect width="58" height="30" rx="6" fill="#E07A5A" fill-opacity="0.22" stroke="#E07A5A"/><circle cx="11" cy="15" r="3" fill="#E07A5A"/><text x="20" y="19" fill="#F2B8A1" font-size="10" font-weight="600">DRUMS</text></g>
+          <g transform="translate(138,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#5CB8A8"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">BASS</text></g>
+          <g transform="translate(200,7)"><rect width="58" height="30" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="15" r="3" fill="#B88CFF"/><text x="20" y="19" fill="#B0A8C4" font-size="10" font-weight="600">PIANO</text></g>
+        </g>
+      </g>
+    </g>
+  </g>
+
+  <!-- footer note -->
+  <g transform="translate(40,780)">
+    <text fill="#6A6578" font-size="9" letter-spacing="1.3">BASELINE GRID 8 px · PANEL MARGIN 24 px · CARD RADIUS 14 px · KNOB RADIUS 30 px · SHADOW dy 2 / α .45</text>
+  </g>
+</svg>

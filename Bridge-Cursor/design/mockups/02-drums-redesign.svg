@@ -1,0 +1,317 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 740" width="960" height="740" font-family="Inter, system-ui, -apple-system, Helvetica, Arial, sans-serif">
+  <title>Bridge — Drums (Drums) panel redesign</title>
+
+  <defs>
+    <linearGradient id="appBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0"  stop-color="#1A1722"/>
+      <stop offset="1"  stop-color="#100E16"/>
+    </linearGradient>
+    <linearGradient id="headerBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#221E2C"/>
+      <stop offset="1" stop-color="#17141E"/>
+    </linearGradient>
+    <linearGradient id="cardBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#23202B"/>
+      <stop offset="1" stop-color="#1B1823"/>
+    </linearGradient>
+    <linearGradient id="coralGlow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E07A5A" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#E07A5A" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="coralBtn" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E07A5A"/>
+      <stop offset="1" stop-color="#B85738"/>
+    </linearGradient>
+    <radialGradient id="knobFace" cx="0.5" cy="0.4" r="0.7">
+      <stop offset="0" stop-color="#2A2632"/>
+      <stop offset="1" stop-color="#15131B"/>
+    </radialGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3"/>
+      <feOffset dx="0" dy="2" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.45"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <symbol id="knobCoral" viewBox="0 0 76 76" overflow="visible">
+      <circle cx="38" cy="38" r="32" fill="none" stroke="#2E2937" stroke-width="5"/>
+      <path d="M 15.3 57.7 A 32 32 0 1 1 60.7 57.7" fill="none" stroke="#E07A5A" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="38" cy="38" r="25" fill="url(#knobFace)" stroke="#3A3548"/>
+      <line x1="38" y1="38" x2="38" y2="19" stroke="#E07A5A" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="38" cy="38" r="2" fill="#E07A5A"/>
+    </symbol>
+  </defs>
+
+  <rect x="0" y="0" width="960" height="740" fill="url(#appBg)"/>
+
+  <!-- ═══ HEADER ═══ -->
+  <rect x="0" y="0" width="960" height="60" fill="url(#headerBg)"/>
+  <line x1="0" y1="60" x2="960" y2="60" stroke="#2A2434"/>
+  <g transform="translate(20,21)">
+    <rect x="0" y="0" width="4" height="22" fill="#E07A5A"/>
+    <text x="14" y="17" fill="#EAE2D5" font-size="17" font-weight="700" letter-spacing="2">BRIDGE</text>
+    <text x="14" y="30" fill="#6A6578" font-size="8.5" letter-spacing="1.6">AI BAND GENERATOR</text>
+  </g>
+  <g transform="translate(360,14)">
+    <rect x="0" y="0" width="64" height="32" rx="6" fill="#1B1823" stroke="#32303C"/>
+    <text x="32" y="20" text-anchor="middle" fill="#EAE2D5" font-size="14" font-weight="600">120</text>
+    <text x="32" y="29" text-anchor="middle" fill="#6A6578" font-size="7" letter-spacing="1">BPM</text>
+    <g transform="translate(74,0)"><rect width="36" height="32" rx="6" fill="#1B1823" stroke="#32303C"/><polygon points="13,10 13,22 25,16" fill="#8DE0B8"/></g>
+    <g transform="translate(118,0)"><rect width="36" height="32" rx="6" fill="#1B1823" stroke="#32303C"/><rect x="13" y="11" width="10" height="10" rx="1" fill="#6A6578"/></g>
+    <g transform="translate(162,0)"><rect width="74" height="32" rx="6" fill="#1B1823" stroke="#32303C"/><circle cx="12" cy="16" r="3" fill="#8DE0B8"/><text x="22" y="20" fill="#B0A8C4" font-size="10">HOST SYNC</text></g>
+  </g>
+  <g transform="translate(0,14)" font-size="10" font-weight="600">
+    <g transform="translate(642,0)"><rect width="58" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="16" r="3" fill="#D4A84B"/><text x="20" y="20" fill="#B0A8C4">LEADER</text></g>
+    <g transform="translate(703,0)"><rect width="58" height="32" rx="6" fill="#E07A5A" fill-opacity="0.20" stroke="#E07A5A"/><circle cx="11" cy="16" r="3" fill="#E07A5A"/><text x="20" y="20" fill="#F2B8A1">DRUMS</text></g>
+    <g transform="translate(764,0)"><rect width="58" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="16" r="3" fill="#5CB8A8"/><text x="20" y="20" fill="#B0A8C4">BASS</text></g>
+    <g transform="translate(825,0)"><rect width="56" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="16" r="3" fill="#B88CFF"/><text x="20" y="20" fill="#B0A8C4">PIANO</text></g>
+    <g transform="translate(884,0)"><rect width="56" height="32" rx="6" fill="#1B1823" stroke="#2E2937"/><circle cx="11" cy="16" r="3" fill="#6EB3FF"/><text x="22" y="20" fill="#B0A8C4">GUITAR</text></g>
+  </g>
+
+  <!-- ═══ TITLE ═══ -->
+  <g transform="translate(24,82)">
+    <text fill="#EAE2D5" font-size="26" font-weight="700" letter-spacing="1">DRUMS</text>
+    <text y="20" fill="#6A6578" font-size="11" letter-spacing="1.4">DRUMS · 8 LANES · 16 STEPS</text>
+  </g>
+
+  <!-- ═══ DRUM GRID CARD ═══ -->
+  <g transform="translate(24,118)" filter="url(#softShadow)">
+    <rect width="912" height="292" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
+    <rect width="912" height="292" rx="14" fill="url(#coralGlow)"/>
+
+    <!-- top meta bar: loop range + lock + generate button cluster -->
+    <g transform="translate(24,18)">
+      <rect x="0" y="0" width="3" height="14" fill="#E07A5A"/>
+      <text x="10" y="12" fill="#E07A5A" font-size="11" font-weight="700" letter-spacing="2">GROOVE GRID</text>
+      <text x="118" y="12" fill="#6A6578" font-size="10">BARS 1–4</text>
+
+      <!-- loop range pill -->
+      <g transform="translate(498,-4)">
+        <rect width="240" height="22" rx="11" fill="#1B1823" stroke="#3A3548"/>
+        <text x="12" y="15" fill="#6A6578" font-size="9" letter-spacing="1.2">LOOP</text>
+        <text x="46" y="15" fill="#EAE2D5" font-size="11" font-weight="600">1 ─────────── 16</text>
+        <g transform="translate(212,4)">
+          <rect width="16" height="14" rx="3" fill="#2A2632" stroke="#3A3548"/>
+          <path d="M 5 7 v -3 a 3 3 0 1 1 6 0 v 3" stroke="#B0A8C4" stroke-width="1.2" fill="none"/>
+          <rect x="4" y="7" width="8" height="5" rx="1" fill="#B0A8C4"/>
+        </g>
+      </g>
+    </g>
+
+    <!-- grid header row (step numbers) -->
+    <g transform="translate(118,44)" fill="#6A6578" font-size="9" text-anchor="middle">
+      <text x="0">1</text><text x="50">2</text><text x="100">3</text><text x="150">4</text>
+      <text x="200">5</text><text x="250">6</text><text x="300">7</text><text x="350">8</text>
+      <text x="400">9</text><text x="450">10</text><text x="500">11</text><text x="550">12</text>
+      <text x="600">13</text><text x="650">14</text><text x="700">15</text><text x="750">16</text>
+    </g>
+
+    <!-- lanes -->
+    <g transform="translate(24,56)" font-size="11">
+      <!-- lane template: label | M | S | 16 cells -->
+      <g transform="translate(0,0)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Kick</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+      <g transform="translate(0,30)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Snare</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+      <g transform="translate(0,60)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Hat C</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+      <g transform="translate(0,90)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Hat O</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+      <g transform="translate(0,120)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Clap</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+      <g transform="translate(0,150)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Tom L</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+      <g transform="translate(0,180)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Tom H</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+      <g transform="translate(0,210)">
+        <text x="60" y="18" text-anchor="end" fill="#EAE2D5" font-weight="600">Crash</text>
+        <rect x="68" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="77" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">M</text>
+        <rect x="88" y="6" width="18" height="18" rx="4" fill="#1B1823" stroke="#3A3548"/><text x="97" y="19" text-anchor="middle" fill="#B0A8C4" font-size="9" font-weight="700">S</text>
+      </g>
+
+      <!-- 16 columns × 8 lanes grid of cells, bg + bar4 -->
+      <g transform="translate(114,0)">
+        <!-- background cells -->
+        <g>
+          <!-- beat shading: every 4th column a touch brighter -->
+          <rect x="0"   y="0" width="200" height="234" fill="#191622"/>
+          <rect x="200" y="0" width="200" height="234" fill="#1D1A26"/>
+          <rect x="400" y="0" width="200" height="234" fill="#191622"/>
+          <rect x="600" y="0" width="200" height="234" fill="#1D1A26"/>
+        </g>
+        <!-- individual cell outlines -->
+        <g stroke="#2A2632" stroke-width="1">
+          <!-- 16 verticals every 50px, 8 horizontals every 30px -->
+          <path d="M 0 0 V 234 M 50 0 V 234 M 100 0 V 234 M 150 0 V 234 M 200 0 V 234 M 250 0 V 234 M 300 0 V 234 M 350 0 V 234 M 400 0 V 234 M 450 0 V 234 M 500 0 V 234 M 550 0 V 234 M 600 0 V 234 M 650 0 V 234 M 700 0 V 234 M 750 0 V 234 M 800 0 V 234"/>
+          <path d="M 0 0 H 800 M 0 30 H 800 M 0 60 H 800 M 0 90 H 800 M 0 120 H 800 M 0 150 H 800 M 0 180 H 800 M 0 210 H 800 M 0 234 H 800"/>
+        </g>
+
+        <!-- active hits -->
+        <g fill="#E07A5A">
+          <!-- Kick (row 0): 1, 4, 7, 11, 15 -->
+          <rect x="3"   y="3"  width="44" height="24" rx="4"/>
+          <rect x="153" y="3"  width="44" height="24" rx="4" opacity="0.8"/>
+          <rect x="303" y="3"  width="44" height="24" rx="4"/>
+          <rect x="503" y="3"  width="44" height="24" rx="4" opacity="0.9"/>
+          <rect x="703" y="3"  width="44" height="24" rx="4"/>
+          <!-- Snare (row 1): 5, 13 -->
+          <rect x="203" y="33" width="44" height="24" rx="4" opacity="0.95"/>
+          <rect x="603" y="33" width="44" height="24" rx="4" opacity="0.95"/>
+          <rect x="403" y="33" width="44" height="24" rx="4" opacity="0.6"/>
+          <!-- Hat C (row 2): every 2 steps -->
+          <rect x="3"   y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="103" y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="203" y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="303" y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="403" y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="503" y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="603" y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="703" y="63" width="44" height="24" rx="4" opacity="0.55"/>
+          <rect x="53"  y="63" width="44" height="24" rx="4" opacity="0.30"/>
+          <rect x="253" y="63" width="44" height="24" rx="4" opacity="0.30"/>
+          <rect x="453" y="63" width="44" height="24" rx="4" opacity="0.30"/>
+          <rect x="653" y="63" width="44" height="24" rx="4" opacity="0.30"/>
+          <!-- Hat O (row 3) sparse -->
+          <rect x="153" y="93" width="44" height="24" rx="4" opacity="0.8"/>
+          <rect x="553" y="93" width="44" height="24" rx="4" opacity="0.8"/>
+          <rect x="753" y="93" width="44" height="24" rx="4" opacity="0.7"/>
+          <!-- Clap (row 4) -->
+          <rect x="203" y="123" width="44" height="24" rx="4" opacity="0.7"/>
+          <rect x="603" y="123" width="44" height="24" rx="4" opacity="0.7"/>
+          <!-- Tom L (row 5) -->
+          <rect x="353" y="153" width="44" height="24" rx="4" opacity="0.6"/>
+          <rect x="753" y="153" width="44" height="24" rx="4" opacity="0.6"/>
+          <!-- Tom H (row 6) -->
+          <rect x="403" y="183" width="44" height="24" rx="4" opacity="0.55"/>
+          <!-- Crash (row 7) -->
+          <rect x="3"   y="213" width="44" height="18" rx="4" opacity="0.5"/>
+          <rect x="703" y="213" width="44" height="18" rx="4" opacity="0.4"/>
+        </g>
+
+        <!-- playhead -->
+        <line x1="125" y1="-6" x2="125" y2="240" stroke="#FFD2C4" stroke-width="2"/>
+        <rect x="100" y="0" width="50" height="234" fill="#E07A5A" opacity="0.08"/>
+      </g>
+    </g>
+  </g>
+
+  <!-- ═══ BOTTOM CONTROL STRIP ═══ -->
+  <g transform="translate(24,426)">
+    <!-- GROOVE + DYNAMICS left card -->
+    <g transform="translate(0,0)" filter="url(#softShadow)">
+      <rect width="612" height="294" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
+      <g transform="translate(24,18)">
+        <rect x="0" y="0" width="3" height="14" fill="#E07A5A"/>
+        <text x="10" y="12" fill="#E07A5A" font-size="11" font-weight="700" letter-spacing="2">GROOVE</text>
+        <text x="78" y="12" fill="#6A6578" font-size="10">Time &amp; feel</text>
+      </g>
+      <g transform="translate(16,46)">
+        <g transform="translate(0,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">DENSITY</text>
+        </g>
+        <g transform="translate(144,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">SWING</text>
+        </g>
+        <g transform="translate(288,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">HUMANIZE</text>
+        </g>
+        <g transform="translate(432,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">POCKET</text>
+        </g>
+      </g>
+
+      <line x1="24" y1="156" x2="588" y2="156" stroke="#2A2632"/>
+
+      <g transform="translate(24,168)">
+        <rect x="0" y="0" width="3" height="14" fill="#E07A5A"/>
+        <text x="10" y="12" fill="#E07A5A" font-size="11" font-weight="700" letter-spacing="2">DYNAMICS</text>
+        <text x="92" y="12" fill="#6A6578" font-size="10">Velocity &amp; expression</text>
+      </g>
+      <g transform="translate(16,196)">
+        <g transform="translate(0,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">VELOCITY</text>
+        </g>
+        <g transform="translate(144,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">GHOST</text>
+        </g>
+        <g transform="translate(288,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">COMPLEXITY</text>
+        </g>
+        <g transform="translate(432,0)">
+          <use href="#knobCoral" x="24" y="0" width="76" height="76"/>
+          <text x="62" y="92" text-anchor="middle" fill="#B0A8C4" font-size="10" font-weight="600">FILL RATE</text>
+        </g>
+      </g>
+    </g>
+
+    <!-- STYLE + ACTIONS right card -->
+    <g transform="translate(628,0)" filter="url(#softShadow)">
+      <rect width="284" height="294" rx="14" fill="url(#cardBg)" stroke="#2E2937"/>
+
+      <!-- STYLE -->
+      <g transform="translate(20,18)">
+        <rect x="0" y="0" width="3" height="14" fill="#E07A5A"/>
+        <text x="10" y="12" fill="#E07A5A" font-size="11" font-weight="700" letter-spacing="2">STYLE</text>
+      </g>
+      <g transform="translate(20,38)">
+        <rect width="244" height="28" rx="14" fill="#1B1823" stroke="#3A3548"/>
+        <text x="16" y="18" fill="#EAE2D5" font-size="11" font-weight="600">Neo-Soul Backbeat</text>
+        <path d="M 226 12 L 231 18 L 236 12" stroke="#B0A8C4" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+      </g>
+
+      <!-- ACTIONS -->
+      <g transform="translate(20,82)">
+        <rect x="0" y="0" width="3" height="14" fill="#E07A5A"/>
+        <text x="10" y="12" fill="#E07A5A" font-size="11" font-weight="700" letter-spacing="2">ACTIONS</text>
+      </g>
+
+      <g transform="translate(20,102)">
+        <!-- GENERATE big button -->
+        <rect width="244" height="52" rx="10" fill="url(#coralBtn)"/>
+        <text x="122" y="32" text-anchor="middle" fill="#211008" font-size="16" font-weight="800" letter-spacing="3">GENERATE</text>
+      </g>
+      <g transform="translate(20,164)">
+        <rect width="118" height="42" rx="10" fill="#1B1823" stroke="#E07A5A"/>
+        <text x="59" y="26" text-anchor="middle" fill="#F2B8A1" font-size="12" font-weight="700" letter-spacing="2">PERFORM</text>
+      </g>
+      <g transform="translate(146,164)">
+        <rect width="118" height="42" rx="10" fill="#1B1823" stroke="#3A3548"/>
+        <text x="59" y="26" text-anchor="middle" fill="#B0A8C4" font-size="12" font-weight="700" letter-spacing="2">FILL ◉</text>
+      </g>
+
+      <g transform="translate(20,220)">
+        <text fill="#6A6578" font-size="9" letter-spacing="1.2">HOLD FILL FOR LIVE DRUM BREAKS</text>
+        <text y="18" fill="#6A6578" font-size="9" letter-spacing="1.2">PERFORM CROSS-FADES THE NEXT LOOP</text>
+        <text y="36" fill="#6A6578" font-size="9" letter-spacing="1.2">GENERATE FORGES A NEW PATTERN</text>
+      </g>
+    </g>
+  </g>
+</svg>
